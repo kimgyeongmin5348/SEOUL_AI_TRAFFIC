@@ -1,0 +1,177 @@
+digraph RoadPulseERD {
+  graph [
+    rankdir=LR,
+    bgcolor="#F8FAFC",
+    pad="0.45",
+    nodesep="0.65",
+    ranksep="1.05",
+    splines=ortho,
+    fontname="Malgun Gothic",
+    label="RoadPulse ERD v3 — Traffic · Incident · ASOS 통합 구조",
+    labelloc=t,
+    labeljust=l,
+    fontsize=24,
+    fontcolor="#0F172A"
+  ];
+
+  node [shape=plain, fontname="Malgun Gothic"];
+  edge [
+    color="#64748B",
+    penwidth=1.5,
+    arrowsize=0.75,
+    fontname="Malgun Gothic",
+    fontsize=10,
+    fontcolor="#475569"
+  ];
+
+  traffic_spots [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#2563EB" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#DBEAFE"><B>TRAFFIC_SPOTS</B><BR/><FONT POINT-SIZE="10">서울시 SpotInfo</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>spot_id</B></TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">spot_name</TD><TD ALIGN="LEFT">VARCHAR(150)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">tm_x</TD><TD ALIGN="LEFT">DECIMAL(12,6)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">tm_y</TD><TD ALIGN="LEFT">DECIMAL(12,6)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">latitude</TD><TD ALIGN="LEFT">DECIMAL(10,7)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">longitude</TD><TD ALIGN="LEFT">DECIMAL(10,7)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">created_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">updated_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+    </TABLE>
+  >];
+
+  traffic_volume_measurements [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#2563EB" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#DBEAFE"><B>TRAFFIC_VOLUME_MEASUREMENTS</B><BR/><FONT POINT-SIZE="10">서울시 VolInfo · ML 핵심 학습 데이터</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">BIGINT</TD></TR>
+      <TR><TD BGCOLOR="#DCFCE7"><B>FK</B></TD><TD ALIGN="LEFT">spot_id</TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">measured_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">direction_code</TD><TD ALIGN="LEFT">TINYINT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">lane_no</TD><TD ALIGN="LEFT">SMALLINT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">traffic_volume</TD><TD ALIGN="LEFT">INT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">collected_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD COLSPAN="3" ALIGN="LEFT" BGCOLOR="#F1F5F9"><FONT POINT-SIZE="9">UQ: spot_id + measured_at + direction_code + lane_no</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  road_segments [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#7C3AED" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#EDE9FE"><B>ROAD_SEGMENTS</B><BR/><FONT POINT-SIZE="10">서울시 LinkInfo 기준정보</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>link_id</B></TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">road_name</TD><TD ALIGN="LEFT">VARCHAR(150)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">start_node_name</TD><TD ALIGN="LEFT">VARCHAR(150)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">end_node_name</TD><TD ALIGN="LEFT">VARCHAR(150)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">length_m</TD><TD ALIGN="LEFT">INT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">region_code</TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">created_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">updated_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+    </TABLE>
+  >];
+
+  traffic_spot_road_maps [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#0F766E" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#CCFBF1"><B>TRAFFIC_SPOT_ROAD_MAPS</B><BR/><FONT POINT-SIZE="10">SpotInfo 좌표 ↔ 링크 Vertex 공간 매핑</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK/FK</B></TD><TD ALIGN="LEFT"><B>spot_id</B></TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK/FK</B></TD><TD ALIGN="LEFT"><B>link_id</B></TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">match_distance_m</TD><TD ALIGN="LEFT">DECIMAL(8,2)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">match_method</TD><TD ALIGN="LEFT">VARCHAR(30)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">is_primary</TD><TD ALIGN="LEFT">BOOLEAN</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">created_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD COLSPAN="3" ALIGN="LEFT" BGCOLOR="#F1F5F9"><FONT POINT-SIZE="9">PK: spot_id + link_id</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  traffic_speed_measurements [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#7C3AED" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#EDE9FE"><B>TRAFFIC_SPEED_MEASUREMENTS</B><BR/><FONT POINT-SIZE="10">서울시 TrafficInfo</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">BIGINT</TD></TR>
+      <TR><TD BGCOLOR="#DCFCE7"><B>FK</B></TD><TD ALIGN="LEFT">link_id</TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">measured_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">speed_kmh</TD><TD ALIGN="LEFT">DECIMAL(6,2)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">travel_time_sec</TD><TD ALIGN="LEFT">INT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">collected_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD COLSPAN="3" ALIGN="LEFT" BGCOLOR="#F1F5F9"><FONT POINT-SIZE="9">UQ: link_id + measured_at</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  incidents [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#DC2626" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#FEE2E2"><B>INCIDENTS</B><BR/><FONT POINT-SIZE="10">서울시 Incident API · AccInfo</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>incident_id</B></TD><TD ALIGN="LEFT">VARCHAR(30)</TD></TR>
+      <TR><TD BGCOLOR="#DCFCE7"><B>FK</B></TD><TD ALIGN="LEFT">link_id</TD><TD ALIGN="LEFT">VARCHAR(20), NULL</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">occurred_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">expected_clear_at</TD><TD ALIGN="LEFT">DATETIME, NULL</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">incident_type</TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">incident_detail_type</TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">road_code</TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">tm_x / tm_y</TD><TD ALIGN="LEFT">DECIMAL(12,6)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">description</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">collected_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+    </TABLE>
+  >];
+
+  weather_stations [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#059669" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#D1FAE5"><B>WEATHER_STATIONS</B><BR/><FONT POINT-SIZE="10">기상청 ASOS 관측소</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>weather_station_id</B></TD><TD ALIGN="LEFT">VARCHAR(10)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">station_name</TD><TD ALIGN="LEFT">VARCHAR(100)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">latitude</TD><TD ALIGN="LEFT">DECIMAL(10,7)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">longitude</TD><TD ALIGN="LEFT">DECIMAL(10,7)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">elevation_m</TD><TD ALIGN="LEFT">DECIMAL(8,2)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">is_active</TD><TD ALIGN="LEFT">BOOLEAN</TD></TR>
+    </TABLE>
+  >];
+
+  weather_measurements [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#059669" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#D1FAE5"><B>WEATHER_MEASUREMENTS</B><BR/><FONT POINT-SIZE="10">기상청 ASOS 시간자료</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">BIGINT</TD></TR>
+      <TR><TD BGCOLOR="#DCFCE7"><B>FK</B></TD><TD ALIGN="LEFT">weather_station_id</TD><TD ALIGN="LEFT">VARCHAR(10)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">observed_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">temperature_c</TD><TD ALIGN="LEFT">DECIMAL(5,2), NULL</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">rainfall_mm</TD><TD ALIGN="LEFT">DECIMAL(7,2), NULL</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">humidity_pct</TD><TD ALIGN="LEFT">DECIMAL(5,2), NULL</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">wind_speed_ms</TD><TD ALIGN="LEFT">DECIMAL(6,2), NULL</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">wind_direction_deg</TD><TD ALIGN="LEFT">SMALLINT, NULL</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">pressure_hpa</TD><TD ALIGN="LEFT">DECIMAL(7,2), NULL</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">collected_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD COLSPAN="3" ALIGN="LEFT" BGCOLOR="#F1F5F9"><FONT POINT-SIZE="9">UQ: weather_station_id + observed_at</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  model_versions [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#EA580C" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#FFEDD5"><B>MODEL_VERSIONS</B><BR/><FONT POINT-SIZE="10">학습 모델 및 평가 이력</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>model_version</B></TD><TD ALIGN="LEFT">VARCHAR(50)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">algorithm</TD><TD ALIGN="LEFT">VARCHAR(50)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">hyperparameters</TD><TD ALIGN="LEFT">JSON</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">mae</TD><TD ALIGN="LEFT">DECIMAL(12,4)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">rmse</TD><TD ALIGN="LEFT">DECIMAL(12,4)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">r2_score</TD><TD ALIGN="LEFT">DECIMAL(10,6)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">artifact_path</TD><TD ALIGN="LEFT">VARCHAR(500)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">trained_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">is_active</TD><TD ALIGN="LEFT">BOOLEAN</TD></TR>
+    </TABLE>
+  >];
+
+  traffic_predictions [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#EA580C" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#FFEDD5"><B>TRAFFIC_PREDICTIONS</B><BR/><FONT POINT-SIZE="10">지점별 1시간 후 교통량 예측</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">BIGINT</TD></TR>
+      <TR><TD BGCOLOR="#DCFCE7"><B>FK</B></TD><TD ALIGN="LEFT">spot_id</TD><TD ALIGN="LEFT">VARCHAR(20)</TD></TR>
+      <TR><TD BGCOLOR="#DCFCE7"><B>FK</B></TD><TD ALIGN="LEFT">model_version</TD><TD ALIGN="LEFT">VARCHAR(50)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">predicted_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">target_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">predicted_volume</TD><TD ALIGN="LEFT">INT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">actual_volume</TD><TD ALIGN="LEFT">INT, NULL</TD></TR>
+      <TR><TD COLSPAN="3" ALIGN="LEFT" BGCOLOR="#F1F5F9"><FONT POINT-SIZE="9">UQ: spot_id + target_at + model_version</FONT></TD></TR>
+    </TABLE>
+  >];
+
+  weather_stations -> weather_measurements [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
+  traffic_spots -> traffic_volume_measurements [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
+  traffic_spots -> traffic_predictions [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
+  traffic_spots -> traffic_spot_road_maps [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
+  road_segments -> traffic_spot_road_maps [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
+  road_segments -> traffic_speed_measurements [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
+  road_segments -> incidents [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
+  model_versions -> traffic_predictions [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
+}
