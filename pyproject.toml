@@ -9,6 +9,7 @@ dependencies = [
     "apscheduler>=3.11.3",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
+    "joblib>=1.5.0",
     "lightgbm>=4.7.0",
     "numpy>=2.5.2",
     "pandas>=3.0.5",
@@ -19,6 +20,7 @@ dependencies = [
     "scikit-learn>=1.9.0",
     "sqlalchemy>=2.0.52",
     "uvicorn[standard]>=0.52.4",
+    "xgboost>=2.1.0",
 ]
 
 [dependency-groups]

@@ -168,14 +168,15 @@ CREATE TABLE IF NOT EXISTS incidents (
 CREATE TABLE IF NOT EXISTS traffic_predictions (
     id BIGINT NOT NULL AUTO_INCREMENT,
     spot_id VARCHAR(20) NOT NULL,
+    direction_code TINYINT NOT NULL,
     model_version VARCHAR(50) NOT NULL,
     predicted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     target_at DATETIME NOT NULL,
     predicted_volume INT NOT NULL,
     actual_volume INT NULL,
     PRIMARY KEY (id),
-    CONSTRAINT uq_prediction_spot_target_model
-        UNIQUE (spot_id, target_at, model_version),
+    CONSTRAINT uq_prediction_spot_direction_target_model
+        UNIQUE (spot_id, direction_code, target_at, model_version),
     CONSTRAINT fk_prediction_spot
         FOREIGN KEY (spot_id) REFERENCES traffic_spots (spot_id)
         ON DELETE CASCADE,

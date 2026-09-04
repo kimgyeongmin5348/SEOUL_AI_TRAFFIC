@@ -10,8 +10,8 @@ if str(project_root) not in sys.path:
 
 from sqlalchemy import text
 
-from backend.app.db.database import SessionLocal, engine
-from backend.app.services.collector_service import DataCollectorService
+from backend.src.db.database import SessionLocal, engine
+from backend.src.services.collector_service import DataCollectorService
 
 logging.basicConfig(
     level=logging.INFO,

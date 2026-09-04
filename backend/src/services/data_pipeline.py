@@ -8,7 +8,7 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from backend.app.db.database import engine
+from backend.src.db.database import engine
 
 logger = logging.getLogger(__name__)
 

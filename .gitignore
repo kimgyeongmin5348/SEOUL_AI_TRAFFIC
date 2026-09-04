@@ -206,6 +206,13 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# Trained ML artifacts are generated locally or in the deployment artifact store.
+ml/artifacts/*
+!ml/artifacts/lightgbm/
+!ml/artifacts/xgboost/
+!ml/artifacts/lightgbm/.gitkeep
+!ml/artifacts/xgboost/.gitkeep
+
 # PyPI configuration file
 .pypirc
 

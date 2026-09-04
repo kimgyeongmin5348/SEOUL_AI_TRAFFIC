@@ -5,8 +5,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from backend.app.services.kma_client import KmaApiClient
-from backend.app.services.seoul_client import SeoulOpenApiClient
+from backend.src.services.kma_client import KmaApiClient
+from backend.src.services.seoul_client import SeoulOpenApiClient
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,8 @@ class DataCollectorService:
         """지점별 교통량(VolInfo)을 수집하여 traffic_volume_measurements 테이블에 적재합니다."""
         # 지점 목록이 없으면 DB에서 상위 지점들을 조회
         if not spot_ids:
-            query = text("SELECT spot_id FROM traffic_spots LIMIT 10")
+            # 실시간 운영에서는 139개 전체 지점을 대상으로 수집합니다.
+            query = text("SELECT spot_id FROM traffic_spots ORDER BY spot_id")
             rows = self.db.execute(query).fetchall()
             spot_ids = [r[0] for r in rows]
 
@@ -132,13 +133,18 @@ class DataCollectorService:
             logger.warning("No spot_ids available for traffic volume sync.")
             return 0
 
-        # 날짜 기본값: 어제
+        # 기본값: API에서 확정된 최신 시간대(약 2시간 전)를 1시간 수집
         if not date_str:
-            date_str = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+            latest_hour = datetime.now().replace(minute=0, second=0, microsecond=0) - timedelta(hours=2)
+            date_str = latest_hour.strftime("%Y%m%d")
+            default_hour = latest_hour.strftime("%H")
+        else:
+            default_hour = None
 
-        # 시간 기본값: 01시부터 03시 (초기 적재 샘플링)
+        # 과거 호출에서 hours를 명시하면 해당 범위를 유지하고,
+        # 실시간 호출에서는 확정된 최신 1시간만 조회합니다.
         if not hours:
-            hours = ["01", "02", "03"]
+            hours = [default_hour or "00"]
 
         sql = text("""
             INSERT INTO traffic_volume_measurements (
@@ -219,16 +225,20 @@ class DataCollectorService:
         self.sync_weather_stations()
 
         if not start_date or not end_date:
-            # 최근 데이터로 조회
-            start_date = "20240101"
-            end_date = "20240101"
+            # ASOS는 시간 관측자료이므로 오늘 누적분 중 최신 관측 시각까지 조회합니다.
+            now = datetime.now()
+            start_date = now.strftime("%Y%m%d")
+            end_date = start_date
+            end_hour = max(now.hour - 1, 0)
+        else:
+            end_hour = 23
 
         records = self.kma_client.get_hourly_weather(
             station_id=station_id,
             start_date=start_date,
-            start_hour="01",
+            start_hour="00",
             end_date=end_date,
-            end_hour="23",
+            end_hour=f"{end_hour:02d}",
         )
         if not records:
             logger.warning(f"No weather records retrieved for station {station_id}.")

@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from backend.app.core.config import settings
+from backend.src.core.config import settings
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ RoadPulse는 서울시 주요 139개 도로 검지기 지점의 2년 치 교통�
 ```text
 SEOUL_AI_TRAFFIC/
 ├── backend/                         # 백엔드 및 데이터 처리 로직
-│   └── app/
+│   └── src/
 │       ├── core/
 │       │   └── config.py             # 환경변수 및 애플리케이션 설정
 │       ├── api/
@@ -65,14 +65,14 @@ SEOUL_AI_TRAFFIC/
 │   ├── docker/                       # 컨테이너 설정
 │   └── terraform/                    # Infrastructure as Code
 ├── ml/
-│   ├── models/                       # 학습된 모델 산출물 위치
+│   ├── models/                       # LightGBM·XGBoost 모델별 영역
+│   ├── artifacts/                    # 학습된 .joblib 및 학습 결과 메타데이터
 │   ├── notebooks/                    # 탐색·실험용 노트북
-│   ├── reports/                      # 모델 평가 리포트
 │   └── src/
-│       ├── features/                 # Feature Engineering
-│       ├── training/                 # 모델 학습
-│       ├── evaluation/               # 모델 평가
-│       └── inference/                # 서비스 추론
+│       ├── models/                   # 모델별 학습·추론 코드
+│       │   ├── lightgbm/
+│       │   └── xgboost/
+│       └── util/                     # 공통 경로·분할·평가·DB 등록
 ├── main.py                           # 현재 기본 실행 진입점 (향후 백엔드로 대체)
 ├── pyproject.toml                    # Python 의존성 및 개발 도구 설정
 ├── uv.lock                           # Python 의존성 잠금 파일
@@ -84,14 +84,16 @@ SEOUL_AI_TRAFFIC/
 
 | 위치 | 여기서 해야 할 작업 |
 | :--- | :--- |
-| `backend/app/db/` | DB 테이블을 추가·수정하거나 연결 설정을 관리합니다. 스키마 변경 시 ERD도 함께 갱신합니다. |
-| `backend/app/services/` | 외부 API 연동, 데이터 수집, DB 적재, 전처리 로직을 구현합니다. API 키는 코드에 직접 작성하지 않습니다. |
+| `backend/src/db/` | DB 테이블을 추가·수정하거나 연결 설정을 관리합니다. 스키마 변경 시 ERD도 함께 갱신합니다. |
+| `backend/src/services/` | 외부 API 연동, 데이터 수집, DB 적재, 전처리 로직을 구현합니다. API 키는 코드에 직접 작성하지 않습니다. |
 | `frontend/src/components/` | 여러 화면에서 재사용하는 UI 컴포넌트를 작성합니다. |
 | `frontend/src/pages/` | 사용자 기능별 화면을 구현합니다. 백엔드 연동 전까지는 `data/mock.ts`를 사용할 수 있습니다. |
 | `frontend/src/data/` | 임시 목업 데이터만 관리합니다. 실제 기능 완성 시 백엔드 API 호출로 교체합니다. |
 | `scripts/` | 데이터 수집·적재·전처리처럼 반복 실행할 작업을 CLI 스크립트로 추가합니다. |
 | `data/` | 원본·중간·학습 데이터를 저장합니다. 대용량 파일은 Git에 커밋하지 않습니다. |
-| `ml/` | 학습 데이터셋을 이용한 모델 학습, 평가, 저장, 예측 코드를 구현합니다. |
+| `ml/src/models/` | LightGBM·XGBoost별 학습·추론 코드를 구현합니다. |
+| `ml/src/util/` | 모델 공통 학습, 시간순 분할, 평가, 경로, Artifact 저장, DB 등록을 관리합니다. |
+| `ml/artifacts/` | 학습된 `.joblib`와 학습 결과 메타데이터를 저장합니다. |
 | `docs/` | ERD, API 명세, 실행 방법 등 팀 협업에 필요한 설계 문서를 관리합니다. |
 
 ### 작업 시 기본 원칙
@@ -100,7 +102,7 @@ SEOUL_AI_TRAFFIC/
 
 1. 기능별로 담당 폴더에 코드를 작성하고, 임시 파일이나 대용량 데이터는 커밋하지 않습니다.
 2. 환경변수와 API 키는 `backend/.env`에만 저장하며 README나 소스 코드에 노출하지 않습니다.
-3. DB 스키마를 변경하면 `backend/app/db/schema.sql`과 `docs/architecture/`의 ERD를 함께 수정합니다.
+3. DB 스키마를 변경하면 `backend/src/db/schema.sql`과 `docs/architecture/`의 ERD를 함께 수정합니다.
 4. 프론트 화면을 수정한 뒤 `frontend` 폴더에서 `pnpm build`로 타입 및 빌드를 확인합니다.
 5. 데이터 처리 로직을 수정한 뒤 샘플 데이터로 결과 컬럼, 결측치, 행 수를 확인합니다.
 
@@ -151,6 +153,8 @@ uv run python scripts/process_data.py
 | `uv run python scripts/process_data.py` | **[팀원 권장]** DB $\rightarrow$ 전처리 $\rightarrow$ `data/processed/` 학습 데이터셋 자동 생성 |
 | `uv run python scripts/collect_data.py --status` | RDS 데이터베이스 현재 적재 현황 및 레코드 수 확인 |
 | `uv run python scripts/collect_data.py --all` | 서울시 OpenAPI 및 기상청 API 최신 데이터 일괄 수집 |
+| `uv run python scripts/run_realtime_scheduler.py` | 속도·돌발(5분), 교통량·날씨(1시간) 자동 수집 |
+| `uv run python scripts/export_realtime_test.py` | 완료된 예측에 실제 교통량을 연결하고 온라인 Test CSV 생성 |
 | `uv run python scripts/import_traffic_excel.py --all-spots` | `data/raw/` 내 24개 엑셀 파일 전수 DB 벌크 적재 |
 
 
@@ -163,3 +167,9 @@ uv run python scripts/process_data.py
 * **시계열 지연(Lag)**: `vol_lag_1h`(1시간 전), `vol_lag_2h`(2시간 전), `vol_lag_24h`(어제 동시간대 교통량)
 * **이동 통계(Rolling)**: `vol_rolling_mean_3h`(최근 3시간 평균), `vol_rolling_mean_24h`(최근 24시간 평균)
 * **시간 및 주기성**: `hour`, `dayofweek`, `is_weekend`, `month`, `is_rush_hour`(출퇴근 피크 플래그), 삼각함수 순환 인코딩(`hour_sin`, `hour_cos`, `day_sin`, `day_cos`)
+
+## 실시간 운영 데이터 흐름
+
+`traffic_training_dataset.csv`는 시간순 8:2 분할 후 모델 학습과 오프라인 검증에 사용하며, 실시간 API 데이터로 덮어쓰지 않습니다. 실시간 수집 데이터는 RDS 측정 테이블에 누적하고, 모델이 생성한 예측은 `traffic_predictions`에 저장합니다. 예측 대상 시간이 지난 후 실제 교통량을 `actual_volume`에 연결하고 `data/online/realtime_test_dataset.csv`로 내보내 온라인 성능을 평가합니다.
+
+스케줄러 실행 전 `backend/src/db/migrations/001_add_prediction_direction.sql`을 기존 RDS에 1회 적용해야 합니다. LightGBM 학습 결과는 `ml/artifacts/lightgbm/`의 `.joblib`와 기존 `model_versions` 테이블에 함께 저장합니다.

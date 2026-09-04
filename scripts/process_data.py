@@ -14,7 +14,7 @@ if sys.platform == "win32":
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 import pandas as pd
-from backend.app.services.data_pipeline import DataPipelineService
+from backend.src.services.data_pipeline import DataPipelineService
 
 logging.basicConfig(
     level=logging.INFO,
