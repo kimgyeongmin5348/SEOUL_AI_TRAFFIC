@@ -153,34 +153,6 @@ uv run python scripts/process_data.py
 | `uv run python scripts/collect_data.py --all` | 서울시 OpenAPI 및 기상청 API 최신 데이터 일괄 수집 |
 | `uv run python scripts/import_traffic_excel.py --all-spots` | `data/raw/` 내 24개 엑셀 파일 전수 DB 벌크 적재 |
 
----
-
-## 📁 디렉터리 구조
-
-```text
-SEOUL_AI_TRAFFIC/
-├── backend/
-│   ├── app/
-│   │   ├── core/config.py              # 환경설정 (.env 로드)
-│   │   ├── db/database.py              # SQLAlchemy DB 연결
-│   │   └── services/
-│   │       ├── seoul_client.py         # 서울시 TOPIS OpenAPI 클라이언트
-│   │       ├── kma_client.py           # 기상청 ASOS OpenAPI 클라이언트
-│   │       ├── collector_service.py    # 데이터 수집 및 DB 적재 오케스트레이터
-│   │       └── data_pipeline.py        # DB 추출 & Feature Engineering 파이프라인
-│   └── .env                            # DB 및 API 키 (Git 제외)
-│
-├── data/                               # (대용량 파일 Git 제외, .gitkeep 유지)
-│   ├── raw/                            # DB 원본 덤프 스냅샷
-│   ├── external/                       # 보조 메타데이터 (지점 좌표 등)
-│   └── processed/                      # 최종 AI 학습용 정제 데이터셋
-│       ├── traffic_training_dataset.csv
-│       └── feature_meta.json
-│
-├── ml/                                 # 머신러닝/딥러닝 모델 모듈
-├── scripts/                            # CLI 실행 스크립트 (수집, 전처리, 학습)
-└── README.md
-```
 
 ---
 
