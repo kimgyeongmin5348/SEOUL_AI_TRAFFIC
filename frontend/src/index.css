@@ -1,0 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+@theme inline {
+  --color-background: #eef0f5;
+  --color-foreground: #1a1a2e;
+  --color-card: rgba(255, 255, 255, 0.72);
+  --color-card-foreground: #1a1a2e;
+  --color-primary: #007aff;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: rgba(255, 255, 255, 0.5);
+  --color-secondary-foreground: #4a4a68;
+  --color-muted: rgba(120, 120, 150, 0.12);
+  --color-muted-foreground: #6b6b8a;
+  --color-accent: #5e5ce6;
+  --color-accent-foreground: #ffffff;
+  --color-border: rgba(255, 255, 255, 0.7);
+  --color-ring: #007aff;
+
+  --color-traffic-green: #34c759;
+  --color-traffic-yellow: #ff9500;
+  --color-traffic-red: #ff3b30;
+  --color-traffic-ai: #5e5ce6;
+
+  --font-display: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: #eef0f5;
+  color: #1a1a2e;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.glass-dark {
+  background: rgba(26, 26, 46, 0.72);
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.glass-subtle {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.fade-in {
+  animation: fadeIn 0.35s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pulse-dot {
+  animation: pulseDot 2s infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.85); }
+}
+
