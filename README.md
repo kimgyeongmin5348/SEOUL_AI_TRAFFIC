@@ -171,5 +171,3 @@ uv run python scripts/process_data.py
 ## 실시간 운영 데이터 흐름
 
 `traffic_training_dataset.csv`는 시간순 8:2 분할 후 모델 학습과 오프라인 검증에 사용하며, 실시간 API 데이터로 덮어쓰지 않습니다. 실시간 수집 데이터는 RDS 측정 테이블에 누적하고, 모델이 생성한 예측은 `traffic_predictions`에 저장합니다. 예측 대상 시간이 지난 후 실제 교통량을 `actual_volume`에 연결하고 `data/online/realtime_test_dataset.csv`로 내보내 온라인 성능을 평가합니다.
-
-스케줄러 실행 전 `backend/src/db/migrations/001_add_prediction_direction.sql`을 기존 RDS에 1회 적용해야 합니다. LightGBM 학습 결과는 `ml/artifacts/lightgbm/`의 `.joblib`와 기존 `model_versions` 테이블에 함께 저장합니다.

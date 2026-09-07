@@ -20,19 +20,15 @@ from ml.src.util.config import (
     RANDOM_STATE,
     TARGET_COLUMN,
 )
-from ml.src.util.paths import ARTIFACTS_DIR, TRAINING_DATASET
-from ml.src.util.train import evaluate, load_full_dataset, load_time_split, register_model_version, save_artifact, save_metrics
+from ml.src.util.paths import ML_MODELS_DIR, REPORTS_DIR, TRAINING_DATASET
+from ml.src.util.train import evaluate, load_full_dataset, load_time_split, save_if_better
 
 
-def main() -> None:
+def train_model(*, input_path: Path | None = None, nrows: int | None = None, no_db: bool = False) -> dict:
+    dataset_path = input_path or TRAINING_DATASET
     parser = argparse.ArgumentParser(description="Train the LightGBM baseline")
-    parser.add_argument("--input", type=Path, default=TRAINING_DATASET)
-    parser.add_argument("--nrows", type=int, default=None)
-    parser.add_argument("--no-db", action="store_true", help="DB model registry 저장 생략")
-    args = parser.parse_args()
-
     train, validation, features, cutoff = load_time_split(
-        args.input, target=TARGET_COLUMN, nrows=args.nrows
+        dataset_path, target=TARGET_COLUMN, nrows=nrows
     )
     params = {
         "objective": "regression",
@@ -47,13 +43,12 @@ def main() -> None:
     validation_model = LGBMRegressor(**params)
     validation_model.fit(train[features], train[TARGET_COLUMN])
     metrics = evaluate(validation_model, validation, features, TARGET_COLUMN)
-    full_df, full_features = load_full_dataset(args.input, target=TARGET_COLUMN, nrows=args.nrows)
+    full_df, full_features = load_full_dataset(dataset_path, target=TARGET_COLUMN, nrows=nrows)
     model = LGBMRegressor(**params)
     model.fit(full_df[full_features], full_df[TARGET_COLUMN])
 
     version = "traffic_lgbm_baseline_v1"
-    artifact = ARTIFACTS_DIR / "lightgbm" / f"{version}.joblib"
-    metrics_path = ARTIFACTS_DIR / "lightgbm" / f"{version}_metrics.json"
+    artifact = ML_MODELS_DIR / f"{version}.joblib"
     result = {
         "model_version": version,
         "algorithm": "LightGBM",
@@ -62,17 +57,26 @@ def main() -> None:
         "train_rows": len(full_df),
         "validation_rows": len(validation),
         "feature_columns": full_features,
+        "hyperparameters": params,
         **metrics,
     }
-    save_artifact(model, artifact)
-    save_metrics(metrics_path, result)
-    if not args.no_db:
-        register_model_version(
-            model_version=version,
-            algorithm="LightGBM",
-            hyperparameters=params,
-            metrics=metrics,
-            artifact_path=artifact,
-            trained_at=datetime.now(),
-        )
+    report_path = REPORTS_DIR / f"{version}_report.csv"
+    accepted = save_if_better(
+        model=model,
+        artifact_path=artifact,
+        report_path=report_path,
+        report=result,
+        no_db=no_db,
+    )
+    result["accepted"] = accepted
     print(result)
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Train the LightGBM baseline")
+    parser.add_argument("--input", type=Path, default=TRAINING_DATASET)
+    parser.add_argument("--nrows", type=int, default=None)
+    parser.add_argument("--no-db", action="store_true", help="DB model registry 저장 생략")
+    args = parser.parse_args()
+    train_model(input_path=args.input, nrows=args.nrows, no_db=args.no_db)
