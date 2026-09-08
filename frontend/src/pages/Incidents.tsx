@@ -1,7 +1,9 @@
-import { useState } from "react"
+﻿import { useState } from "react"
 import Sidebar from "../components/Sidebar"
 import MapPlaceholder from "../components/MapPlaceholder"
-import { incidents } from "../data/mock"
+import { incidents as defaultIncidents } from "../data/mock"
+import { fetchIncidentsData } from "../services/api"
+import { useEffect } from "react"
 
 const impactColor = { high: "#ff3b30", medium: "#ff9500", low: "#34c759" }
 const impactLabel = { high: "높음", medium: "보통", low: "낮음" }
@@ -16,6 +18,25 @@ const typeIcon: Record<string, string> = {
 export default function Incidents() {
   const [selected, setSelected] = useState<number | null>(null)
   const [filter, setFilter] = useState("전체")
+  const [incidentsState, setIncidentsState] = useState({
+    incidents: defaultIncidents,
+    latestAt: null as string | null,
+    isFromDb: false,
+  })
+
+  useEffect(() => {
+    let active = true
+    fetchIncidentsData().then((res) => {
+      if (active) {
+        setIncidentsState(res)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const incidents = incidentsState.incidents
   const filters = ["전체", "사고", "공사", "통제", "기타"]
 
   const filtered =
@@ -28,7 +49,9 @@ export default function Incidents() {
               ? i.type === "공사"
               : filter === "통제"
                 ? i.type === "도로통제"
-                : true,
+                : filter === "기타"
+                  ? !["사고", "공사", "도로통제"].includes(i.type)
+                  : true,
         )
 
   const selInc = incidents.find((i) => i.id === selected)
@@ -59,12 +82,42 @@ export default function Incidents() {
             </span>
           </div>
         </div>
-        <p
-          className="text-[#6b6b8a] text-sm mb-5"
-          style={{ fontFamily: "var(--font-body)" }}
-        >
-          사고 · 공사 · 차량고장 · 도로통제 실시간 현황
-        </p>
+        <div className="flex items-center gap-2 mb-5">
+          <p
+            className="text-[#6b6b8a] text-sm"
+            style={{ fontFamily: "var(--font-body)" }}
+          >
+            사고 · 공사 · 차량고장 · 도로통제 실시간 현황
+          </p>
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+            style={{
+              background: incidentsState.isFromDb
+                ? "rgba(52,199,89,0.12)"
+                : "rgba(94,92,230,0.12)",
+              color: incidentsState.isFromDb ? "#248a3d" : "#5e5ce6",
+              fontFamily: "var(--font-body)",
+            }}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                incidentsState.isFromDb ? "bg-[#34c759]" : "bg-[#5e5ce6]"
+              }`}
+            />
+            {incidentsState.isFromDb ? "DB 실시간 연동" : "예시 데이터"}
+          </span>
+          {incidentsState.latestAt && (
+            <span
+              className="text-xs text-[#6b6b8a]"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              수집: {new Date(incidentsState.latestAt).toLocaleTimeString("ko-KR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          )}
+        </div>
 
         <div className="flex flex-col lg:flex-row gap-4">
           {/* List */}
@@ -188,7 +241,7 @@ export default function Incidents() {
             className="relative flex-1 glass"
             style={{ borderRadius: 24, overflow: "hidden" }}
           >
-            <MapPlaceholder height={560} />
+            <MapPlaceholder height={560} incidents={incidents} selectedIncidentId={selected} onSelectIncident={(inc) => setSelected(Number(inc.id))} />
             {selInc && (
               <div
                 className="absolute bottom-6 right-6 glass p-4 w-64 fade-in"

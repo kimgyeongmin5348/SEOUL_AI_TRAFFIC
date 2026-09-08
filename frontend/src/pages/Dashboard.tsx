@@ -1,93 +1,126 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
 import MapPlaceholder from "../components/MapPlaceholder"
-import { kpiData, incidents } from "../data/mock"
-
-const kpis = [
-  {
-    label: "서울 평균 속도",
-    value: `${kpiData.avgSpeed}`,
-    unit: "km/h",
-    delta: `${kpiData.avgSpeedDelta}`,
-    color: "#ff9500",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
-        <path
-          d="M10 6v4l2.5 2"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-  },
-  {
-    label: "현재 돌발상황",
-    value: `${kpiData.incidents}`,
-    unit: "건",
-    delta: "+2",
-    color: "#ff3b30",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <path
-          d="M10 3L2 17h16L10 3z"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M10 9v4"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-        <circle cx="10" cy="14.5" r="0.75" fill="currentColor" />
-      </svg>
-    ),
-  },
-  {
-    label: "혼잡 도로 구간",
-    value: `${kpiData.congested}`,
-    unit: "구간",
-    delta: "+3",
-    color: "#ff3b30",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <path
-          d="M2 10h16M6 6h8M8 14h4"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-  },
-  {
-    label: "AI 예측 혼잡",
-    value: `${kpiData.aiPredicted}`,
-    unit: "구간",
-    delta: "+1시간",
-    color: "#5e5ce6",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
-        <path
-          d="M6 13l2-4 3 3 3-6"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    ),
-  },
-]
+import { kpiData as defaultKpiData, incidents as defaultIncidents } from "../data/mock"
+import { fetchDashboardData, fetchFavoriteRoutes, FavoriteRouteItem } from "../services/api"
 
 export default function Dashboard() {
   const navigate = useNavigate()
   const [search, setSearch] = useState("")
+  const [selectedIncidentId, setSelectedIncidentId] = useState<number | string | null>(null)
+  const [favoriteRoutes, setFavoriteRoutes] = useState<FavoriteRouteItem[]>([])
+  const [data, setData] = useState({
+    kpi: defaultKpiData,
+    incidents: defaultIncidents,
+    roadSpeeds: [] as Array<{ road: string; speed: number; avg: number; level: string }>,
+    latestAt: null as string | null,
+    isFromDb: false,
+  })
+
+  useEffect(() => {
+    let active = true
+    fetchDashboardData().then((res) => {
+      if (active) {
+        setData({
+          kpi: res.kpi,
+          incidents: res.incidents,
+          roadSpeeds: res.roadSpeeds,
+          latestAt: res.latestAt,
+          isFromDb: res.isFromDb,
+        })
+      }
+    })
+    fetchFavoriteRoutes().then((res) => {
+      if (active && res.routes && res.routes.length > 0) {
+        setFavoriteRoutes(res.routes)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const kpis = [
+    {
+      label: "서울 평균 속도",
+      value: `${data.kpi.avgSpeed}`,
+      unit: "km/h",
+      delta: `${data.kpi.avgSpeedDelta > 0 ? `+${data.kpi.avgSpeedDelta}` : data.kpi.avgSpeedDelta}`,
+      color: "#ff9500",
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
+          <path
+            d="M10 6v4l2.5 2"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+        </svg>
+      ),
+    },
+    {
+      label: "현재 돌발상황",
+      value: `${data.kpi.incidents}`,
+      unit: "건",
+      delta: data.isFromDb ? "실측" : "+2",
+      color: "#ff3b30",
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path
+            d="M10 3L2 17h16L10 3z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M10 9v4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+          <circle cx="10" cy="14.5" r="0.75" fill="currentColor" />
+        </svg>
+      ),
+    },
+    {
+      label: "혼잡 도로 구간",
+      value: `${data.kpi.congested}`,
+      unit: "구간",
+      delta: data.isFromDb ? "실측" : "+3",
+      color: "#ff3b30",
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path
+            d="M2 10h16M6 6h8M8 14h4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+        </svg>
+      ),
+    },
+    {
+      label: "AI 예측 혼잡",
+      value: `${data.kpi.aiPredicted}`,
+      unit: "구간",
+      delta: "+1시간",
+      color: "#5e5ce6",
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
+          <path
+            d="M6 13l2-4 3 3 3-6"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ),
+    },
+  ]
 
   return (
     <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
@@ -109,13 +142,34 @@ export default function Dashboard() {
               >
                 교통 대시보드
               </h1>
-              <p
-                className="text-[#6b6b8a] text-sm mt-0.5"
-                style={{ fontFamily: "var(--font-body)" }}
-              >
-                서울 교통 UI 데모 · 예시 데이터{" "}
-                <span className="pulse-dot inline-block w-1.5 h-1.5 bg-[#5e5ce6] rounded-full ml-1" />
-              </p>
+              <div className="flex items-center gap-2 mt-1">
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                  style={{
+                    background: data.isFromDb
+                      ? "rgba(52,199,89,0.12)"
+                      : "rgba(94,92,230,0.12)",
+                    color: data.isFromDb ? "#248a3d" : "#5e5ce6",
+                    fontFamily: "var(--font-body)",
+                  }}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${data.isFromDb ? "bg-[#34c759]" : "bg-[#5e5ce6]"}`}
+                  />
+                  {data.isFromDb ? "DB 실시간 연동" : "예시 데이터"}
+                </span>
+                {data.latestAt && (
+                  <span
+                    className="text-xs text-[#6b6b8a]"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    수집: {new Date(data.latestAt).toLocaleTimeString("ko-KR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                )}
+              </div>
             </div>
             <div className="text-right hidden sm:block">
               <p
@@ -227,117 +281,146 @@ export default function Dashboard() {
                   />
                 </svg>
                 <input
-                  className="w-full pl-9 pr-4 py-2.5 text-sm outline-none placeholder:text-[#b0b0c8]"
-                  style={{
-                    background: "rgba(240,242,248,0.8)",
-                    borderRadius: 14,
-                    border: "1px solid rgba(255,255,255,0.9)",
-                    fontFamily: "var(--font-body)",
-                    color: "#1a1a2e",
-                  }}
-                  placeholder="도로명, 지역, 교통 측정지점을 검색하세요"
+                  type="text"
+                  placeholder="도로명 또는 지역 검색 (예: 강남대로, 마포구, 올림픽대로)..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-xs rounded-xl outline-none placeholder:text-[#b0b0c8]"
+                  style={{
+                    background: "rgba(240,242,248,0.8)",
+                    border: "1px solid rgba(255,255,255,0.8)",
+                    fontFamily: "var(--font-body)",
+                  }}
                 />
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#6b6b8a] hover:text-[#1a1a2e]"
+                  >
+                    초기화
+                  </button>
+                )}
+              </div>
+              {/* 추천 검색 칩 */}
+              <div className="flex items-center gap-1.5 mt-2 overflow-x-auto text-xs">
+                <span className="text-[#6b6b8a] whitespace-nowrap text-[11px]">빠른 이동:</span>
+                {["강남", "여의도", "마포", "종로", "강변북로", "올림픽대로", "내부순환로"].map((place) => (
+                  <button
+                    key={place}
+                    onClick={() => setSearch(place)}
+                    className="px-2 py-0.5 rounded-lg bg-white/70 hover:bg-white text-[#4a4a68] border border-black/5 transition-all text-[11px] whitespace-nowrap cursor-pointer"
+                  >
+                    {place}
+                  </button>
+                ))}
               </div>
             </div>
-            <MapPlaceholder height={420} />
+            <MapPlaceholder height={420} searchQuery={search} incidents={data.incidents} roadSpeeds={data.roadSpeeds} selectedIncidentId={selectedIncidentId} onSelectIncident={(inc) => setSelectedIncidentId(inc.id)} />
           </div>
 
           {/* Right panel */}
           <div className="lg:w-72 flex flex-col gap-3">
             {/* Quick routes */}
             <div className="glass p-4" style={{ borderRadius: 20 }}>
-              <h3
-                className="text-[#1a1a2e] mb-3"
-                style={{
-                  fontFamily: "var(--font-display)",
-                  fontWeight: 600,
-                  fontSize: 14,
-                }}
-              >
-                자주 이용하는 경로
-              </h3>
-              {[
-                {
-                  label: "출근",
-                  route: "합정 → 역삼",
-                  time: 43,
-                  delta: "+8",
-                  color: "#ff9500",
-                },
-                {
-                  label: "귀가",
-                  route: "역삼 → 합정",
-                  time: 52,
-                  delta: "+14",
-                  color: "#ff3b30",
-                },
-              ].map((r) => (
-                <div
-                  key={r.label}
-                  className="flex items-center justify-between py-2.5 cursor-pointer hover:bg-white/30 px-2 -mx-2 rounded-xl transition-colors"
-                  onClick={() => navigate("/route")}
+              <div className="flex items-center justify-between mb-3">
+                <h3
+                  className="text-[#1a1a2e]"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 600,
+                    fontSize: 14,
+                  }}
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="text-xs px-2 py-0.5 rounded-full font-medium"
-                        style={{
-                          background: "rgba(240,242,248,0.9)",
-                          color: "#4a4a68",
-                          fontFamily: "var(--font-body)",
-                        }}
-                      >
-                        {r.label}
-                      </span>
-                      <span
-                        className="text-xs text-[#6b6b8a]"
-                        style={{ fontFamily: "var(--font-body)" }}
-                      >
-                        {r.route}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span
-                        className="font-semibold"
-                        style={{
-                          fontFamily: "var(--font-display)",
-                          fontSize: 18,
-                          color: "#1a1a2e",
-                          letterSpacing: "-0.01em",
-                        }}
-                      >
-                        {r.time}분
-                      </span>
-                      <span
-                        className="text-xs font-medium"
-                        style={{
-                          color: r.color,
-                          fontFamily: "var(--font-mono)",
-                        }}
-                      >
-                        {r.delta}분
-                      </span>
-                    </div>
-                  </div>
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    className="text-[#b0b0c8]"
-                  >
-                    <path
-                      d="M6 4l4 4-4 4"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  자주 이용하는 경로
+                </h3>
+                <button
+                  onClick={() => navigate("/favorites")}
+                  className="text-xs text-[#007aff] hover:underline cursor-pointer"
+                  style={{ fontFamily: "var(--font-body)" }}
+                >
+                  랭킹보기
+                </button>
+              </div>
+              {favoriteRoutes.length === 0 ? (
+                <div className="text-xs text-[#6b6b8a] py-3 text-center">
+                  경로 검색 이력이 없습니다.
                 </div>
-              ))}
+              ) : (
+                favoriteRoutes.slice(0, 3).map((r, idx) => {
+                  const deltaStr = r.delta > 0 ? `+${r.delta}분` : r.delta < 0 ? `${r.delta}분` : "정상"
+                  const color = r.status === "red" ? "#ff3b30" : r.status === "yellow" ? "#ff9500" : "#34c759"
+                  return (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between py-2.5 cursor-pointer hover:bg-white/40 px-2 -mx-2 rounded-xl transition-colors"
+                      onClick={() =>
+                        navigate(
+                          `/route?origin=${encodeURIComponent(r.origin)}&dest=${encodeURIComponent(r.destination)}`
+                        )
+                      }
+                      title="클릭 시 이 경로로 즉시 이동합니다"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="text-xs px-2 py-0.5 rounded-full font-medium"
+                            style={{
+                              background: idx === 0 ? "rgba(255,149,0,0.15)" : "rgba(240,242,248,0.9)",
+                              color: idx === 0 ? "#ff9500" : "#4a4a68",
+                              fontFamily: "var(--font-body)",
+                            }}
+                          >
+                            {idx + 1}위 · {r.search_count}회
+                          </span>
+                          <span
+                            className="text-xs text-[#6b6b8a]"
+                            style={{ fontFamily: "var(--font-body)" }}
+                          >
+                            {r.label}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span
+                            className="font-semibold"
+                            style={{
+                              fontFamily: "var(--font-display)",
+                              fontSize: 18,
+                              color: "#1a1a2e",
+                              letterSpacing: "-0.01em",
+                            }}
+                          >
+                            {r.currentTime}분
+                          </span>
+                          <span
+                            className="text-xs font-medium"
+                            style={{
+                              color,
+                              fontFamily: "var(--font-mono)",
+                            }}
+                          >
+                            {deltaStr}
+                          </span>
+                        </div>
+                      </div>
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        className="text-[#b0b0c8]"
+                      >
+                        <path
+                          d="M6 4l4 4-4 4"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                  )
+                })
+              )}
             </div>
 
             {/* Recent incidents */}
@@ -361,33 +444,45 @@ export default function Dashboard() {
                   전체보기
                 </button>
               </div>
-              <div className="flex flex-col gap-2">
-                {incidents.slice(0, 4).map((inc) => {
+              <div className="flex flex-col gap-1.5">
+                {data.incidents.slice(0, 4).map((inc) => {
                   const colors: Record<string, string> = {
                     high: "#ff3b30",
                     medium: "#ff9500",
                     low: "#34c759",
                   }
+                  const isSelected = selectedIncidentId === inc.id
                   return (
-                    <div key={inc.id} className="flex items-start gap-2.5">
-                      <div
-                        className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0"
-                        style={{ background: colors[inc.impact] }}
-                      />
-                      <div>
-                        <p
-                          className="text-xs font-medium text-[#1a1a2e]"
-                          style={{ fontFamily: "var(--font-body)" }}
-                        >
-                          {inc.type} · {inc.road}
-                        </p>
-                        <p
-                          className="text-xs text-[#6b6b8a]"
-                          style={{ fontFamily: "var(--font-body)" }}
-                        >
-                          {inc.startTime} 발생
-                        </p>
+                    <div
+                      key={inc.id}
+                      onClick={() => setSelectedIncidentId(inc.id)}
+                      className={`flex items-start justify-between p-2 rounded-xl cursor-pointer transition-all ${isSelected ? "bg-white shadow-sm border border-[#007aff]/40" : "hover:bg-white/50 border border-transparent"}`}
+                      title="클릭 시 지도에서 해당 위치로 이동합니다"
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <div
+                          className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                          style={{ background: colors[inc.impact] }}
+                        />
+                        <div className="min-w-0">
+                          <p
+                            className="text-xs font-semibold text-[#1a1a2e] truncate"
+                            style={{ fontFamily: "var(--font-body)" }}
+                          >
+                            {inc.type === "공사" ? "🚧 " : inc.type === "사고" ? "🚨 " : "⚠️ "}
+                            {inc.type} · {inc.road}
+                          </p>
+                          <p
+                            className="text-[11px] text-[#6b6b8a] truncate"
+                            style={{ fontFamily: "var(--font-body)" }}
+                          >
+                            {inc.startTime} 발생 · {inc.location}
+                          </p>
+                        </div>
                       </div>
+                      <span className="text-[10px] text-[#007aff] whitespace-nowrap ml-1 font-medium self-center opacity-80">
+                        {isSelected ? "위치표시 중" : "지도 이동 →"}
+                      </span>
                     </div>
                   )
                 })}

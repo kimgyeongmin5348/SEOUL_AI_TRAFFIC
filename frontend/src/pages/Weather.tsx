@@ -1,11 +1,41 @@
-import Sidebar from "../components/Sidebar"
-import { weatherData } from "../data/mock"
+﻿import Sidebar from "../components/Sidebar"
+import { weatherData as defaultWeatherData } from "../data/mock"
+import { fetchWeatherData } from "../services/api"
+import { useState, useEffect } from "react"
 
 const impactColor = { low: "#34c759", medium: "#ff9500", high: "#ff3b30" }
 const impactLabel = { low: "영향 낮음", medium: "주의", high: "영향 높음" }
 
+type WeatherInfo = Omit<typeof defaultWeatherData, "trafficImpact"> & {
+  trafficImpact: "low" | "medium" | "high"
+}
+
 export default function Weather() {
-  const w = weatherData
+  const [weatherState, setWeatherState] = useState<{
+    weather: WeatherInfo
+    history: { time: string; temp: number; humidity: number; rain: number }[]
+    latestAt: string | null
+    isFromDb: boolean
+  }>({
+    weather: defaultWeatherData as WeatherInfo,
+    history: [],
+    latestAt: null,
+    isFromDb: false,
+  })
+
+  useEffect(() => {
+    let active = true
+    fetchWeatherData().then((res) => {
+      if (active) {
+        setWeatherState(res)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const w = weatherState.weather
 
   return (
     <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
@@ -22,12 +52,45 @@ export default function Weather() {
         >
           기상 정보
         </h1>
-        <p
-          className="text-[#6b6b8a] text-sm mb-5"
-          style={{ fontFamily: "var(--font-body)" }}
-        >
-          교통에 영향을 주는 기상 변수 분석 · {w.station}
-        </p>
+        <div className="flex items-center gap-2 mb-5">
+          <p
+            className="text-[#6b6b8a] text-sm"
+            style={{ fontFamily: "var(--font-body)" }}
+          >
+            교통에 영향을 주는 기상 변수 분석 · {w.station}
+          </p>
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+            style={{
+              background: weatherState.isFromDb
+                ? "rgba(52,199,89,0.12)"
+                : "rgba(94,92,230,0.12)",
+              color: weatherState.isFromDb ? "#248a3d" : "#5e5ce6",
+              fontFamily: "var(--font-body)",
+            }}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                weatherState.isFromDb ? "bg-[#34c759]" : "bg-[#5e5ce6]"
+              }`}
+            />
+            {weatherState.isFromDb ? "DB 실시간 연동" : "예시 데이터"}
+          </span>
+          {weatherState.latestAt && (
+            <span
+              className="text-xs text-[#6b6b8a]"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              관측: {new Date(weatherState.latestAt).toLocaleDateString("ko-KR", {
+                month: "short",
+                day: "numeric",
+              })} {new Date(weatherState.latestAt).toLocaleTimeString("ko-KR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Current weather card */}

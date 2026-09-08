@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import text
@@ -224,14 +224,13 @@ class DataCollectorService:
         # 관측소 마스터 존재 보장
         self.sync_weather_stations()
 
-        if not start_date or not end_date:
-            # ASOS는 시간 관측자료이므로 오늘 누적분 중 최신 관측 시각까지 조회합니다.
-            now = datetime.now()
-            start_date = now.strftime("%Y%m%d")
-            end_date = start_date
-            end_hour = max(now.hour - 1, 0)
-        else:
-            end_hour = 23
+        # ASOS 확정 관측자료: 한국시간 전일 00~23시를 기본으로 조회합니다.
+        yesterday = (datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)).strftime("%Y%m%d")
+        start_date = start_date or yesterday
+        end_date = end_date or yesterday
+        if start_date > end_date or end_date > yesterday:
+            raise ValueError("ASOS 조회 기간은 시작일 <= 종료일 <= 한국시간 어제여야 합니다.")
+        end_hour = 23
 
         records = self.kma_client.get_hourly_weather(
             station_id=station_id,

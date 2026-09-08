@@ -1,6 +1,6 @@
-def main():
-    print("Hello from seoul-ai-traffic!")
+from backend.src.api.app import app
 
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)

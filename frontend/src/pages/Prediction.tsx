@@ -1,4 +1,4 @@
-import { useState } from "react"
+﻿import { useState } from "react"
 import {
   LineChart,
   Line,
@@ -12,7 +12,12 @@ import {
   AreaChart,
 } from "recharts"
 import Sidebar from "../components/Sidebar"
-import { predictionData, congestionPrediction } from "../data/mock"
+import {
+  predictionData as defaultPredictionData,
+  congestionPrediction as defaultCongestionPrediction,
+} from "../data/mock"
+import { fetchPredictionData } from "../services/api"
+import { useEffect } from "react"
 
 const trendColor = { up: "#ff3b30", down: "#34c759", stable: "#007aff" }
 const trendIcon = { up: "↑", down: "↓", stable: "→" }
@@ -24,6 +29,27 @@ const levelBg = {
 
 export default function Prediction() {
   const [horizon, setHorizon] = useState("+1시간")
+  const [predState, setPredState] = useState({
+    predictions: defaultPredictionData,
+    congestion: defaultCongestionPrediction,
+    latestAt: null as string | null,
+    isFromDb: false,
+  })
+
+  useEffect(() => {
+    let active = true
+    fetchPredictionData().then((res) => {
+      if (active) {
+        setPredState(res)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const predictionData = predState.predictions
+  const congestionPrediction = predState.congestion
 
   return (
     <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
@@ -52,14 +78,20 @@ export default function Prediction() {
           <div
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium"
             style={{
-              background: "rgba(94,92,230,0.1)",
-              color: "#5e5ce6",
-              border: "1px solid rgba(94,92,230,0.2)",
+              background: predState.isFromDb ? "rgba(52,199,89,0.1)" : "rgba(94,92,230,0.1)",
+              color: predState.isFromDb ? "#248a3d" : "#5e5ce6",
+              border: predState.isFromDb
+                ? "1px solid rgba(52,199,89,0.2)"
+                : "1px solid rgba(94,92,230,0.2)",
               fontFamily: "var(--font-body)",
             }}
           >
-            <div className="w-1.5 h-1.5 rounded-full bg-[#5e5ce6] pulse-dot" />
-            예시 모델 · 신뢰도 {predictionData[0].confidence}%
+            <div
+              className={`w-1.5 h-1.5 rounded-full pulse-dot ${
+                predState.isFromDb ? "bg-[#34c759]" : "bg-[#5e5ce6]"
+              }`}
+            />
+            {predState.isFromDb ? "DB 학습 모델" : "예시 모델"} · 신뢰도 {predictionData[0].confidence}%
           </div>
         </div>
 

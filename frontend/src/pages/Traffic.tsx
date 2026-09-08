@@ -1,4 +1,4 @@
-import { useState } from "react"
+﻿import { useState } from "react"
 import {
   LineChart,
   Line,
@@ -12,13 +12,47 @@ import {
   ReferenceLine,
 } from "recharts"
 import Sidebar from "../components/Sidebar"
-import { trafficTimeData, roadSpeedData } from "../data/mock"
+import {
+  trafficTimeData as defaultTrafficTimeData,
+  roadSpeedData as defaultRoadSpeedData,
+} from "../data/mock"
+import { fetchTrafficData } from "../services/api"
+import { useEffect } from "react"
 
 const levelColor = { red: "#ff3b30", yellow: "#ff9500", green: "#34c759" }
 
 export default function Traffic() {
   const [selectedRoad, setSelectedRoad] = useState("강변북로")
-  const road = roadSpeedData.find((r) => r.road === selectedRoad)!
+  const [trafficData, setTrafficData] = useState({
+    timeData: defaultTrafficTimeData,
+    roadSpeeds: defaultRoadSpeedData,
+    latestAt: null as string | null,
+    isFromDb: false,
+  })
+
+  useEffect(() => {
+    let active = true
+    fetchTrafficData().then((res) => {
+      if (active) {
+        setTrafficData(res)
+        if (res.roadSpeeds.length > 0 && !res.roadSpeeds.some((r) => r.road === selectedRoad)) {
+          setSelectedRoad(res.roadSpeeds[0].road)
+        }
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const roadSpeedData = trafficData.roadSpeeds
+  const trafficTimeData = trafficData.timeData
+  const road = roadSpeedData.find((r) => r.road === selectedRoad) || roadSpeedData[0] || {
+    road: "강변북로",
+    speed: 30,
+    avg: 45,
+    level: "yellow" as const,
+  }
 
   return (
     <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
@@ -35,12 +69,42 @@ export default function Traffic() {
         >
           교통 분석
         </h1>
-        <p
-          className="text-[#6b6b8a] text-sm mb-5"
-          style={{ fontFamily: "var(--font-body)" }}
-        >
-          시간대별 교통량 및 도로 속도 데이터
-        </p>
+        <div className="flex items-center gap-2 mb-5">
+          <p
+            className="text-[#6b6b8a] text-sm"
+            style={{ fontFamily: "var(--font-body)" }}
+          >
+            시간대별 교통량 및 도로 속도 데이터
+          </p>
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+            style={{
+              background: trafficData.isFromDb
+                ? "rgba(52,199,89,0.12)"
+                : "rgba(94,92,230,0.12)",
+              color: trafficData.isFromDb ? "#248a3d" : "#5e5ce6",
+              fontFamily: "var(--font-body)",
+            }}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                trafficData.isFromDb ? "bg-[#34c759]" : "bg-[#5e5ce6]"
+              }`}
+            />
+            {trafficData.isFromDb ? "DB 실시간 연동" : "예시 데이터"}
+          </span>
+          {trafficData.latestAt && (
+            <span
+              className="text-xs text-[#6b6b8a]"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              수집: {new Date(trafficData.latestAt).toLocaleTimeString("ko-KR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          )}
+        </div>
 
         {/* Filters */}
         <div

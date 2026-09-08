@@ -19,6 +19,8 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("CollectDataCLI")
+# 서울 OpenAPI 인증키는 URL 경로에 포함되므로 HTTP 요청 URL 로깅을 끕니다.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 if sys.platform == "win32":

@@ -37,7 +37,7 @@ SEOUL_AI_TRAFFIC/
 │   │   ├── layouts/                  # 화면 공통 레이아웃
 │   │   ├── pages/                    # 대시보드, 교통, 날씨, 예측 등 화면
 │   │   ├── services/                 # 백엔드 API 호출 모듈
-│   │   ├── data/mock.ts              # 현재 화면 검증용 임시 데이터
+│   │   ├── components/DataPage.tsx    # DB 수집본 조회 화면
 │   │   ├── types/                    # 프론트엔드 TypeScript 타입
 │   │   ├── utils/                    # 프론트엔드 공통 유틸리티
 │   │   ├── App.tsx                   # 페이지 라우팅
@@ -73,7 +73,7 @@ SEOUL_AI_TRAFFIC/
 │       │   ├── lightgbm/
 │       │   └── xgboost/
 │       └── util/                     # 공통 경로·분할·평가·DB 등록
-├── main.py                           # 현재 기본 실행 진입점 (향후 백엔드로 대체)
+├── main.py                           # FastAPI 서버 실행 진입점
 ├── pyproject.toml                    # Python 의존성 및 개발 도구 설정
 ├── uv.lock                           # Python 의존성 잠금 파일
 ├── .gitignore                        # 환경변수 및 대용량 파일 제외 설정
@@ -87,8 +87,8 @@ SEOUL_AI_TRAFFIC/
 | `backend/src/db/` | DB 테이블을 추가·수정하거나 연결 설정을 관리합니다. 스키마 변경 시 ERD도 함께 갱신합니다. |
 | `backend/src/services/` | 외부 API 연동, 데이터 수집, DB 적재, 전처리 로직을 구현합니다. API 키는 코드에 직접 작성하지 않습니다. |
 | `frontend/src/components/` | 여러 화면에서 재사용하는 UI 컴포넌트를 작성합니다. |
-| `frontend/src/pages/` | 사용자 기능별 화면을 구현합니다. 백엔드 연동 전까지는 `data/mock.ts`를 사용할 수 있습니다. |
-| `frontend/src/data/` | 임시 목업 데이터만 관리합니다. 실제 기능 완성 시 백엔드 API 호출로 교체합니다. |
+| `frontend/src/pages/` | 사용자 기능별 화면을 구현합니다. 실제 DB 조회 API를 사용하며, 결측과 오류를 구분해 표시합니다. |
+| `frontend/src/data/` | 가상 측정값은 사용하지 않습니다. |
 | `scripts/` | 데이터 수집·적재·전처리처럼 반복 실행할 작업을 CLI 스크립트로 추가합니다. |
 | `data/` | 원본·중간·학습 데이터를 저장합니다. 대용량 파일은 Git에 커밋하지 않습니다. |
 | `ml/src/models/` | LightGBM·XGBoost별 학습·추론 코드를 구현합니다. |
@@ -171,3 +171,23 @@ uv run python scripts/process_data.py
 ## 실시간 운영 데이터 흐름
 
 `traffic_training_dataset.csv`는 시간순 8:2 분할 후 모델 학습과 오프라인 검증에 사용하며, 실시간 API 데이터로 덮어쓰지 않습니다. 실시간 수집 데이터는 RDS 측정 테이블에 누적하고, 모델이 생성한 예측은 `traffic_predictions`에 저장합니다. 예측 대상 시간이 지난 후 실제 교통량을 `actual_volume`에 연결하고 `data/online/realtime_test_dataset.csv`로 내보내 온라인 성능을 평가합니다.
+## DB 연결 화면 실행
+
+```powershell
+uv run python main.py
+# 별도 터미널
+cd frontend
+pnpm dev
+```
+
+화면: http://localhost:5173/dashboard. Vite의 `/api` 프록시가 로컬 8000번 FastAPI 서버로 연결합니다.
+배포 시에도 `/api`를 백엔드로 전달하는 reverse proxy가 필요합니다.
+`GET /api/data/{traffic|speed|weather|incidents|prediction}`은 기존 DB에서 최대 500행을 조회합니다.
+교통량은 최신 측정 시각의 지점/방향별 차로 합계, 속도는 최신 시각의 수집 링크,
+날씨는 최신 관측일의 시간별 값, 돌발은 마지막 수집일의 이력, 예측은 최신 생성 묶음입니다.
+측정 시각은 한국시간으로 표시하며, 자동 수집이나 실시간 갱신은 화면 실행만으로 시작되지 않습니다.
+빈 DB와 연결 실패를 별도로 표시하며, 예측·경로·날씨 예보를 가상값으로 채우지 않습니다.
+
+오늘 재수집: `uv run python scripts/collect_data.py --all`.
+ASOS 날씨 기본 조회는 한국시간 어제 00~23시입니다. 전일 자료 공개가 지연되면 다시 수집해야 합니다.
+기상청 안내: https://data.kma.go.kr/data/grnd/selectAsosRltmList.do?pgmNo=36
