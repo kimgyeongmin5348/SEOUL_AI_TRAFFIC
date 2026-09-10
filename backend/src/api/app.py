@@ -6,8 +6,11 @@ import hmac
 import os
 import re
 import secrets
+from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -19,6 +22,11 @@ app = FastAPI(title="RoadPulse")
 KST = timezone(timedelta(hours=9))
 SESSION_COOKIE = "roadpulse_session"
 SESSION_DAYS = 30
+
+
+@app.get("/api/health", tags=["system"])
+def health_check():
+    return {"status": "ok"}
 
 # Identifiers are fixed here; no SQL identifiers come from request input.
 DATASETS = {
@@ -334,3 +342,19 @@ def predict_route_candidates(req: RoutePredictionRequest, db: Session = Depends(
         import logging
         logging.getLogger(__name__).exception("Route model inference failed")
         raise HTTPException(503, "학습 모델 추론에 실패해 AI 추천을 사용할 수 없습니다.") from None
+
+
+# Production serves the Vite build from the API origin so HttpOnly login
+# cookies work without cross-site CORS configuration.
+FRONTEND_DIST = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+if FRONTEND_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="frontend-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_frontend(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(404, "API 경로를 찾을 수 없습니다.")
+        requested = (FRONTEND_DIST / full_path).resolve()
+        if requested.is_relative_to(FRONTEND_DIST.resolve()) and requested.is_file():
+            return FileResponse(requested)
+        return FileResponse(FRONTEND_DIST / "index.html")

@@ -191,3 +191,16 @@ pnpm dev
 오늘 재수집: `uv run python scripts/collect_data.py --all`.
 ASOS 날씨 기본 조회는 한국시간 어제 00~23시입니다. 전일 자료 공개가 지연되면 다시 수집해야 합니다.
 기상청 안내: https://data.kma.go.kr/data/grnd/selectAsosRltmList.do?pgmNo=36
+
+## Render 배포
+
+루트의 `render.yaml`을 Blueprint로 가져오면 React 정적 빌드와 FastAPI가 하나의 Docker 웹 서비스로 배포됩니다. 동일 출처에서 `/api`와 화면을 제공하므로 로그인 쿠키를 위한 별도 CORS 설정은 필요하지 않습니다.
+
+1. 변경사항과 `ml/artifacts/ml_models`, `ml/artifacts/reports`의 배포용 모델 파일을 GitHub에 푸시합니다.
+2. Render Dashboard에서 **New > Blueprint**를 선택하고 이 저장소를 연결합니다.
+3. Blueprint 생성 화면에서 `DATABASE_URL`과 필요한 서울시·기상청 API 키를 Secret으로 입력합니다.
+4. 배포 완료 후 `/api/health`가 `{"status":"ok"}`를 반환하는지 확인합니다.
+
+`DATABASE_URL` 예시 형식은 `mysql+pymysql://USER:PASSWORD@HOST:3306/roadpulse`입니다. 실제 비밀번호와 API 키는 Git에 커밋하지 않습니다. AWS RDS 보안 그룹도 Render 서비스의 아웃바운드 연결을 허용해야 합니다.
+
+Render의 Auto-Deploy가 켜져 있으므로 이후 `main` 브랜치에 푸시하면 자동 재배포됩니다. DB 마이그레이션은 앱 시작 시 자동 실행하지 않으며, 배포 전에 검토 후 `python -m scripts.apply_sql_migration <파일명>`으로 별도 적용합니다.

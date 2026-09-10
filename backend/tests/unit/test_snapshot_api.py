@@ -8,6 +8,12 @@ from backend.src.api.app import app, get_db, serialize
 from backend.src.services.collector_service import DataCollectorService
 
 
+def test_health_check_does_not_require_database():
+    result = TestClient(app).get('/api/health')
+    assert result.status_code == 200
+    assert result.json() == {'status': 'ok'}
+
+
 def test_observations_and_db_collection_timestamps_have_distinct_timezones():
     stamp = datetime(2026, 9, 8, 1, 4)
     assert serialize(stamp).endswith('+09:00')

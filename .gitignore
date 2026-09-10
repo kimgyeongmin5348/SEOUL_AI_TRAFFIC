@@ -210,8 +210,13 @@ tempCodeRunnerFile.py
 ml/artifacts/*
 !ml/artifacts/lightgbm/
 !ml/artifacts/xgboost/
+!ml/artifacts/ml_models/
+!ml/artifacts/reports/
 !ml/artifacts/lightgbm/.gitkeep
 !ml/artifacts/xgboost/.gitkeep
+!ml/artifacts/ml_models/*.joblib
+!ml/artifacts/ml_models/*_metrics.json
+!ml/artifacts/reports/*.csv
 
 # PyPI configuration file
 .pypirc
