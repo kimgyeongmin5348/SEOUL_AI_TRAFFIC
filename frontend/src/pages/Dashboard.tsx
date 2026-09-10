@@ -253,7 +253,7 @@ export default function Dashboard() {
         <div className="px-4 md:px-8 flex flex-col lg:flex-row gap-4">
           {/* Map */}
           <div
-            className="glass flex-1"
+            className="glass flex-1 min-w-0 flex flex-col"
             style={{ borderRadius: 24, overflow: "hidden" }}
           >
             {/* Search bar */}

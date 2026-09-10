@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import NavBar from "../components/NavBar"
 
@@ -87,7 +87,32 @@ export default function Landing() {
   const navigate = useNavigate()
   const [origin, setOrigin] = useState("")
   const [dest, setDest] = useState("")
-  const [time, setTime] = useState("지금 출발")
+  const [timeMode, setTimeMode] = useState("now")
+  const [departureAt, setDepartureAt] = useState("")
+  const timeInputRef = useRef<HTMLInputElement>(null)
+
+  const toLocalInput = (date: Date) => {
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    return local.toISOString().slice(0, 16)
+  }
+
+  const selectOffset = (mode: string, minutes: number) => {
+    setTimeMode(mode)
+    setDepartureAt(minutes ? toLocalInput(new Date(Date.now() + minutes * 60_000)) : "")
+  }
+
+  const selectCustomTime = () => {
+    setTimeMode("custom")
+    if (!departureAt) setDepartureAt(toLocalInput(new Date(Date.now() + 30 * 60_000)))
+    setTimeout(() => timeInputRef.current?.showPicker?.(), 0)
+  }
+
+  const analyze = () => {
+    if (!origin.trim() || !dest.trim()) return
+    const params = new URLSearchParams({ origin: origin.trim(), dest: dest.trim() })
+    if (departureAt) params.set("departure", new Date(departureAt).toISOString())
+    navigate(`/route?${params.toString()}`)
+  }
 
   const handleSwap = () => {
     setOrigin(dest)
@@ -260,6 +285,7 @@ export default function Landing() {
             style={{ borderRadius: 28 }}
           >
             <div className="relative flex flex-col gap-2">
+              <div className="relative flex flex-col gap-2">
               {/* Origin */}
               <div className="relative">
                 <div
@@ -289,19 +315,17 @@ export default function Landing() {
                 </button>
               </div>
 
-              {/* Swap button */}
+              {/* Swap button: 두 입력칸 경계에 고정 */}
               <button
                 type="button"
                 aria-label="출발지와 도착지 바꾸기"
                 onClick={handleSwap}
-                className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center hover:scale-110 transition-transform z-10"
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center hover:scale-105 transition-transform z-10 shadow-sm"
                 style={{
                   background: "rgba(255,255,255,0.9)",
                   border: "1px solid rgba(0,122,255,0.2)",
                   borderRadius: 10,
                   color: "#007aff",
-                  right: "14px",
-                  top: "50%",
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -335,37 +359,71 @@ export default function Landing() {
                   onChange={(e) => setDest(e.target.value)}
                 />
               </div>
+              </div>
 
               {/* Time selector */}
               <div className="flex gap-2 mt-1">
-                {["지금 출발", "+30분", "+1시간", "시간 선택"].map((t) => (
+                {[
+                  { mode: "now", label: "지금 출발", minutes: 0 },
+                  { mode: "30m", label: "+30분", minutes: 30 },
+                  { mode: "1h", label: "+1시간", minutes: 60 },
+                ].map((option) => (
                   <button
-                    key={t}
-                    onClick={() => setTime(t)}
+                    key={option.mode}
+                    type="button"
+                    onClick={() => selectOffset(option.mode, option.minutes)}
                     className="flex-1 py-2 text-xs font-medium transition-all"
                     style={{
                       borderRadius: 12,
                       background:
-                        time === t
+                        timeMode === option.mode
                           ? "rgba(0,122,255,0.12)"
                           : "rgba(240,242,248,0.8)",
-                      color: time === t ? "#007aff" : "#6b6b8a",
+                      color: timeMode === option.mode ? "#007aff" : "#6b6b8a",
                       border: `1px solid ${
-                        time === t
+                        timeMode === option.mode
                           ? "rgba(0,122,255,0.3)"
                           : "rgba(255,255,255,0.9)"
                       }`,
                       fontFamily: "var(--font-body)",
                     }}
                   >
-                    {t}
+                    {option.label}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={selectCustomTime}
+                  className="flex-1 py-2 text-xs font-medium transition-all"
+                  style={{
+                    borderRadius: 12,
+                    background: timeMode === "custom" ? "rgba(0,122,255,0.12)" : "rgba(240,242,248,0.8)",
+                    color: timeMode === "custom" ? "#007aff" : "#6b6b8a",
+                    border: `1px solid ${timeMode === "custom" ? "rgba(0,122,255,0.3)" : "rgba(255,255,255,0.9)"}`,
+                  }}
+                >시간 선택</button>
               </div>
 
+              {timeMode === "custom" && (
+                <div className="rounded-xl bg-white/70 px-3 py-2 text-left">
+                  <label htmlFor="departure-time" className="block text-[11px] text-[#6b6b8a] mb-1">원하는 출발 시간 (최대 3시간 후)</label>
+                  <input
+                    ref={timeInputRef}
+                    id="departure-time"
+                    type="datetime-local"
+                    min={toLocalInput(new Date())}
+                    max={toLocalInput(new Date(Date.now() + 3 * 60 * 60_000))}
+                    value={departureAt}
+                    onChange={(e) => setDepartureAt(e.target.value)}
+                    className="w-full bg-transparent text-sm text-[#1a1a2e] outline-none"
+                  />
+                </div>
+              )}
+
               <button
-                onClick={() => navigate("/route")}
-                className="w-full py-3.5 font-semibold text-white mt-1 transition-all hover:opacity-90 active:scale-98"
+                onClick={analyze}
+                disabled={!origin.trim() || !dest.trim()}
+                className="w-full py-3.5 font-semibold text-white mt-1 transition-all hover:opacity-90 active:scale-98 disabled:opacity-50"
                 style={{
                   borderRadius: 18,
                   background:

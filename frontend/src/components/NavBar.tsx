@@ -1,7 +1,9 @@
 import { Link, useLocation } from "react-router-dom"
+import { useAuth } from "../auth"
 
 export default function NavBar() {
   const { pathname } = useLocation()
+  const { user, logout } = useAuth()
 
   const links = [
     { href: "/", label: "서비스 소개" },
@@ -77,17 +79,21 @@ export default function NavBar() {
             ))}
           </div>
 
-          <Link
-            to="/login"
+          {user ? <button
+            type="button"
+            onClick={() => void logout()}
+            title={user.email}
             className="px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 active:scale-95"
             style={{
               borderRadius: 12,
               background: "linear-gradient(135deg, #007aff, #5e5ce6)",
               fontFamily: "var(--font-body)",
             }}
-          >
-            로그인
-          </Link>
+          >로그아웃</button> : <Link
+            to="/login"
+            className="px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 active:scale-95"
+            style={{ borderRadius: 12, background: "linear-gradient(135deg, #007aff, #5e5ce6)", fontFamily: "var(--font-body)" }}
+          >로그인</Link>}
         </div>
       </div>
     </nav>

@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react"
 import { BrowserRouter, Route, Routes } from "react-router-dom"
+import { AuthProvider, RequireAuth } from "./auth"
 
 const Landing = lazy(() => import("./pages/Landing"))
 const Dashboard = lazy(() => import("./pages/Dashboard"))
@@ -14,6 +15,7 @@ const Login = lazy(() => import("./pages/Login"))
 export default function App() {
   return (
     <BrowserRouter>
+      <AuthProvider>
       <Suspense
         fallback={
           <div className="min-h-full grid place-items-center bg-[#eef0f5] text-[#6b6b8a]">
@@ -29,11 +31,12 @@ export default function App() {
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/weather" element={<Weather />} />
           <Route path="/prediction" element={<Prediction />} />
-          <Route path="/favorites" element={<Favorites />} />
+          <Route path="/favorites" element={<RequireAuth><Favorites /></RequireAuth>} />
           <Route path="/login" element={<Login />} />
           <Route path="*" element={<Landing />} />
         </Routes>
       </Suspense>
+      </AuthProvider>
     </BrowserRouter>
   )
 }

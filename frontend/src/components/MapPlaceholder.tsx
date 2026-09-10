@@ -128,6 +128,13 @@ export default function MapPlaceholder({
   const routeLayerGroupRef = useRef<L.LayerGroup | null>(null)
   const incidentMarkersRef = useRef<Map<string | number, { marker: L.Marker; lat: number; lng: number }>>(new Map())
   const [showTrafficLines, setShowTrafficLines] = useState(true)
+  const [locationStatus, setLocationStatus] = useState("현재 위치 확인 중…")
+  const [locationRequest, setLocationRequest] = useState(0)
+  const currentPosition = useRef<GeolocationCoordinates | null>(null)
+  const locationFocusRequested = useRef(false)
+  const viewHasContext = useRef(false)
+  viewHasContext.current = Boolean(searchQuery || routeCoordinates?.length || selectedIncidentId != null)
+
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -154,14 +161,77 @@ export default function MapPlaceholder({
     routeLayerGroupRef.current = routeLayerGroup
 
     mapRef.current = map
+    let frame = 0
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => map.invalidateSize({ pan: false }))
+    })
+    observer.observe(containerRef.current)
 
     return () => {
+      observer.disconnect()
+      cancelAnimationFrame(frame)
       map.remove()
       mapRef.current = null
       layersGroupRef.current = null
       routeLayerGroupRef.current = null
     }
   }, [])
+
+  // All map pages show a live location dot, independently of route/incident layers.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    if (!window.isSecureContext || !navigator.geolocation) {
+      setLocationStatus("현재 위치는 HTTPS 또는 localhost에서 사용할 수 있습니다.")
+      return
+    }
+    let active = true
+    let firstFix = true
+    const locationLayer = L.layerGroup().addTo(map)
+    let dot: L.CircleMarker | undefined
+    let accuracy: L.Circle | undefined
+    const onUserMove = () => { firstFix = false }
+    map.on("dragstart zoomstart", onUserMove)
+    const watch = navigator.geolocation.watchPosition(({ coords }) => {
+      if (!active) return
+      currentPosition.current = coords
+      const point: L.LatLngExpression = [coords.latitude, coords.longitude]
+      if (!accuracy) {
+        accuracy = L.circle(point, { radius: coords.accuracy, color: "#007aff", weight: 1, fillOpacity: .08, interactive: false }).addTo(locationLayer)
+        dot = L.circleMarker(point, { radius: 8, color: "white", weight: 3, fillColor: "#007aff", fillOpacity: 1 }).addTo(locationLayer)
+        dot.bindTooltip("내 위치", { permanent: true, direction: "top", offset: [0, -9] })
+      }
+      accuracy.setLatLng(point).setRadius(coords.accuracy)
+      dot?.setLatLng(point)
+      setLocationStatus(`내 위치 · 정확도 약 ${Math.round(coords.accuracy)}m`)
+      if (locationFocusRequested.current || (firstFix && !viewHasContext.current)) {
+        map.setView(point, 15)
+      }
+      firstFix = false
+      locationFocusRequested.current = false
+    }, (error) => {
+      if (!active) return
+      setLocationStatus(error.code === 1
+        ? "위치 권한이 꺼져 있습니다. 브라우저에서 허용 후 ‘내 위치’를 눌러 주세요."
+        : error.code === 3 ? "위치 확인 시간이 초과되었습니다. ‘내 위치’로 다시 시도해 주세요."
+        : "위치를 확인할 수 없습니다. 기기의 위치 서비스를 확인해 주세요.")
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 })
+    return () => {
+      active = false
+      navigator.geolocation.clearWatch(watch)
+      map.off("dragstart zoomstart", onUserMove)
+      locationLayer.remove()
+    }
+  }, [locationRequest])
+
+  const focusCurrentLocation = () => {
+    const coords = currentPosition.current
+    if (coords) mapRef.current?.flyTo([coords.latitude, coords.longitude], 15)
+    locationFocusRequested.current = true
+    setLocationStatus("현재 위치 확인 중…")
+    setLocationRequest(value => value + 1)
+  }
 
   // 도로 정밀 궤적(seoul_roads.json) 및 실시간 DB 속도 매핑
   useEffect(() => {
@@ -402,10 +472,10 @@ export default function MapPlaceholder({
 
   return (
     <div
-      className="relative overflow-hidden w-full"
-      style={{ height, minHeight: 380 }}
+      className="relative overflow-hidden w-full min-w-0 flex-1"
+      style={{ minHeight: height, isolation: "isolate" }}
     >
-      <div ref={containerRef} className="w-full h-full" style={{ zIndex: 1 }} />
+      <div ref={containerRef} className="absolute inset-0" style={{ zIndex: 1 }} />
 
       {/* 좌측 상단 빠른 복귀 버튼 */}
       <div
@@ -427,6 +497,13 @@ export default function MapPlaceholder({
         </span>
       </div>
 
+      <div className="absolute left-3 right-14 top-14 z-10 flex items-start gap-2 pointer-events-none">
+        <button type="button" onClick={focusCurrentLocation}
+          className="glass shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-[#007aff] pointer-events-auto"
+          aria-label="현재 내 위치로 지도 이동">◎ 내 위치</button>
+        <span role="status" className="glass px-2 py-1.5 rounded-lg text-[11px] text-[#4a4a68] max-w-72">{locationStatus}</span>
+      </div>
+
       {/* 우측 레이어 컨트롤 버튼 */}
       <div
         className="absolute top-3 right-14 z-10 flex items-center gap-2"
@@ -437,13 +514,13 @@ export default function MapPlaceholder({
           style={{ color: showTrafficLines ? "#007aff" : "#6b6b8a" }}
         >
           <span className={`w-2 h-2 rounded-full ${showTrafficLines ? "bg-[#007aff]" : "bg-gray-400"}`} />
-          실시간 혼잡도 {showTrafficLines ? "ON" : "OFF"}
+          <span className="hidden sm:inline">실시간 </span>혼잡도 {showTrafficLines ? "ON" : "OFF"}
         </button>
       </div>
 
       {/* 범례 */}
       <div
-        className="glass absolute bottom-3 left-3 z-10 flex items-center gap-3 px-3 py-2 shadow-sm"
+        className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm"
         style={{ borderRadius: 12 }}
       >
         {[

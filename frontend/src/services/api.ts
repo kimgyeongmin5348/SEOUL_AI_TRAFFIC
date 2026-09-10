@@ -492,6 +492,7 @@ export async function fetchFavoriteRoutes(): Promise<{
 }> {
   try {
     const res = await fetch("/api/routes/favorites")
+    if (res.status === 401) return { routes: [], isFromDb: false }
     if (res.ok) {
       const data = await res.json()
       if (data.routes && data.routes.length > 0) {
@@ -510,11 +511,12 @@ export async function recordRouteSearch(
   label?: string
 ): Promise<void> {
   try {
-    await fetch("/api/routes/search", {
+    const response = await fetch("/api/routes/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ origin, destination, label }),
     })
+    if (!response.ok && response.status !== 401) throw new Error("즐겨찾기 기록에 실패했습니다.")
   } catch (err) {
     console.warn("[API] recordRouteSearch failed:", err)
   }

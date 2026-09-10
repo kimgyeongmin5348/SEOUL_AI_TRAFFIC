@@ -7,7 +7,7 @@ digraph RoadPulseERD {
     ranksep="1.05",
     splines=ortho,
     fontname="Malgun Gothic",
-    label="RoadPulse ERD v3 — Traffic · Incident · ASOS 통합 구조",
+    label="RoadPulse ERD v4 — Traffic · Auth · 사용자별 즐겨찾기",
     labelloc=t,
     labeljust=l,
     fontsize=24,
@@ -23,6 +23,40 @@ digraph RoadPulseERD {
     fontsize=10,
     fontcolor="#475569"
   ];
+
+  users [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#2563EB" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#DBEAFE"><B>USERS</B><BR/><FONT POINT-SIZE="10">RoadPulse 로그인 계정</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">BIGINT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">email</TD><TD ALIGN="LEFT">VARCHAR(254), UQ</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">password_hash</TD><TD ALIGN="LEFT">VARCHAR(255)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">created_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+    </TABLE>
+  >];
+
+  user_sessions [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#2563EB" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#DBEAFE"><B>USER_SESSIONS</B><BR/><FONT POINT-SIZE="10">HttpOnly 로그인 세션</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>token_hash</B></TD><TD ALIGN="LEFT">CHAR(64)</TD></TR>
+      <TR><TD BGCOLOR="#DCFCE7"><B>FK</B></TD><TD ALIGN="LEFT">user_id</TD><TD ALIGN="LEFT">BIGINT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">expires_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">created_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+    </TABLE>
+  >];
+
+  favorite_routes [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#7C3AED" BGCOLOR="#FFFFFF">
+      <TR><TD COLSPAN="3" BGCOLOR="#EDE9FE"><B>FAVORITE_ROUTES</B><BR/><FONT POINT-SIZE="10">사용자별 자주 찾는 경로</FONT></TD></TR>
+      <TR><TD BGCOLOR="#FEF3C7"><B>PK</B></TD><TD ALIGN="LEFT"><B>id</B></TD><TD ALIGN="LEFT">BIGINT</TD></TR>
+      <TR><TD BGCOLOR="#DCFCE7"><B>FK</B></TD><TD ALIGN="LEFT">user_id</TD><TD ALIGN="LEFT">BIGINT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">origin / destination</TD><TD ALIGN="LEFT">VARCHAR(255)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">label</TD><TD ALIGN="LEFT">VARCHAR(255)</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">search_count</TD><TD ALIGN="LEFT">INT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">avg/current_time_min</TD><TD ALIGN="LEFT">INT</TD></TR>
+      <TR><TD></TD><TD ALIGN="LEFT">last_searched_at</TD><TD ALIGN="LEFT">DATETIME</TD></TR>
+      <TR><TD COLSPAN="3" ALIGN="LEFT" BGCOLOR="#F1F5F9"><FONT POINT-SIZE="9">UQ: user_id + origin + destination</FONT></TD></TR>
+    </TABLE>
+  >];
 
   traffic_spots [label=<
     <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7" COLOR="#2563EB" BGCOLOR="#FFFFFF">
@@ -174,4 +208,6 @@ digraph RoadPulseERD {
   road_segments -> traffic_speed_measurements [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
   road_segments -> incidents [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
   model_versions -> traffic_predictions [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
+  users -> user_sessions [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
+  users -> favorite_routes [label="1 : N", dir=both, arrowtail=tee, arrowhead=crow];
 }

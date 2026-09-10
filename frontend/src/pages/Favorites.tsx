@@ -39,7 +39,7 @@ export default function Favorites() {
               letterSpacing: "-0.02em",
             }}
           >
-            자주 찾는 경로 (즐겨찾기)
+            나의 즐겨찾기 경로
           </h1>
           <span
             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
@@ -50,14 +50,14 @@ export default function Favorites() {
             }}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-[#007aff] pulse-dot" />
-            DB 검색 횟수 상위 4개 자동 집계
+            내 검색 횟수 상위 4개
           </span>
         </div>
         <p
           className="text-[#6b6b8a] text-sm mb-5"
           style={{ fontFamily: "var(--font-body)" }}
         >
-          사용자가 동일 경로를 검색한 횟수를 DB에서 내림차순으로 자동 정렬하여 제공합니다.
+          로그인한 계정에서 자주 검색한 경로만 안전하게 모아 보여드립니다.
         </p>
 
         {/* Favorite routes */}

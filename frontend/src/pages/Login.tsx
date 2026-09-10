@@ -1,10 +1,29 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
+import { useAuth } from "../auth"
 
 export default function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { login, signup } = useAuth()
   const [email, setEmail] = useState("")
   const [pw, setPw] = useState("")
+  const [mode, setMode] = useState<"login" | "signup">("login")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+  const destination = (location.state as { from?: string } | null)?.from || "/dashboard"
+
+  const submit = async () => {
+    setError("")
+    if (pw.length < 8) { setError("비밀번호는 8자 이상 입력해 주세요."); return }
+    setLoading(true)
+    try {
+      await (mode === "login" ? login(email, pw) : signup(email, pw))
+      navigate(destination, { replace: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "요청을 처리하지 못했습니다.")
+    } finally { setLoading(false) }
+  }
 
   return (
     <div
@@ -95,7 +114,7 @@ export default function Login() {
               fontSize: 20,
             }}
           >
-            로그인
+            {mode === "login" ? "로그인" : "회원가입"}
           </h2>
 
           <div className="flex flex-col gap-3">
@@ -119,6 +138,7 @@ export default function Login() {
                 placeholder="your@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void submit() }}
               />
             </div>
             <div>
@@ -141,12 +161,16 @@ export default function Login() {
                 placeholder="비밀번호 입력"
                 value={pw}
                 onChange={(e) => setPw(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void submit() }}
               />
             </div>
 
+            {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
+
             <button
-              onClick={() => navigate("/dashboard")}
-              className="w-full py-3.5 font-semibold text-white mt-1 transition-all hover:opacity-90 active:scale-98"
+              onClick={() => void submit()}
+              disabled={loading || !email.trim() || !pw}
+              className="w-full py-3.5 font-semibold text-white mt-1 transition-all hover:opacity-90 active:scale-98 disabled:opacity-50"
               style={{
                 borderRadius: 18,
                 background: "linear-gradient(135deg, #007aff 0%, #5e5ce6 100%)",
@@ -155,7 +179,7 @@ export default function Login() {
                 letterSpacing: "-0.01em",
               }}
             >
-              로그인
+              {loading ? "처리 중…" : mode === "login" ? "로그인" : "회원가입"}
             </button>
 
             <div className="flex items-center gap-3 my-1">
@@ -188,8 +212,11 @@ export default function Login() {
             className="text-center text-xs text-[#b0b0c8] mt-5"
             style={{ fontFamily: "var(--font-body)" }}
           >
-            계정이 없으신가요?{" "}
-            <button className="text-[#007aff] font-medium">회원가입</button>
+            {mode === "login" ? "계정이 없으신가요?" : "이미 계정이 있으신가요?"}{" "}
+            <button
+              className="text-[#007aff] font-medium"
+              onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError("") }}
+            >{mode === "login" ? "회원가입" : "로그인"}</button>
           </p>
         </div>
       </div>

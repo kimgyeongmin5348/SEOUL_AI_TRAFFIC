@@ -1,13 +1,12 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
 import MapPlaceholder from "../components/MapPlaceholder"
-import { routes as defaultRoutes } from "../data/mock"
 import { getLiveSeoulRoutes, RouteResult } from "../services/routing"
 import { fetchFavoriteRoutes, recordRouteSearch, FavoriteRouteItem } from "../services/api"
+import { useAuth } from "../auth"
 
 const trafficColor = { green: "#34c759", yellow: "#ff9500", red: "#ff3b30" }
-const trafficLabel = { green: "원활", yellow: "서행", red: "혼잡" }
 
 const POPULAR_ROUTES = [
   { from: "마포구 합정동", to: "강남구 역삼동", label: "합정 ➔ 역삼" },
@@ -18,34 +17,79 @@ const POPULAR_ROUTES = [
 ]
 
 export default function Route() {
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
+  const { user } = useAuth()
   const initialOrigin = searchParams.get("origin") || "마포구 합정동"
   const initialDest = searchParams.get("dest") || "강남구 역삼동"
+  const departureAt = searchParams.get("departure") || undefined
 
   const [origin, setOrigin] = useState(initialOrigin)
   const [dest, setDest] = useState(initialDest)
   const [selected, setSelected] = useState("A")
-  const [routeList, setRouteList] = useState<RouteResult[]>(defaultRoutes as unknown as RouteResult[])
+  const [routeList, setRouteList] = useState<RouteResult[]>([])
   const [originPoint, setOriginPoint] = useState<{ name: string; lat: number; lng: number } | null>(null)
   const [destPoint, setDestPoint] = useState<{ name: string; lat: number; lng: number } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [locating, setLocating] = useState(false)
+  const [locationMessage, setLocationMessage] = useState("")
+  const [error, setError] = useState("")
+  const [predictionMessage, setPredictionMessage] = useState("")
+  const requestId = useRef(0)
+  const locationId = useRef(0)
+
+  useEffect(() => () => { requestId.current++; locationId.current++ }, [])
+
+  const useCurrentLocation = () => {
+    if (!window.isSecureContext || !navigator.geolocation) {
+      setLocationMessage("위치 기능은 HTTPS 또는 localhost의 지원 브라우저에서 사용할 수 있습니다.")
+      return
+    }
+    const id = ++locationId.current
+    setLocating(true)
+    setLocationMessage("현재 위치를 확인하고 있습니다…")
+    navigator.geolocation.getCurrentPosition(({ coords }) => {
+      if (id !== locationId.current) return
+      setOrigin(`현 위치 (${coords.latitude}, ${coords.longitude})`)
+      setLocating(false)
+      setLocationMessage(`현 위치를 출발지로 설정했습니다 (정확도 약 ${Math.round(coords.accuracy)}m). 목적지를 입력하고 AI 경로 분석을 눌러 주세요.`)
+    }, (failure) => {
+      if (id !== locationId.current) return
+      setLocating(false)
+      setLocationMessage(failure.code === 1
+        ? "위치 권한이 거부되었습니다. 브라우저 사이트 설정에서 위치 접근을 허용한 뒤 다시 시도해 주세요."
+        : failure.code === 3
+          ? "위치 확인 시간이 초과되었습니다. 다시 시도하거나 출발지를 직접 입력해 주세요."
+          : "현재 위치를 확인할 수 없습니다. 기기의 위치 서비스를 켜거나 출발지를 직접 입력해 주세요.")
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 })
+  }
   const [dbFavorites, setDbFavorites] = useState<FavoriteRouteItem[]>([])
 
   useEffect(() => {
+    if (!user) { setDbFavorites([]); return }
     fetchFavoriteRoutes().then((res) => {
       if (res.routes && res.routes.length > 0) {
         setDbFavorites(res.routes)
       }
     })
-  }, [])
+  }, [user])
 
   const runAnalysis = async (startAddr: string, endAddr: string) => {
     if (!startAddr.trim() || !endAddr.trim()) return
+    const id = ++requestId.current
     setLoading(true)
+    setError("")
+    setPredictionMessage("")
+    setRouteList([])
+    setOriginPoint(null)
+    setDestPoint(null)
     // DB 경로 검색 횟수 증가 (자동 즐겨찾기 집계)
-    recordRouteSearch(startAddr.trim(), endAddr.trim())
+    if (user && !startAddr.startsWith("현 위치 (") && !endAddr.startsWith("현 위치 (")) {
+      void recordRouteSearch(startAddr.trim(), endAddr.trim()).catch(() => {})
+    }
     try {
-      const res = await getLiveSeoulRoutes(startAddr, endAddr)
+      const res = await getLiveSeoulRoutes(startAddr, endAddr, departureAt)
+      if (id !== requestId.current) return
+      setPredictionMessage(res.predictionMessage)
       setRouteList(res.routes)
       setOriginPoint(res.origin)
       setDestPoint(res.dest)
@@ -54,9 +98,9 @@ export default function Route() {
         setSelected(best.id)
       }
     } catch (err) {
-      console.warn("Failed to calculate live routes:", err)
+      if (id === requestId.current) setError(err instanceof Error ? err.message : "경로 계산에 실패했습니다. 다시 시도해 주세요.")
     } finally {
-      setLoading(false)
+      if (id === requestId.current) setLoading(false)
     }
   }
 
@@ -100,14 +144,15 @@ export default function Route() {
               }}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-[#007aff] pulse-dot" />
-              서울 실시간 주행 궤적 연동
+              베스트 학습 모델 경로 추천
             </span>
           </div>
           <p
             className="text-[#6b6b8a] text-sm mb-4"
             style={{ fontFamily: "var(--font-body)" }}
           >
-            실제 서울 도로망 기반 최적 경로 · 실시간 교통 상황 및 우회로 반영
+            실제 도로 경로 · 베스트 모델 교통량 예측으로 추천 · 소요시간은 OSRM 추정
+            {departureAt && ` · 출발 ${new Date(departureAt).toLocaleString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`}
           </p>
 
           {/* Search Box */}
@@ -126,10 +171,9 @@ export default function Route() {
                   }}
                   placeholder="출발지 (예: 마포구 합정동, 영등포, 노원)"
                   value={origin}
-                  onChange={(e) => setOrigin(e.target.value)}
+                  onChange={(e) => { locationId.current++; setLocating(false); setLocationMessage(""); setOrigin(e.target.value) }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      setSearchParams({ origin, dest })
                       runAnalysis(origin, dest)
                     }
                   }}
@@ -137,11 +181,20 @@ export default function Route() {
               </div>
 
               <button
+                type="button"
+                onClick={useCurrentLocation}
+                disabled={locating || loading}
+                className="px-3 py-3 rounded-xl bg-white text-sm text-[#007aff] whitespace-nowrap disabled:opacity-50"
+              >
+                {locating ? "위치 확인 중…" : "◎ 현 위치"}
+              </button>
+
+              <button
+                disabled={locating}
                 onClick={() => {
                   const t = origin
                   setOrigin(dest)
                   setDest(t)
-                  setSearchParams({ origin: dest, dest: t })
                   runAnalysis(dest, t)
                 }}
                 className="p-3 rounded-xl hover:bg-white/70 transition-all border border-black/5 text-[#007aff] cursor-pointer shadow-sm"
@@ -174,7 +227,6 @@ export default function Route() {
                   onChange={(e) => setDest(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      setSearchParams({ origin, dest })
                       runAnalysis(origin, dest)
                     }
                   }}
@@ -183,10 +235,9 @@ export default function Route() {
 
               <button
                 onClick={() => {
-                  setSearchParams({ origin, dest })
                   runAnalysis(origin, dest)
                 }}
-                disabled={loading}
+                disabled={loading || locating || !origin.trim() || !dest.trim()}
                 className="w-full sm:w-auto px-6 py-3 font-semibold text-white text-sm whitespace-nowrap cursor-pointer hover:opacity-90 transition-opacity shadow-md disabled:opacity-50"
                 style={{
                   borderRadius: 14,
@@ -197,6 +248,10 @@ export default function Route() {
                 {loading ? "경로 계산 중…" : "AI 경로 분석"}
               </button>
             </div>
+
+            {locationMessage && <p role="status" className="mt-3 text-xs text-[#6b6b8a]">{locationMessage}</p>}
+            {predictionMessage && <p role="status" className="mt-3 text-sm text-[#6b6b8a]">{predictionMessage}</p>}
+            {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
 
             {/* 빠른 추천 경로 칩 */}
             <div className="flex items-center gap-1.5 mt-3 pt-2.5 border-t border-black/5 overflow-x-auto text-xs">
@@ -213,10 +268,10 @@ export default function Route() {
               ).map((p) => (
                 <button
                   key={p.label}
+                  disabled={locating}
                   onClick={() => {
                     setOrigin(p.from)
                     setDest(p.to)
-                    setSearchParams({ origin: p.from, dest: p.to })
                     runAnalysis(p.from, p.to)
                   }}
                   className="px-2.5 py-1 rounded-lg bg-white/70 hover:bg-white text-[#33334d] border border-black/5 transition-all text-[11px] whitespace-nowrap cursor-pointer font-medium shadow-2xs"
@@ -326,11 +381,11 @@ export default function Route() {
                           fontFamily: "var(--font-body)",
                         }}
                       >
-                        {trafficLabel[r.trafficLevel]}
+                        {r.coverage !== undefined ? `예측 반영 ${Math.round(r.coverage * 100)}%` : "AI 미적용"}
                       </div>
                     </div>
 
-                    {r.ai && r.reason && (
+                    {r.reason && (
                       <div
                         className="mt-3 p-3 rounded-xl text-xs leading-relaxed"
                         style={{
@@ -350,9 +405,9 @@ export default function Route() {
           </div>
 
           {/* Map + detail */}
-          <div className="flex-1 flex flex-col gap-3">
+          <div className="flex-1 min-w-0 flex flex-col gap-3">
             <div
-              className="glass"
+              className="glass flex flex-col min-w-0"
               style={{ borderRadius: 24, overflow: "hidden" }}
             >
               <MapPlaceholder
@@ -364,7 +419,7 @@ export default function Route() {
             </div>
 
             {/* Route detail */}
-            <div className="glass p-5" style={{ borderRadius: 20 }}>
+            {selectedRoute && <div className="glass p-5" style={{ borderRadius: 20 }}>
               <h3
                 className="text-[#1a1a2e] mb-4"
                 style={{
@@ -378,7 +433,7 @@ export default function Route() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   {
-                    label: "예상 소요 시간",
+                    label: "OSRM 예상 소요 시간",
                     value: `${selectedRoute?.time}분`,
                     color: "#007aff",
                   },
@@ -388,34 +443,23 @@ export default function Route() {
                     color: "#4a4a68",
                   },
                   {
-                    label: "구간 평균 속도",
+                    label: "OSRM 예상 평균 속도",
                     value: `${selectedRoute?.avgSpeed}km/h`,
                     color: "#4a4a68",
                   },
                   {
-                    label: "정체 지연 시간",
-                    value:
-                      selectedRoute?.delay > 0
-                        ? `+${selectedRoute.delay}분`
-                        : "지연 없음",
-                    color: selectedRoute?.delay > 0 ? "#ff9500" : "#34c759",
+                    label: "예측 반영 범위",
+                    value: selectedRoute.coverage === undefined ? "미적용" : `${Math.round(selectedRoute.coverage * 100)}%`,
+                    color: "#007aff",
                   },
                   {
-                    label: "실시간 교통 흐름",
-                    value: trafficLabel[selectedRoute?.trafficLevel || "green"],
-                    color: trafficColor[selectedRoute?.trafficLevel || "green"],
+                    label: "사용 학습 모델",
+                    value: selectedRoute.modelVersion || "사용 불가",
+                    color: "#5e5ce6",
                   },
                   {
-                    label: "구간 돌발상황",
-                    value:
-                      selectedRoute?.incidents > 0
-                        ? `${selectedRoute.incidents}건 발생`
-                        : "돌발 없음",
-                    color: selectedRoute?.incidents > 0 ? "#ff3b30" : "#34c759",
-                  },
-                  {
-                    label: "도로 날씨",
-                    value: selectedRoute?.weather || "맑음",
+                    label: "도로별 예측 교통량 (양방향)",
+                    value: selectedRoute.predictedVolume == null ? "예측 없음" : `${selectedRoute.predictedVolume}대/시간`,
                     color: "#007aff",
                   },
                   {
@@ -451,7 +495,7 @@ export default function Route() {
                   </div>
                 ))}
               </div>
-            </div>
+            </div>}
           </div>
         </div>
       </main>

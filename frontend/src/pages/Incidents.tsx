@@ -238,7 +238,7 @@ export default function Incidents() {
 
           {/* Map */}
           <div
-            className="relative flex-1 glass"
+            className="relative flex-1 min-w-0 glass flex flex-col"
             style={{ borderRadius: 24, overflow: "hidden" }}
           >
             <MapPlaceholder height={560} incidents={incidents} selectedIncidentId={selected} onSelectIncident={(inc) => setSelected(Number(inc.id))} />
