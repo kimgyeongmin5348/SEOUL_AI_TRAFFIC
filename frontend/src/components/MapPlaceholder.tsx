@@ -1,7 +1,7 @@
-﻿import { useEffect, useRef, useState } from "react"
-import L from "leaflet"
-import "leaflet/dist/leaflet.css"
+import { useEffect, useRef, useState } from "react"
 import precisionRoadsData from "../data/seoul_roads.json"
+import { loadKakaoMaps } from "../services/kakaoMaps"
+import { resolvePlace } from "../services/placeSearch"
 
 export interface IncidentItem {
   id: number | string
@@ -18,12 +18,7 @@ interface MapProps {
   height?: number | string
   searchQuery?: string
   incidents?: IncidentItem[]
-  roadSpeeds?: Array<{
-    road: string
-    speed: number
-    avg: number
-    level: string
-  }>
+  roadSpeeds?: Array<{ road: string; speed: number; avg: number; level: string }>
   selectedIncidentId?: number | string | null
   onSelectIncident?: (incident: IncidentItem) => void
   routeCoordinates?: [number, number][]
@@ -31,54 +26,10 @@ interface MapProps {
   destPoint?: { name: string; lat: number; lng: number }
 }
 
-// 서울 주요 랜드마크 검색 좌표
-const SEOUL_PLACES: Record<string, { lat: number; lng: number; zoom: number; name: string }> = {
-  "강남": { lat: 37.4979, lng: 127.0276, zoom: 15, name: "강남역 / 테헤란로" },
-  "강남역": { lat: 37.4979, lng: 127.0276, zoom: 15, name: "강남역 교차로" },
-  "역삼": { lat: 37.5006, lng: 127.0365, zoom: 15, name: "역삼역 사거리" },
-  "여의도": { lat: 37.5255, lng: 126.9242, zoom: 15, name: "여의도 금융 중심지" },
-  "마포": { lat: 37.5458, lng: 126.9525, zoom: 15, name: "마포구 마포대로" },
-  "합정": { lat: 37.5495, lng: 126.9138, zoom: 15, name: "합정역 교차로" },
-  "홍대": { lat: 37.5563, lng: 126.9226, zoom: 15, name: "홍대입구역" },
-  "종로": { lat: 37.5704, lng: 126.9922, zoom: 15, name: "종로구 중심" },
-  "광화문": { lat: 37.5759, lng: 126.9768, zoom: 15, name: "광화문 광장" },
-  "잠실": { lat: 37.5133, lng: 127.1001, zoom: 15, name: "잠실역 / 송파대로" },
-  "송파": { lat: 37.5048, lng: 127.1145, zoom: 14, name: "송파구 중심" },
-  "서초": { lat: 37.4919, lng: 127.0078, zoom: 15, name: "서초역 / 반포대로" },
-  "용산": { lat: 37.5326, lng: 126.9900, zoom: 15, name: "용산구 / 이태원" },
-  "영등포": { lat: 37.5180, lng: 126.9070, zoom: 15, name: "영등포역 교차로" },
-  "구로": { lat: 37.4980, lng: 126.8870, zoom: 15, name: "신도림 / 구로디지털단지" },
-  "강변북로": { lat: 37.5315, lng: 126.9660, zoom: 13, name: "강변북로" },
-  "올림픽대로": { lat: 37.5150, lng: 126.9850, zoom: 13, name: "올림픽대로" },
-  "내부순환로": { lat: 37.6010, lng: 126.9950, zoom: 13, name: "내부순환로" },
-  "동부간선": { lat: 37.5650, lng: 127.0700, zoom: 13, name: "동부간선도로" },
-  "서부간선": { lat: 37.4980, lng: 126.8830, zoom: 13, name: "서부간선도로" },
-  "경부고속": { lat: 37.4850, lng: 127.0250, zoom: 13, name: "경부고속도로" },
-  "분당수서": { lat: 37.5020, lng: 127.0720, zoom: 14, name: "분당수서로" },
-  "양재대로": { lat: 37.4720, lng: 127.0500, zoom: 14, name: "양재대로" },
-  "영동대로": { lat: 37.5120, lng: 127.0600, zoom: 14, name: "영동대로" },
-  "새문안로": { lat: 37.5690, lng: 126.9720, zoom: 15, name: "새문안로" },
-}
+type MapOverlay = kakao.maps.Polyline | kakao.maps.CustomOverlay | kakao.maps.Circle
 
-// 각 도로별 라벨이 가장 예쁘게 보일 중심 좌표
-const ROAD_LABEL_POINTS: Record<string, [number, number]> = {
-  "강변북로": [37.5330, 126.9600], // 원효~한강대교 북단
-  "올림픽대로": [37.5130, 126.9800], // 동작대교 남단
-  "내부순환로": [37.6040, 126.9940], // 정릉터널 앞
-  "분당수서로": [37.5020, 127.0720], // 탄천1교 부근
-  "새문안로": [37.5695, 126.9740], // 광화문 앞
-  "양재대로": [37.4750, 127.0600], // 구룡터널 사거리
-  "영동대로": [37.5110, 127.0600], // 코엑스 앞
-  "경부고속도로": [37.4950, 127.0220], // 반포IC
-  "동부간선도로": [37.5850, 127.0730], // 중랑교
-  "서부간선도로": [37.4980, 126.8830], // 신도림교
-  "테헤란로": [37.5020, 127.0420], // 역삼~선릉 사이
-}
-
-// 돌발상황 위치 키워드 기반 정밀 좌표 사전
 function getIncidentCoord(inc: IncidentItem): [number, number] {
   const text = `${inc.road} ${inc.location} ${inc.description || ""}`
-
   if (text.includes("분당수서") || text.includes("탄천1교") || text.includes("청담대교남단")) return [37.5080, 127.0680]
   if (text.includes("도봉T") || text.includes("도봉터널")) return [37.6780, 127.0520]
   if (text.includes("서초터널")) return [37.4650, 127.0180]
@@ -106,8 +57,25 @@ function getIncidentCoord(inc: IncidentItem): [number, number] {
   if (text.includes("강남대로") || text.includes("양재IC")) return [37.4800, 127.0300]
   if (text.includes("광화문")) return [37.5759, 126.9768]
   if (text.includes("홍지문터널")) return [37.5950, 126.9530]
-
   return [37.5300, 126.9800]
+}
+
+function makePill(text: string, background: string) {
+  const element = document.createElement("div")
+  element.textContent = text
+  Object.assign(element.style, {
+    background,
+    color: "white",
+    padding: "5px 10px",
+    borderRadius: "14px",
+    border: "2px solid white",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.28)",
+    fontSize: "11px",
+    fontWeight: "700",
+    whiteSpace: "nowrap",
+    fontFamily: "sans-serif",
+  })
+  return element
 }
 
 export default function MapPlaceholder({
@@ -122,427 +90,240 @@ export default function MapPlaceholder({
   destPoint,
 }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<L.Map | null>(null)
-  const searchMarkerRef = useRef<L.Marker | null>(null)
-  const layersGroupRef = useRef<L.LayerGroup | null>(null)
-  const routeLayerGroupRef = useRef<L.LayerGroup | null>(null)
-  const incidentMarkersRef = useRef<Map<string | number, { marker: L.Marker; lat: number; lng: number }>>(new Map())
+  const mapRef = useRef<kakao.maps.Map | null>(null)
+  const roadOverlaysRef = useRef<MapOverlay[]>([])
+  const routeOverlaysRef = useRef<MapOverlay[]>([])
+  const searchOverlayRef = useRef<kakao.maps.CustomOverlay | null>(null)
+  const locationOverlaysRef = useRef<MapOverlay[]>([])
+  const incidentOverlaysRef = useRef(new Map<string | number, { overlay: kakao.maps.CustomOverlay; lat: number; lng: number }>())
+  const currentPosition = useRef<GeolocationCoordinates | null>(null)
+  const searchRequestId = useRef(0)
+  const [mapReady, setMapReady] = useState(false)
+  const [mapError, setMapError] = useState("")
   const [showTrafficLines, setShowTrafficLines] = useState(true)
   const [locationStatus, setLocationStatus] = useState("현재 위치 확인 중…")
-  const [locationRequest, setLocationRequest] = useState(0)
-  const currentPosition = useRef<GeolocationCoordinates | null>(null)
-  const locationFocusRequested = useRef(false)
-  const viewHasContext = useRef(false)
-  viewHasContext.current = Boolean(searchQuery || routeCoordinates?.length || selectedIncidentId != null)
-
+  const viewHasContext = Boolean(searchQuery || routeCoordinates?.length || selectedIncidentId != null)
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
-
-    const map = L.map(containerRef.current, {
-      center: [37.5320, 126.9950],
-      zoom: 12,
-      zoomControl: false,
-      attributionControl: false,
+    let active = true
+    let observer: ResizeObserver | null = null
+    loadKakaoMaps().then((sdk) => {
+      if (!active || !containerRef.current) return
+      const map = new sdk.maps.Map(containerRef.current, {
+        center: new sdk.maps.LatLng(37.5320, 126.9950),
+        level: 8,
+      })
+      map.addControl(new sdk.maps.MapTypeControl(), sdk.maps.ControlPosition.TOPRIGHT)
+      map.addControl(new sdk.maps.ZoomControl(), sdk.maps.ControlPosition.RIGHT)
+      mapRef.current = map
+      setMapReady(true)
+      observer = new ResizeObserver(() => map.relayout())
+      observer.observe(containerRef.current)
+    }).catch((error) => {
+      if (active) setMapError(error instanceof Error ? error.message : "카카오 지도를 불러오지 못했습니다.")
     })
-
-    // 고해상도 도로망 중심 타일 레이어 (워터마크 없는 깔끔한 표준 OSM 타일)
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      subdomains: ["a", "b", "c"],
-    }).addTo(map)
-
-    L.control.zoom({ position: "topright" }).addTo(map)
-
-    const layerGroup = L.layerGroup().addTo(map)
-    layersGroupRef.current = layerGroup
-
-    const routeLayerGroup = L.layerGroup().addTo(map)
-    routeLayerGroupRef.current = routeLayerGroup
-
-    mapRef.current = map
-    let frame = 0
-    const observer = new ResizeObserver(() => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => map.invalidateSize({ pan: false }))
-    })
-    observer.observe(containerRef.current)
-
     return () => {
-      observer.disconnect()
-      cancelAnimationFrame(frame)
-      map.remove()
+      active = false
+      observer?.disconnect()
       mapRef.current = null
-      layersGroupRef.current = null
-      routeLayerGroupRef.current = null
     }
   }, [])
 
-  // All map pages show a live location dot, independently of route/incident layers.
   useEffect(() => {
     const map = mapRef.current
-    if (!map) return
+    if (!mapReady || !map) return
     if (!window.isSecureContext || !navigator.geolocation) {
       setLocationStatus("현재 위치는 HTTPS 또는 localhost에서 사용할 수 있습니다.")
       return
     }
     let active = true
     let firstFix = true
-    const locationLayer = L.layerGroup().addTo(map)
-    let dot: L.CircleMarker | undefined
-    let accuracy: L.Circle | undefined
-    const onUserMove = () => { firstFix = false }
-    map.on("dragstart zoomstart", onUserMove)
-    const watch = navigator.geolocation.watchPosition(({ coords }) => {
+    const watchId = navigator.geolocation.watchPosition(({ coords }) => {
       if (!active) return
       currentPosition.current = coords
-      const point: L.LatLngExpression = [coords.latitude, coords.longitude]
-      if (!accuracy) {
-        accuracy = L.circle(point, { radius: coords.accuracy, color: "#007aff", weight: 1, fillOpacity: .08, interactive: false }).addTo(locationLayer)
-        dot = L.circleMarker(point, { radius: 8, color: "white", weight: 3, fillColor: "#007aff", fillOpacity: 1 }).addTo(locationLayer)
-        dot.bindTooltip("내 위치", { permanent: true, direction: "top", offset: [0, -9] })
-      }
-      accuracy.setLatLng(point).setRadius(coords.accuracy)
-      dot?.setLatLng(point)
+      const position = new kakao.maps.LatLng(coords.latitude, coords.longitude)
+      locationOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+      const accuracy = new kakao.maps.Circle({
+        map, center: position, radius: coords.accuracy,
+        strokeWeight: 1, strokeColor: "#007aff", strokeOpacity: 0.5,
+        fillColor: "#007aff", fillOpacity: 0.08,
+      })
+      const dot = document.createElement("div")
+      Object.assign(dot.style, {
+        width: "16px", height: "16px", borderRadius: "50%", background: "#007aff",
+        border: "3px solid white", boxShadow: "0 2px 8px rgba(0,122,255,.5)",
+      })
+      const marker = new kakao.maps.CustomOverlay({ map, position, content: dot, zIndex: 9 })
+      locationOverlaysRef.current = [accuracy, marker]
       setLocationStatus(`내 위치 · 정확도 약 ${Math.round(coords.accuracy)}m`)
-      if (locationFocusRequested.current || (firstFix && !viewHasContext.current)) {
-        map.setView(point, 15)
+      if (firstFix && !viewHasContext) {
+        map.setCenter(position)
+        map.setLevel(4)
       }
       firstFix = false
-      locationFocusRequested.current = false
     }, (error) => {
       if (!active) return
       setLocationStatus(error.code === 1
-        ? "위치 권한이 꺼져 있습니다. 브라우저에서 허용 후 ‘내 위치’를 눌러 주세요."
-        : error.code === 3 ? "위치 확인 시간이 초과되었습니다. ‘내 위치’로 다시 시도해 주세요."
-        : "위치를 확인할 수 없습니다. 기기의 위치 서비스를 확인해 주세요.")
+        ? "위치 권한이 꺼져 있습니다. 브라우저 설정에서 허용해 주세요."
+        : error.code === 3 ? "위치 확인 시간이 초과되었습니다." : "현재 위치를 확인할 수 없습니다.")
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 })
     return () => {
       active = false
-      navigator.geolocation.clearWatch(watch)
-      map.off("dragstart zoomstart", onUserMove)
-      locationLayer.remove()
+      navigator.geolocation.clearWatch(watchId)
+      locationOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+      locationOverlaysRef.current = []
     }
-  }, [locationRequest])
+  }, [mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map) return
+    roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+    roadOverlaysRef.current = []
+    incidentOverlaysRef.current.clear()
+    if (showTrafficLines) {
+      precisionRoadsData.forEach((road) => {
+        const match = roadSpeeds.find((speed) => speed.road.includes(road.name) || road.name.includes(speed.road))
+        const speed = match?.speed ?? road.defaultSpeed
+        const color = speed < 25 ? "#ff3b30" : speed < 50 ? "#ff9500" : "#34c759"
+        const path = (road.coordinates as [number, number][]).map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
+        const outline = new kakao.maps.Polyline({ map, path, strokeColor: "#ffffff", strokeWeight: 7, strokeOpacity: 0.88, zIndex: 2 })
+        const line = new kakao.maps.Polyline({ map, path, strokeColor: color, strokeWeight: 4, strokeOpacity: 0.92, zIndex: 3 })
+        roadOverlaysRef.current.push(outline, line)
+      })
+    }
+    incidents.forEach((incident) => {
+      const [lat, lng] = getIncidentCoord(incident)
+      const position = new kakao.maps.LatLng(lat, lng)
+      const isAccident = incident.type === "사고"
+      const isConstruction = incident.type === "공사"
+      const color = isAccident ? "#ff3b30" : isConstruction ? "#ff9500" : "#5e5ce6"
+      const symbol = isAccident ? "🚨" : isConstruction ? "🚧" : "🚗"
+      const button = makePill(symbol, color)
+      button.title = `[${incident.type}] ${incident.road} - ${incident.location}`
+      button.style.cursor = "pointer"
+      button.addEventListener("click", () => onSelectIncident?.(incident))
+      const overlay = new kakao.maps.CustomOverlay({ map, position, content: button, clickable: true, zIndex: 8 })
+      roadOverlaysRef.current.push(overlay)
+      incidentOverlaysRef.current.set(incident.id, { overlay, lat, lng })
+    })
+    return () => {
+      roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+      roadOverlaysRef.current = []
+      incidentOverlaysRef.current.clear()
+    }
+  }, [incidents, mapReady, onSelectIncident, roadSpeeds, showTrafficLines])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map) return
+    routeOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+    routeOverlaysRef.current = []
+    if (!routeCoordinates || routeCoordinates.length < 2) return
+    const path = routeCoordinates.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
+    const outline = new kakao.maps.Polyline({ map, path, strokeColor: "#ffffff", strokeWeight: 9, strokeOpacity: 0.95, zIndex: 5 })
+    const route = new kakao.maps.Polyline({ map, path, strokeColor: "#007aff", strokeWeight: 5, strokeOpacity: 0.95, zIndex: 6 })
+    routeOverlaysRef.current.push(outline, route)
+    if (originPoint) {
+      routeOverlaysRef.current.push(new kakao.maps.CustomOverlay({
+        map, position: new kakao.maps.LatLng(originPoint.lat, originPoint.lng),
+        content: makePill(`출발: ${originPoint.name}`, "#34c759"), yAnchor: 1.2, zIndex: 10,
+      }))
+    }
+    if (destPoint) {
+      routeOverlaysRef.current.push(new kakao.maps.CustomOverlay({
+        map, position: new kakao.maps.LatLng(destPoint.lat, destPoint.lng),
+        content: makePill(`도착: ${destPoint.name}`, "#ff3b30"), yAnchor: 1.2, zIndex: 10,
+      }))
+    }
+    const bounds = new kakao.maps.LatLngBounds()
+    path.forEach((point) => bounds.extend(point))
+    map.setBounds(bounds, 55, 55, 55, 55)
+    return () => {
+      routeOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+      routeOverlaysRef.current = []
+    }
+  }, [destPoint, mapReady, originPoint, routeCoordinates])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map || selectedIncidentId == null) return
+    const selected = incidentOverlaysRef.current.get(selectedIncidentId)
+    if (!selected) return
+    map.panTo(new kakao.maps.LatLng(selected.lat, selected.lng))
+    map.setLevel(4)
+  }, [mapReady, selectedIncidentId])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const query = searchQuery.trim()
+    if (!mapReady || !map || !query) {
+      searchOverlayRef.current?.setMap(null)
+      searchOverlayRef.current = null
+      return
+    }
+    const id = ++searchRequestId.current
+    const timer = window.setTimeout(() => {
+      resolvePlace(query).then((place) => {
+        if (id !== searchRequestId.current || !mapRef.current) return
+        searchOverlayRef.current?.setMap(null)
+        const position = new kakao.maps.LatLng(place.lat, place.lng)
+        searchOverlayRef.current = new kakao.maps.CustomOverlay({
+          map: mapRef.current, position, content: makePill(`📍 ${place.name}`, "#007aff"), yAnchor: 1.2, zIndex: 10,
+        })
+        mapRef.current.panTo(position)
+        mapRef.current.setLevel(4)
+      }).catch(() => {})
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [mapReady, searchQuery])
 
   const focusCurrentLocation = () => {
     const coords = currentPosition.current
-    if (coords) mapRef.current?.flyTo([coords.latitude, coords.longitude], 15)
-    locationFocusRequested.current = true
-    setLocationStatus("현재 위치 확인 중…")
-    setLocationRequest(value => value + 1)
+    if (!coords || !mapRef.current) {
+      setLocationStatus("현재 위치를 확인하고 있습니다…")
+      return
+    }
+    mapRef.current.panTo(new kakao.maps.LatLng(coords.latitude, coords.longitude))
+    mapRef.current.setLevel(4)
   }
 
-  // 도로 정밀 궤적(seoul_roads.json) 및 실시간 DB 속도 매핑
-  useEffect(() => {
-    const map = mapRef.current
-    const layerGroup = layersGroupRef.current
-    if (!map || !layerGroup) return
-
-    layerGroup.clearLayers()
-    incidentMarkersRef.current.clear()
-
-    if (showTrafficLines) {
-      precisionRoadsData.forEach((r) => {
-        // DB 속도 매칭 (도로명 또는 road_name 부분 매칭)
-        const matchSpeed = roadSpeeds.find(
-          (s) => s.road.includes(r.name) || r.name.includes(s.road)
-        )
-        const speed = matchSpeed ? matchSpeed.speed : r.defaultSpeed
-        let color = "#34c759" // 원활
-        let label = "원활"
-        if (speed < 25) {
-          color = "#ff3b30" // 혼잡
-          label = "혼잡"
-        } else if (speed < 50) {
-          color = "#ff9500" // 서행
-          label = "서행"
-        }
-
-        const coords = r.coordinates as [number, number][]
-
-        // 1. 도로 테두리 아웃라인 (도로 폭에 정확히 일치하도록 5px)
-        L.polyline(coords, {
-          color: "#ffffff",
-          weight: 6,
-          opacity: 0.9,
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(layerGroup)
-
-        // 2. 실시간 혼잡도 색상 도로선 (실제 도로 중심선에 1:1 매핑)
-        const poly = L.polyline(coords, {
-          color,
-          weight: 4,
-          opacity: 0.92,
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(layerGroup)
-
-        const popupContent = `
-          <div style="font-family: sans-serif; font-size: 13px; line-height: 1.5; min-width: 140px;">
-            <strong style="color: #1a1a2e; font-size: 14px;">${r.name}</strong><br/>
-            <span>실시간 통행 상태: </span>
-            <span style="color: ${color}; font-weight: 700;">${label} (${speed} km/h)</span>
-          </div>
-        `
-        poly.bindPopup(popupContent)
-        poly.bindTooltip(`${r.name}: ${label} (${speed}km/h)`, { sticky: true, opacity: 0.9 })
-      })
-    }
-
-    // DB 돌발상황 마커
-    if (incidents && incidents.length > 0) {
-      incidents.forEach((inc) => {
-        const [lat, lng] = getIncidentCoord(inc)
-        const isAccident = inc.type === "사고"
-        const isConstruction = inc.type === "공사"
-        const badgeColor = isAccident ? "#ff3b30" : isConstruction ? "#ff9500" : "#5e5ce6"
-        const emoji = isAccident ? "🚨" : isConstruction ? "🚧" : "🚗"
-
-        const incIcon = L.divIcon({
-          className: "incident-pin",
-          html: `
-            <div style="
-              background: ${badgeColor};
-              color: white;
-              width: 28px;
-              height: 28px;
-              border-radius: 50%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              font-size: 14px;
-              border: 2px solid white;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-              cursor: pointer;
-              transform: translate(-50%, -50%);
-            ">
-              ${emoji}
-            </div>
-          `,
-          iconSize: [0, 0],
-        })
-
-        const marker = L.marker([lat, lng], { icon: incIcon }).addTo(layerGroup)
-        marker.bindPopup(`
-          <div style="font-family: sans-serif; font-size: 12px; line-height: 1.5; max-width: 240px;">
-            <div style="font-weight: 700; color: ${badgeColor}; font-size: 13px; margin-bottom: 3px; display: flex; items-center; gap: 4px;">
-              <span>${emoji}</span> [${inc.type}] ${inc.road}
-            </div>
-            <div style="color: #2b2b3d; margin-bottom: 5px; font-weight: 500;">${inc.description || inc.location}</div>
-            <div style="color: #6b6b8a; font-size: 11px;">
-              <span>발생: ${inc.startTime || "최근"}</span>
-              ${inc.estEnd ? ` · 해제: ${inc.estEnd}` : ""}
-            </div>
-          </div>
-        `)
-
-        marker.on("click", () => {
-          onSelectIncident?.(inc)
-        })
-
-        incidentMarkersRef.current.set(inc.id, { marker, lat, lng })
-      })
-    }
-  }, [roadSpeeds, incidents, onSelectIncident, showTrafficLines])
-
-  // 실제 주행 경로 오버레이
-  useEffect(() => {
-    const map = mapRef.current
-    const rGroup = routeLayerGroupRef.current
-    if (!map || !rGroup) return
-
-    rGroup.clearLayers()
-
-    if (routeCoordinates && routeCoordinates.length > 1) {
-      // 아웃라인
-      L.polyline(routeCoordinates, {
-        color: "#ffffff",
-        weight: 8,
-        opacity: 0.95,
-        lineCap: "round",
-        lineJoin: "round",
-      }).addTo(rGroup)
-
-      // 네비게이션 경로선 (도로 중심선 완벽 밀착)
-      const routePoly = L.polyline(routeCoordinates, {
-        color: "#007aff",
-        weight: 5.5,
-        opacity: 0.95,
-        lineCap: "round",
-        lineJoin: "round",
-      }).addTo(rGroup)
-
-      if (originPoint) {
-        const startIcon = L.divIcon({
-          className: "start-pin",
-          html: `<div style="background: #34c759; color: white; padding: 4px 10px; border-radius: 14px; font-size: 11px; font-weight: 700; border: 2px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.3); white-space: nowrap; transform: translate(-50%, -100%);">🟢 출발: ${originPoint.name}</div>`,
-          iconSize: [0, 0],
-        })
-        L.marker([originPoint.lat, originPoint.lng], { icon: startIcon }).addTo(rGroup)
-      }
-
-      if (destPoint) {
-        const endIcon = L.divIcon({
-          className: "end-pin",
-          html: `<div style="background: #ff3b30; color: white; padding: 4px 10px; border-radius: 14px; font-size: 11px; font-weight: 700; border: 2px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.3); white-space: nowrap; transform: translate(-50%, -100%);">🏁 도착: ${destPoint.name}</div>`,
-          iconSize: [0, 0],
-        })
-        L.marker([destPoint.lat, destPoint.lng], { icon: endIcon }).addTo(rGroup)
-      }
-
-      map.fitBounds(routePoly.getBounds(), {
-        padding: [45, 45],
-        maxZoom: 15,
-        animate: true,
-      })
-    }
-  }, [routeCoordinates, originPoint, destPoint])
-
-  // 공사/사고 선택 시 이동
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || selectedIncidentId === null || selectedIncidentId === undefined) return
-
-    const item = incidentMarkersRef.current.get(selectedIncidentId)
-    if (item) {
-      map.flyTo([item.lat, item.lng], 15, {
-        duration: 1.2,
-      })
-      setTimeout(() => {
-        item.marker.openPopup()
-      }, 700)
-    }
-  }, [selectedIncidentId])
-
-  // 검색 이동
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !searchQuery || !searchQuery.trim()) return
-
-    const q = searchQuery.trim().toLowerCase()
-    const foundKey = Object.keys(SEOUL_PLACES).find(
-      (k) => q.includes(k.toLowerCase()) || k.toLowerCase().includes(q)
-    )
-
-    if (foundKey) {
-      const target = SEOUL_PLACES[foundKey]
-      map.flyTo([target.lat, target.lng], target.zoom, {
-        duration: 1.2,
-      })
-
-      if (searchMarkerRef.current) {
-        searchMarkerRef.current.remove()
-      }
-
-      const customIcon = L.divIcon({
-        className: "custom-pin",
-        html: `
-          <div style="
-            background: #007aff;
-            color: white;
-            padding: 6px 14px;
-            border-radius: 16px;
-            font-size: 12px;
-            font-weight: 700;
-            white-space: nowrap;
-            box-shadow: 0 4px 16px rgba(0,122,255,0.45);
-            border: 2px solid white;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            transform: translate(-50%, -100%);
-          ">
-            <span>📍</span> ${target.name}
-          </div>
-        `,
-        iconSize: [0, 0],
-      })
-
-      const marker = L.marker([target.lat, target.lng], { icon: customIcon }).addTo(map)
-      marker.bindPopup(`<b>${target.name}</b><br/>실시간 교통 모니터링 중`).openPopup()
-      searchMarkerRef.current = marker
-    }
-  }, [searchQuery])
-
   const handleReset = () => {
-    mapRef.current?.flyTo([37.5320, 126.9950], 12, { duration: 1 })
+    if (!mapRef.current) return
+    mapRef.current.setCenter(new kakao.maps.LatLng(37.5320, 126.9950))
+    mapRef.current.setLevel(8)
   }
 
   return (
-    <div
-      className="relative overflow-hidden w-full min-w-0 flex-1"
-      style={{ minHeight: height, isolation: "isolate" }}
-    >
+    <div className="relative overflow-hidden w-full min-w-0 flex-1" style={{ minHeight: height, isolation: "isolate" }}>
       <div ref={containerRef} className="absolute inset-0" style={{ zIndex: 1 }} />
-
-      {/* 좌측 상단 빠른 복귀 버튼 */}
-      <div
-        className="absolute top-3 left-3 z-10 glass px-3 py-1.5 flex items-center gap-2 cursor-pointer hover:bg-white/95 transition-all shadow-sm"
-        style={{ borderRadius: 12 }}
-        onClick={handleReset}
-        title="서울 전체로 이동"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#007aff" strokeWidth="2.2">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-          <path d="M2 12h20" />
-        </svg>
-        <span
-          className="text-xs font-semibold text-[#007aff]"
-          style={{ fontFamily: "var(--font-body)" }}
-        >
-          서울 전체 보기
-        </span>
-      </div>
-
+      {mapError && (
+        <div role="alert" className="absolute inset-0 z-20 flex items-center justify-center bg-white/90 px-6 text-center text-sm text-red-600">
+          {mapError}<br />카카오 JavaScript 키와 등록 도메인을 확인해 주세요.
+        </div>
+      )}
+      <button type="button" className="glass absolute top-3 left-3 z-10 px-3 py-1.5 text-xs font-semibold text-[#007aff] shadow-sm" style={{ borderRadius: 12 }} onClick={handleReset}>
+        ◎ 서울 전체 보기
+      </button>
       <div className="absolute left-3 right-14 top-14 z-10 flex items-start gap-2 pointer-events-none">
-        <button type="button" onClick={focusCurrentLocation}
-          className="glass shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-[#007aff] pointer-events-auto"
-          aria-label="현재 내 위치로 지도 이동">◎ 내 위치</button>
+        <button type="button" onClick={focusCurrentLocation} className="glass shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-[#007aff] pointer-events-auto">◎ 내 위치</button>
         <span role="status" className="glass px-2 py-1.5 rounded-lg text-[11px] text-[#4a4a68] max-w-72">{locationStatus}</span>
       </div>
-
-      {/* 우측 레이어 컨트롤 버튼 */}
-      <div
-        className="absolute top-3 right-14 z-10 flex items-center gap-2"
-      >
-        <button
-          onClick={() => setShowTrafficLines(!showTrafficLines)}
-          className="glass px-3 py-1.5 text-xs font-semibold rounded-xl cursor-pointer hover:bg-white/90 transition-all shadow-sm flex items-center gap-1.5"
-          style={{ color: showTrafficLines ? "#007aff" : "#6b6b8a" }}
-        >
+      <div className="absolute top-3 right-24 z-10">
+        <button type="button" onClick={() => setShowTrafficLines((value) => !value)} className="glass px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showTrafficLines ? "#007aff" : "#6b6b8a" }}>
           <span className={`w-2 h-2 rounded-full ${showTrafficLines ? "bg-[#007aff]" : "bg-gray-400"}`} />
           <span className="hidden sm:inline">실시간 </span>혼잡도 {showTrafficLines ? "ON" : "OFF"}
         </button>
       </div>
-
-      {/* 범례 */}
-      <div
-        className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm"
-        style={{ borderRadius: 12 }}
-      >
+      <div className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm" style={{ borderRadius: 12 }}>
         {[
           { color: "#34c759", label: "원활 (≥50km/h)" },
           { color: "#ff9500", label: "서행 (25~49km/h)" },
           { color: "#ff3b30", label: "혼잡 (<25km/h)" },
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-1.5">
-            <div
-              className="w-3 h-1.5 rounded-full"
-              style={{ background: item.color }}
-            />
-            <span
-              style={{
-                fontSize: 11,
-                color: "#4a4a68",
-                fontFamily: "var(--font-body)",
-                fontWeight: 600,
-              }}
-            >
-              {item.label}
-            </span>
+            <div className="w-3 h-1.5 rounded-full" style={{ background: item.color }} />
+            <span className="text-[11px] font-semibold text-[#4a4a68]">{item.label}</span>
           </div>
         ))}
         <div className="w-px h-3 bg-black/10 mx-1" />

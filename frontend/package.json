@@ -10,8 +10,6 @@
     "format": "oxfmt src"
   },
   "dependencies": {
-    "@types/leaflet": "^1.9.22",
-    "leaflet": "^1.9.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.18.3",
@@ -23,6 +21,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.0",
+    "kakao.maps.d.ts": "^0.1.40",
     "oxfmt": "^0.2.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",

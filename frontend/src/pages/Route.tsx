@@ -2,9 +2,11 @@ import { useState, useEffect, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
 import MapPlaceholder from "../components/MapPlaceholder"
+import PlaceSearchInput from "../components/PlaceSearchInput"
 import { getLiveSeoulRoutes, RouteResult } from "../services/routing"
 import { fetchFavoriteRoutes, recordRouteSearch, FavoriteRouteItem } from "../services/api"
 import { useAuth } from "../auth"
+import type { PlaceSuggestion } from "../types/place"
 
 const trafficColor = { green: "#34c759", yellow: "#ff9500", red: "#ff3b30" }
 
@@ -22,6 +24,8 @@ export default function Route() {
   const initialOrigin = searchParams.get("origin") || "마포구 합정동"
   const initialDest = searchParams.get("dest") || "강남구 역삼동"
   const departureAt = searchParams.get("departure") || undefined
+  const [originPlace, setOriginPlace] = useState<PlaceSuggestion | null>(null)
+  const [destPlace, setDestPlace] = useState<PlaceSuggestion | null>(null)
 
   const [origin, setOrigin] = useState(initialOrigin)
   const [dest, setDest] = useState(initialDest)
@@ -158,27 +162,26 @@ export default function Route() {
           {/* Search Box */}
           <div className="glass p-4 mb-4" style={{ borderRadius: 20 }}>
             <div className="flex flex-col sm:flex-row gap-2 items-center">
-              <div className="relative flex-1 w-full">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full border-2 border-[#007aff] bg-white" />
-                <input
-                  className="w-full pl-9 pr-4 py-3 text-sm outline-none placeholder:text-[#b0b0c8]"
-                  style={{
-                    background: "rgba(240,242,248,0.9)",
-                    borderRadius: 14,
-                    border: "1px solid rgba(255,255,255,0.9)",
-                    fontFamily: "var(--font-body)",
-                    color: "#1a1a2e",
-                  }}
-                  placeholder="출발지 (예: 마포구 합정동, 영등포, 노원)"
-                  value={origin}
-                  onChange={(e) => { locationId.current++; setLocating(false); setLocationMessage(""); setOrigin(e.target.value) }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      runAnalysis(origin, dest)
-                    }
-                  }}
-                />
-              </div>
+            <PlaceSearchInput
+                label="출발지"
+                value={origin}
+                placeholder="출발지 검색: 강남역, 서울시청, 테헤란로 123"
+                selectedPlace={originPlace}
+                onValueChange={(value) => {
+                  locationId.current++
+                  setLocating(false)
+                  setLocationMessage("")
+                  setOrigin(value)
+                  setOriginPlace(null)
+                }}
+                onSelect={(place) => {
+                  setOrigin(place.name)
+                  setOriginPlace(place)
+                  setLocationMessage(
+                    `${place.name} · ${place.roadAddress || place.address}`,
+                  )
+                }}
+              />
 
               <button
                 type="button"
