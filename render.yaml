@@ -11,3 +11,5 @@ services:
         value: production
       - key: DATABASE_URL
         sync: false
+      - key: VITE_KAKAO_MAP_JS_KEY
+        sync: false

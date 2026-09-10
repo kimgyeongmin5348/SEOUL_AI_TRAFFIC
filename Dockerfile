@@ -5,6 +5,8 @@ RUN corepack enable && corepack prepare pnpm@10.17.1 --activate
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
+ARG VITE_KAKAO_MAP_JS_KEY
+ENV VITE_KAKAO_MAP_JS_KEY=${VITE_KAKAO_MAP_JS_KEY}
 RUN pnpm build
 
 FROM python:3.12-slim AS runtime
