@@ -4,6 +4,7 @@ import Sidebar from "../components/Sidebar"
 import MapPlaceholder from "../components/MapPlaceholder"
 import PlaceSearchInput from "../components/PlaceSearchInput"
 import { getLiveSeoulRoutes, RouteResult } from "../services/routing"
+import { resolvePlace } from "../services/placeSearch"
 import { fetchFavoriteRoutes, recordRouteSearch, FavoriteRouteItem } from "../services/api"
 import { useAuth } from "../auth"
 import type { PlaceSuggestion } from "../types/place"
@@ -53,7 +54,18 @@ export default function Route() {
     setLocationMessage("현재 위치를 확인하고 있습니다…")
     navigator.geolocation.getCurrentPosition(({ coords }) => {
       if (id !== locationId.current) return
-      setOrigin(`현 위치 (${coords.latitude}, ${coords.longitude})`)
+      const currentPlace: PlaceSuggestion = {
+        id: "current-location",
+        name: "현 위치",
+        address: "",
+        roadAddress: "",
+        category: "현재 위치",
+        lat: coords.latitude,
+        lng: coords.longitude,
+        source: "current",
+      }
+      setOrigin("현 위치")
+      setOriginPlace(currentPlace)
       setLocating(false)
       setLocationMessage(`현 위치를 출발지로 설정했습니다 (정확도 약 ${Math.round(coords.accuracy)}m). 목적지를 입력하고 AI 경로 분석을 눌러 주세요.`)
     }, (failure) => {
@@ -77,8 +89,7 @@ export default function Route() {
     })
   }, [user])
 
-  const runAnalysis = async (startAddr: string, endAddr: string) => {
-    if (!startAddr.trim() || !endAddr.trim()) return
+  const runAnalysis = async (startPlace: PlaceSuggestion, endPlace: PlaceSuggestion) => {
     const id = ++requestId.current
     setLoading(true)
     setError("")
@@ -87,11 +98,11 @@ export default function Route() {
     setOriginPoint(null)
     setDestPoint(null)
     // DB 경로 검색 횟수 증가 (자동 즐겨찾기 집계)
-    if (user && !startAddr.startsWith("현 위치 (") && !endAddr.startsWith("현 위치 (")) {
-      void recordRouteSearch(startAddr.trim(), endAddr.trim()).catch(() => {})
+    if (user && startPlace.source !== "current" && endPlace.source !== "current") {
+      void recordRouteSearch(startPlace.name, endPlace.name).catch(() => {})
     }
     try {
-      const res = await getLiveSeoulRoutes(startAddr, endAddr, departureAt)
+      const res = await getLiveSeoulRoutes(startPlace, endPlace, departureAt)
       if (id !== requestId.current) return
       setPredictionMessage(res.predictionMessage)
       setRouteList(res.routes)
@@ -108,15 +119,42 @@ export default function Route() {
     }
   }
 
+  const runTextAnalysis = async (startText: string, endText: string) => {
+    if (!startText.trim() || !endText.trim()) return
+    const id = ++requestId.current
+    setLoading(true)
+    setError("")
+    setPredictionMessage("")
+    try {
+      const [startPlace, endPlace] = await Promise.all([
+        resolvePlace(startText),
+        resolvePlace(endText),
+      ])
+      if (id !== requestId.current) return
+      setOrigin(startPlace.name)
+      setDest(endPlace.name)
+      setOriginPlace(startPlace)
+      setDestPlace(endPlace)
+      await runAnalysis(startPlace, endPlace)
+    } catch (err) {
+      if (id === requestId.current) {
+        setError(err instanceof Error ? err.message : "장소를 찾지 못했습니다.")
+        setLoading(false)
+      }
+    }
+  }
+
   useEffect(() => {
     const qOrigin = searchParams.get("origin")
     const qDest = searchParams.get("dest")
     if (qOrigin && qDest) {
       setOrigin(qOrigin)
       setDest(qDest)
-      runAnalysis(qOrigin, qDest)
+      setOriginPlace(null)
+      setDestPlace(null)
+      void runTextAnalysis(qOrigin, qDest)
     } else {
-      runAnalysis(origin, dest)
+      void runTextAnalysis(initialOrigin, initialDest)
     }
   }, [searchParams])
 
@@ -162,7 +200,7 @@ export default function Route() {
           {/* Search Box */}
           <div className="glass p-4 mb-4" style={{ borderRadius: 20 }}>
             <div className="flex flex-col sm:flex-row gap-2 items-center">
-            <PlaceSearchInput
+              <PlaceSearchInput
                 label="출발지"
                 value={origin}
                 placeholder="출발지 검색: 강남역, 서울시청, 테헤란로 123"
@@ -177,9 +215,10 @@ export default function Route() {
                 onSelect={(place) => {
                   setOrigin(place.name)
                   setOriginPlace(place)
-                  setLocationMessage(
-                    `${place.name} · ${place.roadAddress || place.address}`,
-                  )
+                  setLocationMessage(`${place.name} · ${place.roadAddress || place.address}`)
+                }}
+                onSubmit={() => {
+                  if (originPlace && destPlace) void runAnalysis(originPlace, destPlace)
                 }}
               />
 
@@ -195,10 +234,15 @@ export default function Route() {
               <button
                 disabled={locating}
                 onClick={() => {
-                  const t = origin
+                  const previousOrigin = origin
+                  const previousOriginPlace = originPlace
                   setOrigin(dest)
-                  setDest(t)
-                  runAnalysis(dest, t)
+                  setOriginPlace(destPlace)
+                  setDest(previousOrigin)
+                  setDestPlace(previousOriginPlace)
+                  if (destPlace && previousOriginPlace) {
+                    void runAnalysis(destPlace, previousOriginPlace)
+                  }
                 }}
                 className="p-3 rounded-xl hover:bg-white/70 transition-all border border-black/5 text-[#007aff] cursor-pointer shadow-sm"
                 title="출발지/도착지 맞바꾸기"
@@ -214,33 +258,33 @@ export default function Route() {
                 </svg>
               </button>
 
-              <div className="relative flex-1 w-full">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-sm bg-[#5e5ce6]" />
-                <input
-                  className="w-full pl-9 pr-4 py-3 text-sm outline-none placeholder:text-[#b0b0c8]"
-                  style={{
-                    background: "rgba(240,242,248,0.9)",
-                    borderRadius: 14,
-                    border: "1px solid rgba(255,255,255,0.9)",
-                    fontFamily: "var(--font-body)",
-                    color: "#1a1a2e",
-                  }}
-                  placeholder="도착지 (예: 강남구 역삼동, 광화문, 잠실)"
-                  value={dest}
-                  onChange={(e) => setDest(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      runAnalysis(origin, dest)
-                    }
-                  }}
-                />
-              </div>
+              <PlaceSearchInput
+                label="도착지"
+                value={dest}
+                placeholder="도착지 검색: 잠실역, 광화문, 세종대로 110"
+                selectedPlace={destPlace}
+                onValueChange={(value) => {
+                  setDest(value)
+                  setDestPlace(null)
+                }}
+                onSelect={(place) => {
+                  setDest(place.name)
+                  setDestPlace(place)
+                }}
+                onSubmit={() => {
+                  if (originPlace && destPlace) void runAnalysis(originPlace, destPlace)
+                }}
+              />
 
               <button
                 onClick={() => {
-                  runAnalysis(origin, dest)
+                  if (!originPlace || !destPlace) {
+                    setError("검색 결과에서 출발지와 도착지를 선택해 주세요.")
+                    return
+                  }
+                  void runAnalysis(originPlace, destPlace)
                 }}
-                disabled={loading || locating || !origin.trim() || !dest.trim()}
+                disabled={loading || locating || !originPlace || !destPlace}
                 className="w-full sm:w-auto px-6 py-3 font-semibold text-white text-sm whitespace-nowrap cursor-pointer hover:opacity-90 transition-opacity shadow-md disabled:opacity-50"
                 style={{
                   borderRadius: 14,
@@ -275,7 +319,9 @@ export default function Route() {
                   onClick={() => {
                     setOrigin(p.from)
                     setDest(p.to)
-                    runAnalysis(p.from, p.to)
+                    setOriginPlace(null)
+                    setDestPlace(null)
+                    void runTextAnalysis(p.from, p.to)
                   }}
                   className="px-2.5 py-1 rounded-lg bg-white/70 hover:bg-white text-[#33334d] border border-black/5 transition-all text-[11px] whitespace-nowrap cursor-pointer font-medium shadow-2xs"
                 >
