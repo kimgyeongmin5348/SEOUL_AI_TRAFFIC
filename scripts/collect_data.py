@@ -1,6 +1,8 @@
 import argparse
 import logging
 import sys
+from collections import defaultdict
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # 프로젝트 루트 경로를 sys.path에 추가
@@ -98,6 +100,12 @@ def main():
         help="대표 지점의 최근 N일간 24시간 연속 교통량을 수집합니다.",
     )
     parser.add_argument(
+        "--backfill-hours",
+        type=int,
+        metavar="N",
+        help="전체 교통량 지점의 최근 N시간을 실제 API 데이터로 백필합니다.",
+    )
+    parser.add_argument(
         "--days",
         type=int,
         default=30,
@@ -121,7 +129,7 @@ def main():
     if not any([
         args.all, args.master, args.traffic, args.weather,
         args.incidents, args.history, args.weather_history,
-        args.traffic_history, args.status
+        args.traffic_history, args.backfill_hours, args.status
     ]):
         args.status = True
 
@@ -141,6 +149,24 @@ def main():
             collector.sync_weather_history(start_year=2024, end_year=2025)
         elif args.traffic_history:
             collector.sync_traffic_volume_history(spot_ids=[args.spot], days=args.days)
+        elif args.backfill_hours:
+            if args.backfill_hours < 1 or args.backfill_hours > 72:
+                parser.error("--backfill-hours는 1~72 사이여야 합니다.")
+            # VolInfo is finalized about two hours late. Group requests by date
+            # because its endpoint accepts one date and one or more hours.
+            end = datetime.now().replace(minute=0, second=0, microsecond=0) - timedelta(hours=2)
+            by_date: dict[str, list[str]] = defaultdict(list)
+            for offset in range(args.backfill_hours):
+                point = end - timedelta(hours=offset)
+                by_date[point.strftime("%Y%m%d")].append(point.strftime("%H"))
+            total = 0
+            collector.sync_traffic_spots()
+            for date_str, hours in sorted(by_date.items()):
+                total += collector.sync_traffic_volume(
+                    date_str=date_str,
+                    hours=sorted(hours),
+                )
+            logger.info("최근 %s시간 교통량 백필 완료: %s행", args.backfill_hours, total)
         elif args.all:
             collector.sync_all()
         else:

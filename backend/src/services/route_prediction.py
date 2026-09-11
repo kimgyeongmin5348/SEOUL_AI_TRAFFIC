@@ -55,7 +55,14 @@ def load_model(path, modified):
 
 def build_features(history, weather, target):
     """Exact hourly lags; never substitute stale rows for missing hours."""
-    if not weather or any(weather.get(k) is None for k in WEATHER):
+    if not weather:
+        raise ValueError("예측에 필요한 기상 관측값이 부족합니다.")
+    weather = dict(weather)
+    # KMA represents an hour without precipitation as NULL.  For model input
+    # that is a measured zero, while NULL for every other feature is missing.
+    if weather.get("rainfall_mm") is None:
+        weather["rainfall_mm"] = 0.0
+    if any(weather.get(k) is None for k in WEATHER):
         raise ValueError("예측에 필요한 기상 관측값이 부족합니다.")
     frame = pd.DataFrame(history)
     if frame.empty:
@@ -124,10 +131,13 @@ def rank_candidates(candidates, predictions, metadata):
                         "predicted_volume": round(predicted / matched, 1) if matched else None,
                         "matched_steps": count, "ai": False})
     # Incomplete candidates must not win simply because they have no penalty.
-    comparable = all(r["coverage"] >= .5 for r in results)
-    if comparable:
-        min(results, key=lambda r: r["score"])["ai"] = True
-    return results, comparable
+    # A low-coverage alternative should not, however, suppress a different
+    # candidate whose own coverage is sufficient for model-based ranking.
+    eligible = [r for r in results if r["coverage"] >= .5]
+    available = bool(eligible)
+    if available:
+        min(eligible, key=lambda r: r["score"])["ai"] = True
+    return results, available
 
 
 def predict_routes(db, candidates, now, departure_at=None):
@@ -157,7 +167,10 @@ def predict_routes(db, candidates, now, departure_at=None):
     if not history:
         raise ValueError("최근 교통량 관측값이 없습니다. 수집 데이터를 갱신해 주세요.")
     observed = max(row["measured_at"] for row in history)
-    if observation_clock - observed > timedelta(hours=3):
+    # Measurements are hour buckets, so compare them with the current hour
+    # rather than treating the minutes elapsed within that hour as data lag.
+    observation_hour = observation_clock.replace(minute=0, second=0, microsecond=0)
+    if observation_hour - observed > timedelta(hours=3):
         raise ValueError("교통량 관측이 3시간 이상 지연되어 AI 추천을 보류했습니다. 수집 데이터를 갱신해 주세요.")
     # VolInfo is published about two hours late. Recursively predict missing
     # hours with the same trained model, instead of pretending old lags are current.
@@ -176,11 +189,12 @@ def predict_routes(db, candidates, now, departure_at=None):
             records.append({**meta, "measured_at": forecast_target, "volume": max(0., float(value))})
         forecast_target += timedelta(hours=1)
         forecast_steps += 1
-    results, comparable = rank_candidates(candidates, predictions, metadata)
+    results, available = rank_candidates(candidates, predictions, metadata)
+    eligible_count = sum(route["coverage"] >= .5 for route in results)
     return {"model_version": report["model_version"], "algorithm": report["algorithm"],
             "rmse": float(report["rmse"]), "target_at": target.isoformat()+"+09:00",
-            "available": comparable, "routes": results,
+            "available": available, "routes": results,
             "observed_at": observed.isoformat()+"+09:00",
             "weather_at": weather["observed_at"].isoformat()+"+09:00", "forecast_steps": forecast_steps,
-            "message": f"베스트 모델 교통량 예측 반영 · {forecast_steps}시간 순차 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측 유지 · 도로명 기준 양방향 합산 · 소요시간은 OSRM 추정치" if comparable
-            else "경로별 예측 반영 범위가 50% 미만인 구간이 있어 AI 추천을 보류했습니다."}
+            "message": f"베스트 모델 교통량 예측 반영 · 후보 {eligible_count}/{len(results)}개 평가 · {forecast_steps}시간 순차 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측 유지 · 도로명 기준 양방향 합산 · 소요시간은 OSRM 추정치" if available
+            else "예측 반영 범위가 50% 이상인 경로 후보가 없어 AI 추천을 보류했습니다."}

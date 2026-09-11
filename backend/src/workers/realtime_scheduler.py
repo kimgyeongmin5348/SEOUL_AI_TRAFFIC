@@ -79,6 +79,8 @@ def main() -> None:
         level=logging.INFO,
         format="[%(asctime)s] %(levelname)s [%(name)s]: %(message)s",
     )
+    # Seoul OpenAPI keys are embedded in URL paths; never print request URLs.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     scheduler = build_scheduler()
     logger.info("RoadPulse realtime scheduler started")
     try:
