@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -111,6 +112,43 @@ class DataCollectorService:
         self.db.commit()
         return True
 
+    def sync_road_segments(self) -> int:
+        """서울시 TrafficInfo가 제공하는 전체 도로 링크 기준정보를 동기화합니다."""
+        divisions = self.seoul_client.get_road_divisions()
+        if not divisions:
+            logger.warning("No road divisions retrieved from API.")
+            return 0
+
+        links: dict[str, dict[str, Any]] = {}
+        for division in divisions:
+            road_div_code = division["road_div_code"]
+            for axis in self.seoul_client.get_road_axes(road_div_code):
+                for road_link in self.seoul_client.get_road_links(axis["axis_code"]):
+                    link_id = road_link["link_id"]
+                    links[link_id] = {
+                        "link_id": link_id,
+                        "road_name": axis.get("axis_name") or f"링크_{link_id}",
+                        "region_code": road_div_code,
+                    }
+
+        if not links:
+            logger.warning("No road links retrieved from API.")
+            return 0
+
+        sql = text("""
+            INSERT INTO road_segments (link_id, road_name, region_code)
+            VALUES (:link_id, :road_name, :region_code)
+            ON DUPLICATE KEY UPDATE
+                road_name = COALESCE(VALUES(road_name), road_name),
+                region_code = COALESCE(VALUES(region_code), region_code),
+                updated_at = CURRENT_TIMESTAMP
+        """)
+        for road_link in links.values():
+            self.db.execute(sql, road_link)
+        self.db.commit()
+        logger.info("Successfully synced %s Seoul traffic road segments.", len(links))
+        return len(links)
+
     # =========================================================================
     # 2단계: 측정값 (Measurements) 및 실시간 데이터 적재
     # =========================================================================
@@ -176,19 +214,26 @@ class DataCollectorService:
 
     def sync_traffic_speed(self, link_ids: list[str] | None = None) -> int:
         """도로 구간 링크별 실시간 속도(TrafficInfo)를 수집하여 traffic_speed_measurements 테이블에 적재합니다."""
-        if not link_ids:
-            # 기본 주요 간선도로 링크 목록
-            link_ids = [
-                "1220003800",  # 분당수서로
-                "1000000100",  # 세종대로
-                "1210000500",  # 강남대로
-                "1220001100",  # 올림픽대로
-                "1230016700",  # 송파대로
-            ]
+        if link_ids is None:
+            rows = self.db.execute(
+                text("SELECT link_id FROM road_segments ORDER BY link_id")
+            ).fetchall()
+            link_ids = [row[0] for row in rows]
+            if not link_ids:
+                self.sync_road_segments()
+                rows = self.db.execute(
+                    text("SELECT link_id FROM road_segments ORDER BY link_id")
+                ).fetchall()
+                link_ids = [row[0] for row in rows]
+        else:
+            # 명시적으로 일부 링크만 요청하는 CLI/테스트 호출도 계속 지원합니다.
+            for link_id in link_ids:
+                self.ensure_road_segment(link_id)
 
-        # FK 보장을 위해 link_id가 road_segments에 존재하는지 먼저 보장
-        for link_id in link_ids:
-            self.ensure_road_segment(link_id)
+        link_ids = list(dict.fromkeys(link_ids))
+        if not link_ids:
+            logger.warning("No road links available for traffic speed sync.")
+            return 0
 
         sql = text("""
             INSERT INTO traffic_speed_measurements (
@@ -204,11 +249,27 @@ class DataCollectorService:
         """)
 
         total_inserted = 0
-        for link_id in link_ids:
-            speed_data = self.seoul_client.get_traffic_speed(link_id)
-            if speed_data:
-                self.db.execute(sql, speed_data)
-                total_inserted += 1
+        # TrafficInfo는 LINK_ID가 필수인 단건 API이므로 네트워크 조회만 병렬화하고
+        # SQLAlchemy 세션 쓰기는 현재 스레드에서 순차 처리합니다.
+        worker_count = min(16, len(link_ids))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(self.seoul_client.get_traffic_speed, link_id): link_id
+                for link_id in link_ids
+            }
+            for future in as_completed(futures):
+                link_id = futures[future]
+                try:
+                    speed_data = future.result()
+                except Exception:
+                    logger.exception("Traffic speed collection failed for link %s", link_id)
+                    continue
+                if speed_data:
+                    try:
+                        self.db.execute(sql, speed_data)
+                        total_inserted += 1
+                    except Exception:
+                        logger.exception("Failed to insert traffic speed for link %s", link_id)
 
         self.db.commit()
         logger.info(f"Successfully synced {total_inserted} traffic speed measurements.")
@@ -437,6 +498,7 @@ class DataCollectorService:
         summary: dict[str, int] = {}
         logger.info("=== 1단계: 기준정보(Master Data) 동기화 시작 ===")
         summary["traffic_spots"] = self.sync_traffic_spots()
+        summary["road_segments"] = self.sync_road_segments()
         summary["weather_stations"] = self.sync_weather_stations()
 
         logger.info("=== 2단계: 실시간 및 이력 측정값 동기화 시작 ===")

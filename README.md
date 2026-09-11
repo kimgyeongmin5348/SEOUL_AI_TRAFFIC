@@ -152,8 +152,8 @@ uv run python scripts/process_data.py
 | :--- | :--- |
 | `uv run python scripts/process_data.py` | **[팀원 권장]** DB $\rightarrow$ 전처리 $\rightarrow$ `data/processed/` 학습 데이터셋 자동 생성 |
 | `uv run python scripts/collect_data.py --status` | RDS 데이터베이스 현재 적재 현황 및 레코드 수 확인 |
-| `uv run python scripts/collect_data.py --all` | 서울시 OpenAPI 및 기상청 API 최신 데이터 일괄 수집 |
-| `uv run python scripts/run_realtime_scheduler.py` | 속도·돌발(5분), 교통량·날씨(1시간) 자동 수집 |
+| `uv run python scripts/collect_data.py --all` | 서울시 전체 도로 링크 기준정보와 최신 교통·기상·돌발 데이터 일괄 수집 |
+| `uv run python scripts/run_realtime_scheduler.py` | 전체 등록 링크의 속도·돌발(5분), 교통량·날씨(1시간) 자동 수집 |
 | `uv run python scripts/export_realtime_test.py` | 완료된 예측에 실제 교통량을 연결하고 온라인 Test CSV 생성 |
 | `uv run python scripts/import_traffic_excel.py --all-spots` | `data/raw/` 내 24개 엑셀 파일 전수 DB 벌크 적재 |
 

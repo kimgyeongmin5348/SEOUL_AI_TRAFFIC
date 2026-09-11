@@ -67,7 +67,7 @@ def main():
     parser.add_argument(
         "--master",
         action="store_true",
-        help="교통 지점 및 기상 관측소 기준정보만 수집합니다.",
+        help="교통 지점, 서울시 전체 도로 링크 및 기상 관측소 기준정보를 수집합니다.",
     )
     parser.add_argument(
         "--traffic",
@@ -172,6 +172,7 @@ def main():
         else:
             if args.master:
                 collector.sync_traffic_spots()
+                collector.sync_road_segments()
                 collector.sync_weather_stations()
             if args.traffic:
                 collector.sync_traffic_spots()  # FK 보장

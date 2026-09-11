@@ -102,6 +102,69 @@ class SeoulOpenApiClient:
             logger.warning(f"Failed to fetch link info for {link_id}: {e}")
             return None
 
+    def get_road_divisions(self) -> list[dict[str, str]]:
+        """TrafficInfo 전체 링크 탐색에 필요한 도로 분류를 조회합니다."""
+        url = f"{self.BASE_URL}/{self.traffic_api_key}/xml/RoadDivInfo/1/1000/"
+        try:
+            response = httpx.get(url, timeout=10)
+            response.raise_for_status()
+            return [
+                {
+                    "road_div_code": row["road_div_cd"],
+                    "road_div_name": row.get("road_div_nm", ""),
+                }
+                for row in self._parse_xml_rows(response.text)
+                if row.get("road_div_cd")
+            ]
+        except Exception as e:
+            logger.error("Failed to fetch road divisions: %s", e)
+            return []
+
+    def get_road_axes(self, road_div_code: str) -> list[dict[str, str]]:
+        """도로 분류에 속한 모든 도로 축을 조회합니다."""
+        url = (
+            f"{self.BASE_URL}/{self.traffic_api_key}/xml/RoadInfo/"
+            f"1/1000/{road_div_code}/"
+        )
+        try:
+            response = httpx.get(url, timeout=10)
+            response.raise_for_status()
+            return [
+                {
+                    "road_div_code": row.get("road_div_cd", road_div_code),
+                    "axis_code": row["axis_cd"],
+                    "axis_name": row.get("axis_name", ""),
+                }
+                for row in self._parse_xml_rows(response.text)
+                if row.get("axis_cd")
+            ]
+        except Exception as e:
+            logger.error("Failed to fetch road axes for division %s: %s", road_div_code, e)
+            return []
+
+    def get_road_links(self, axis_code: str) -> list[dict[str, str]]:
+        """도로 축에 속한 모든 TrafficInfo 링크를 조회합니다."""
+        url = (
+            f"{self.BASE_URL}/{self.traffic_api_key}/xml/LinkWithLoad/"
+            f"1/1000/{axis_code}/"
+        )
+        try:
+            response = httpx.get(url, timeout=10)
+            response.raise_for_status()
+            return [
+                {
+                    "axis_code": row.get("axis_cd", axis_code),
+                    "axis_direction": row.get("axis_dir", ""),
+                    "link_sequence": row.get("link_seq", ""),
+                    "link_id": row["link_id"],
+                }
+                for row in self._parse_xml_rows(response.text)
+                if row.get("link_id")
+            ]
+        except Exception as e:
+            logger.error("Failed to fetch road links for axis %s: %s", axis_code, e)
+            return []
+
     def get_traffic_volume(
         self,
         spot_id: str,
@@ -157,8 +220,18 @@ class SeoulOpenApiClient:
             if not raw_rows:
                 return None
             r = raw_rows[0]
-            speed_kmh = float(r.get("prcs_spd", 0.0))
-            travel_time_sec = int(float(r.get("prcs_trv_time", 0)))
+            try:
+                speed_val = r.get("prcs_spd")
+                speed_kmh = float(speed_val) if speed_val not in (None, "") else 0.0
+            except (ValueError, TypeError):
+                speed_kmh = 0.0
+
+            try:
+                travel_time_val = r.get("prcs_trv_time")
+                travel_time_sec = int(float(travel_time_val)) if travel_time_val not in (None, "") else 0
+            except (ValueError, TypeError):
+                travel_time_sec = 0
+
             return {
                 "link_id": link_id,
                 "measured_at": datetime.now().replace(second=0, microsecond=0),

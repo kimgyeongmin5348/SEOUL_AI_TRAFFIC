@@ -66,6 +66,7 @@ def build_scheduler() -> BlockingScheduler:
             "master_sync",
             lambda collector: {
                 "traffic_spots": collector.sync_traffic_spots(),
+                "road_segments": collector.sync_road_segments(),
                 "weather_stations": collector.sync_weather_stations(),
             },
         ),
