@@ -8,7 +8,7 @@ import re
 import secrets
 from pathlib import Path
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -51,7 +51,8 @@ DATASETS = {
         ORDER BY w.observed_at DESC, w.weather_station_id LIMIT 500
     """),
     "incidents": ("incidents", "collected_at", """
-        SELECT incident_id, incident_type, description, occurred_at, expected_clear_at, collected_at
+        SELECT incident_id, incident_type, description, occurred_at, expected_clear_at,
+               tm_x, tm_y, collected_at
         FROM incidents WHERE collected_at >= :start AND collected_at <= :latest
         ORDER BY collected_at DESC, incident_id LIMIT 500
     """),
@@ -287,7 +288,7 @@ def record_route_search(req: RouteSearchRequest, user=Depends(current_user), db:
 # Candidate geometry is supplied by OSRM; precise GPS coordinates are not stored.
 from typing import Annotated
 from pydantic import Field, model_validator
-from backend.src.services.route_prediction import predict_routes
+from backend.src.services.route_prediction import predict_routes, predict_spot_series
 
 PositiveSeconds = Annotated[float, Field(gt=0, le=604800, allow_inf_nan=False)]
 
@@ -342,6 +343,29 @@ def predict_route_candidates(req: RoutePredictionRequest, db: Session = Depends(
         import logging
         logging.getLogger(__name__).exception("Route model inference failed")
         raise HTTPException(503, "학습 모델 추론에 실패해 AI 추천을 사용할 수 없습니다.") from None
+
+
+@app.get("/api/predictions/roads")
+def prediction_roads(q: str = Query(default="", max_length=100), db: Session = Depends(get_db)):
+    try:
+        rows = db.execute(text("""
+            SELECT spot_id, spot_name FROM traffic_spots
+            WHERE (:query='' OR spot_name LIKE :pattern)
+            ORDER BY spot_name LIMIT 20
+        """), {"query": q.strip(), "pattern": f"%{q.strip()}%"}).mappings()
+        return {"roads": [dict(row) for row in rows]}
+    except SQLAlchemyError:
+        raise HTTPException(503, "도로 목록을 불러오지 못했습니다.") from None
+
+
+@app.get("/api/predictions/roads/{spot_id}")
+def prediction_for_road(spot_id: str, db: Session = Depends(get_db)):
+    try:
+        return predict_spot_series(db, spot_id, datetime.now(KST))
+    except ValueError as exc:
+        raise HTTPException(503, str(exc)) from None
+    except SQLAlchemyError:
+        raise HTTPException(503, "도로 예측 데이터를 불러오지 못했습니다.") from None
 
 
 # Production serves the Vite build from the API origin so HttpOnly login
