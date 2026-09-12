@@ -125,6 +125,55 @@ uv sync
 ### 2. 환경변수(`.env`) 설정
 AWS RDS MySQL 데이터베이스 접속 정보를 `backend/.env` 파일로 생성합니다. (팀 공유 정보 활용)
 
+### 3. RDS 테이블 이해하기
+
+테이블은 크게 **기준정보**, **실측 시계열**, **AI 모델/예측**, **사용자 기능** 네 영역으로 나뉩니다. 이름에 `measurements`가 붙은 테이블은 시간이 지날수록 계속 누적되는 실측 데이터이고, 기준정보 테이블은 측정지점이나 도로의 이름과 식별자를 보관합니다.
+
+#### 기준정보 테이블
+
+| 테이블 | 무엇을 저장하나 | 주요 키·컬럼 | 어디에 사용하나 |
+|---|---|---|---|
+| `traffic_spots` | 서울시 `SpotInfo` 교통량 측정지점 | `spot_id`(PK), `spot_name`, `tm_x`, `tm_y`, `latitude`, `longitude` | 교통량 데이터의 지점 이름·위치 확인, AI 학습 및 도로 검색 |
+| `road_segments` | 서울시 `LinkInfo` 도로 링크 | `link_id`(PK), `road_name`, 시작·종료 노드, `length_m`, `region_code` | 링크별 실시간 속도와 돌발상황을 실제 도로명에 연결 |
+| `weather_stations` | 기상청 ASOS 관측소 | `weather_station_id`(PK), `station_name`, 위·경도, 고도, 활성 여부 | 날씨 측정값의 관측소 정보 제공 |
+| `traffic_spot_road_maps` | 교통량 지점과 도로 링크의 연결표 | `(spot_id, link_id)`(복합 PK), 매칭 거리·방식, 대표 링크 여부 | 지점 단위 교통량을 경로의 도로 링크와 결합하는 다대다 매핑 |
+
+#### 실측 시계열 테이블
+
+| 테이블 | 한 행의 의미 | 주요 키·컬럼 | 주의할 점 |
+|---|---|---|---|
+| `traffic_volume_measurements` | 특정 지점·시각·방향·차로의 교통량 | `spot_id`, `measured_at`, `direction_code`, `lane_no`, `traffic_volume` | AI 교통량 모델의 핵심 학습 데이터. 지점·시각·방향·차로 조합은 중복 저장되지 않음 |
+| `traffic_speed_measurements` | 특정 도로 링크의 시각별 평균속도와 통행시간 | `link_id`, `measured_at`, `speed_kmh`, `travel_time_sec` | 지도 혼잡도와 실시간 도로 상태에 사용. 링크·측정시각 조합은 유일함 |
+| `weather_measurements` | 특정 관측소의 시간별 날씨 | `weather_station_id`, `observed_at`, 기온·강수·습도·풍속·풍향·기압 | 교통량 예측의 외생 변수. 무강수 시간의 `rainfall_mm=NULL`은 모델 입력 시 0으로 처리 |
+| `incidents` | 사고·공사·고장·통제 등 돌발상황 한 건 | `incident_id`(PK), `link_id`, 발생·해제예정 시각, 유형, `tm_x`, `tm_y`, 설명 | 지도 마커와 경로 참고 정보. 좌표는 GRS80TM(WTM)이며 화면에서 WGS84로 변환 |
+
+#### AI 모델 및 예측 테이블
+
+| 테이블 | 무엇을 저장하나 | 주요 키·컬럼 | 사용 목적 |
+|---|---|---|---|
+| `model_versions` | 실제 배포 가능한 모델 버전과 성능 | `model_version`(PK), 알고리즘, 하이퍼파라미터, MAE·RMSE·R², 모델 파일 경로, 활성 여부 | 어떤 학습 모델을 운영에 사용할지 관리 |
+| `model_training_history` | 채택 여부와 관계없는 모든 학습 시도 | 모델 버전, 알고리즘, 성능지표, 학습시각, `accepted` | 실험 비교와 leaderboard 이력 보존. 배포 모델 테이블과 역할이 다름 |
+| `traffic_predictions` | 모델이 생성한 지점·방향별 미래 교통량 | `spot_id`, `direction_code`, `model_version`, 생성시각, 목표시각, 예측값, 실제값 | AI 예측 화면과 온라인 성능 평가. 목표시각이 지난 뒤 `actual_volume`을 채워 오차 계산 |
+
+#### 사용자 기능 테이블
+
+| 테이블 | 무엇을 저장하나 | 주요 키·컬럼 | 보안·관계 |
+|---|---|---|---|
+| `users` | 로그인 사용자 계정 | `id`(PK), 고유 이메일, `password_hash`, 가입시각 | 비밀번호 원문은 저장하지 않고 PBKDF2-SHA256 해시만 저장 |
+| `user_sessions` | 로그인 세션 | `token_hash`(PK), `user_id`, 만료시각 | 쿠키 원문 대신 토큰 해시를 저장하며 사용자 삭제 시 함께 삭제 |
+| `favorite_routes` | 사용자별 경로 검색 및 즐겨찾기 집계 | `user_id`, 출발지, 도착지, 라벨, 검색 횟수, 최근 검색시각 | 같은 사용자의 동일 출발지·도착지는 한 행으로 누적되고 다른 사용자 데이터와 분리 |
+
+핵심 관계는 다음과 같습니다.
+
+- `traffic_spots` → `traffic_volume_measurements`, `traffic_predictions`: 한 측정지점에 여러 시간대 실측·예측값이 연결됩니다.
+- `road_segments` → `traffic_speed_measurements`, `incidents`: 한 도로 링크에 여러 시간대 속도와 돌발상황이 연결됩니다.
+- `weather_stations` → `weather_measurements`: 한 관측소에 시간별 날씨가 누적됩니다.
+- `traffic_spots` ↔ `road_segments`: `traffic_spot_road_maps`를 통해 지점과 링크를 연결합니다.
+- `model_versions` → `traffic_predictions`: 각 예측값이 어떤 모델에서 생성됐는지 추적합니다.
+- `users` → `user_sessions`, `favorite_routes`: 계정별 세션과 경로 이력을 분리합니다.
+
+`measured_at`, `observed_at`, `occurred_at`, `target_at`은 데이터가 실제로 관측·발생·예측되는 업무 시각이고, `collected_at` 또는 `predicted_at`은 시스템이 DB에 수집하거나 예측을 생성한 시각입니다. 두 종류의 시각을 혼동하지 마세요. 전체 컬럼과 제약조건은 [`backend/src/db/schema.sql`](backend/src/db/schema.sql), 인증 테이블 설명은 [`docs/database/README.md`](docs/database/README.md)를 참고하세요.
+
 
 ---
 
