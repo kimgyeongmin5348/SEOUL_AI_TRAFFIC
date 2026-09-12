@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import precisionRoadsData from "../data/seoul_roads.json"
+import { SEOUL_BOUNDARY } from "../data/seoulBoundary"
 import { loadKakaoMaps } from "../services/kakaoMaps"
 import { resolvePlace } from "../services/placeSearch"
 
@@ -26,7 +27,7 @@ interface MapProps {
   destPoint?: { name: string; lat: number; lng: number }
 }
 
-type MapOverlay = kakao.maps.Polyline | kakao.maps.CustomOverlay | kakao.maps.Circle
+type MapOverlay = kakao.maps.Polyline | kakao.maps.CustomOverlay | kakao.maps.Circle | kakao.maps.Polygon
 
 function getIncidentCoord(inc: IncidentItem): [number, number] {
   const text = `${inc.road} ${inc.location} ${inc.description || ""}`
@@ -92,6 +93,7 @@ export default function MapPlaceholder({
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<kakao.maps.Map | null>(null)
   const roadOverlaysRef = useRef<MapOverlay[]>([])
+  const boundaryOverlayRef = useRef<kakao.maps.Polygon | null>(null)
   const routeOverlaysRef = useRef<MapOverlay[]>([])
   const searchOverlayRef = useRef<kakao.maps.CustomOverlay | null>(null)
   const locationOverlaysRef = useRef<MapOverlay[]>([])
@@ -116,6 +118,17 @@ export default function MapPlaceholder({
       map.addControl(new sdk.maps.MapTypeControl(), sdk.maps.ControlPosition.TOPRIGHT)
       map.addControl(new sdk.maps.ZoomControl(), sdk.maps.ControlPosition.RIGHT)
       mapRef.current = map
+      boundaryOverlayRef.current = new sdk.maps.Polygon({
+        map,
+        path: SEOUL_BOUNDARY.map(([lat, lng]) => new sdk.maps.LatLng(lat, lng)),
+        strokeWeight: 4,
+        strokeColor: "#5e5ce6",
+        strokeOpacity: 0.9,
+        strokeStyle: "solid",
+        fillColor: "#5e5ce6",
+        fillOpacity: 0.035,
+        zIndex: 1,
+      })
       setMapReady(true)
       observer = new ResizeObserver(() => map.relayout())
       observer.observe(containerRef.current)
@@ -125,6 +138,8 @@ export default function MapPlaceholder({
     return () => {
       active = false
       observer?.disconnect()
+      boundaryOverlayRef.current?.setMap(null)
+      boundaryOverlayRef.current = null
       mapRef.current = null
     }
   }, [])
@@ -310,8 +325,8 @@ export default function MapPlaceholder({
         <span role="status" className="glass px-2 py-1.5 rounded-lg text-[11px] text-[#4a4a68] max-w-72">{locationStatus}</span>
       </div>
       <div className="absolute top-3 right-24 z-10">
-        <button type="button" onClick={() => setShowTrafficLines((value) => !value)} className="glass px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showTrafficLines ? "#007aff" : "#6b6b8a" }}>
-          <span className={`w-2 h-2 rounded-full ${showTrafficLines ? "bg-[#007aff]" : "bg-gray-400"}`} />
+        <button type="button" aria-pressed={showTrafficLines} onClick={() => setShowTrafficLines((value) => !value)} className="glass interactive-control px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showTrafficLines ? "#007aff" : "#6b6b8a" }}>
+          <span className={`switch-track ${showTrafficLines ? "is-on" : ""}`}><span className="switch-thumb" /></span>
           <span className="hidden sm:inline">실시간 </span>혼잡도 {showTrafficLines ? "ON" : "OFF"}
         </button>
       </div>
