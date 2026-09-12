@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import precisionRoadsData from "../data/seoul_roads.json"
-import { SEOUL_BOUNDARY } from "../data/seoulBoundary"
+import seoulBoundaryData from "../data/seoulBoundary.json"
 import { loadKakaoMaps } from "../services/kakaoMaps"
 import { resolvePlace } from "../services/placeSearch"
 
@@ -13,6 +13,10 @@ export interface IncidentItem {
   startTime?: string
   estEnd?: string
   impact?: "high" | "medium" | "low"
+  lat?: number
+  lng?: number
+  tmX?: number | null
+  tmY?: number | null
 }
 
 interface MapProps {
@@ -29,49 +33,17 @@ interface MapProps {
 
 type MapOverlay = kakao.maps.Polyline | kakao.maps.CustomOverlay | kakao.maps.Circle | kakao.maps.Polygon
 
-function getIncidentCoord(inc: IncidentItem): [number, number] {
-  const text = `${inc.road} ${inc.location} ${inc.description || ""}`
-  if (text.includes("분당수서") || text.includes("탄천1교") || text.includes("청담대교남단")) return [37.5080, 127.0680]
-  if (text.includes("도봉T") || text.includes("도봉터널")) return [37.6780, 127.0520]
-  if (text.includes("서초터널")) return [37.4650, 127.0180]
-  if (text.includes("봉천터널")) return [37.4720, 126.9450]
-  if (text.includes("소하IC") || text.includes("소하JC")) return [37.4450, 126.8950]
-  if (text.includes("잠실철교") || text.includes("잠실대교")) return [37.5180, 127.0860]
-  if (text.includes("은평구청") || text.includes("녹번역") || text.includes("은평로")) return [37.6020, 126.9290]
-  if (text.includes("녹사평역") || text.includes("이태원역") || text.includes("이태원로")) return [37.5340, 126.9930]
-  if (text.includes("탄천동로") || text.includes("종합운동장")) return [37.5110, 127.0750]
-  if (text.includes("봉은교") || text.includes("탄천나들목")) return [37.5140, 127.0680]
-  if (text.includes("소공로") || text.includes("서울광장") || text.includes("한국은행")) return [37.5640, 126.9790]
-  if (text.includes("솔샘로") || text.includes("삼양입구")) return [37.6250, 127.0200]
-  if (text.includes("성산로") || text.includes("마포구청역")) return [37.5630, 126.9030]
-  if (text.includes("정동길") || text.includes("정동제일교회")) return [37.5670, 126.9720]
-  if (text.includes("정릉터널") || text.includes("정릉램프")) return [37.6040, 126.9940]
-  if (text.includes("동일로") || text.includes("도봉운전면허")) return [37.6530, 127.0600]
-  if (text.includes("군자교") || text.includes("성동JC")) return [37.5580, 127.0700]
-  if (text.includes("다산로") || text.includes("신당역")) return [37.5650, 127.0180]
-  if (text.includes("영동대교남단") || text.includes("성수대교남단")) return [37.5290, 127.0500]
-  if (text.includes("서강대교북단") || text.includes("양화대교북단")) return [37.5420, 126.9180]
-  if (text.includes("방화대교남단") || text.includes("가양대교남단")) return [37.5700, 126.8400]
-  if (text.includes("마포대교") || text.includes("양화대교")) return [37.5400, 126.9200]
-  if (text.includes("서초IC")) return [37.4860, 127.0250]
-  if (text.includes("하남분기점")) return [37.5350, 127.1850]
-  if (text.includes("강남대로") || text.includes("양재IC")) return [37.4800, 127.0300]
-  if (text.includes("광화문")) return [37.5759, 126.9768]
-  if (text.includes("홍지문터널")) return [37.5950, 126.9530]
-  return [37.5300, 126.9800]
-}
-
 function makePill(text: string, background: string) {
   const element = document.createElement("div")
   element.textContent = text
   Object.assign(element.style, {
     background,
     color: "white",
-    padding: "5px 10px",
-    borderRadius: "14px",
-    border: "2px solid white",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.28)",
-    fontSize: "11px",
+    padding: "3px 6px",
+    borderRadius: "10px",
+    border: "1.5px solid white",
+    boxShadow: "0 3px 9px rgba(0,0,0,0.22)",
+    fontSize: "9px",
     fontWeight: "700",
     whiteSpace: "nowrap",
     fontFamily: "sans-serif",
@@ -93,7 +65,7 @@ export default function MapPlaceholder({
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<kakao.maps.Map | null>(null)
   const roadOverlaysRef = useRef<MapOverlay[]>([])
-  const boundaryOverlayRef = useRef<kakao.maps.Polygon | null>(null)
+  const boundaryOverlaysRef = useRef<kakao.maps.Polygon[]>([])
   const routeOverlaysRef = useRef<MapOverlay[]>([])
   const searchOverlayRef = useRef<kakao.maps.CustomOverlay | null>(null)
   const locationOverlaysRef = useRef<MapOverlay[]>([])
@@ -103,6 +75,7 @@ export default function MapPlaceholder({
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState("")
   const [showTrafficLines, setShowTrafficLines] = useState(true)
+  const [showIncidents, setShowIncidents] = useState(true)
   const [locationStatus, setLocationStatus] = useState("현재 위치 확인 중…")
   const viewHasContext = Boolean(searchQuery || routeCoordinates?.length || selectedIncidentId != null)
 
@@ -118,17 +91,18 @@ export default function MapPlaceholder({
       map.addControl(new sdk.maps.MapTypeControl(), sdk.maps.ControlPosition.TOPRIGHT)
       map.addControl(new sdk.maps.ZoomControl(), sdk.maps.ControlPosition.RIGHT)
       mapRef.current = map
-      boundaryOverlayRef.current = new sdk.maps.Polygon({
+      const coordinates = seoulBoundaryData.features[0].geometry.coordinates as number[][][][]
+      boundaryOverlaysRef.current = coordinates.map((polygon) => new sdk.maps.Polygon({
         map,
-        path: SEOUL_BOUNDARY.map(([lat, lng]) => new sdk.maps.LatLng(lat, lng)),
-        strokeWeight: 4,
+        path: polygon.map((ring) => ring.map(([lng, lat]) => new sdk.maps.LatLng(lat, lng))),
+        strokeWeight: 3,
         strokeColor: "#5e5ce6",
-        strokeOpacity: 0.9,
+        strokeOpacity: 0.82,
         strokeStyle: "solid",
         fillColor: "#5e5ce6",
-        fillOpacity: 0.035,
+        fillOpacity: 0.025,
         zIndex: 1,
-      })
+      }))
       setMapReady(true)
       observer = new ResizeObserver(() => map.relayout())
       observer.observe(containerRef.current)
@@ -138,8 +112,8 @@ export default function MapPlaceholder({
     return () => {
       active = false
       observer?.disconnect()
-      boundaryOverlayRef.current?.setMap(null)
-      boundaryOverlayRef.current = null
+      boundaryOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+      boundaryOverlaysRef.current = []
       mapRef.current = null
     }
   }, [])
@@ -207,8 +181,9 @@ export default function MapPlaceholder({
         roadOverlaysRef.current.push(outline, line)
       })
     }
-    incidents.forEach((incident) => {
-      const [lat, lng] = getIncidentCoord(incident)
+    let active = true
+    const drawIncident = (incident: IncidentItem, lat: number, lng: number) => {
+      if (!active || !showIncidents) return
       const position = new kakao.maps.LatLng(lat, lng)
       const isAccident = incident.type === "사고"
       const isConstruction = incident.type === "공사"
@@ -221,13 +196,31 @@ export default function MapPlaceholder({
       const overlay = new kakao.maps.CustomOverlay({ map, position, content: button, clickable: true, zIndex: 8 })
       roadOverlaysRef.current.push(overlay)
       incidentOverlaysRef.current.set(incident.id, { overlay, lat, lng })
-    })
+    }
+    if (showIncidents) {
+      const geocoder = new kakao.maps.services.Geocoder()
+      incidents.forEach((incident) => {
+        if (typeof incident.lat === "number" && typeof incident.lng === "number") {
+          drawIncident(incident, incident.lat, incident.lng)
+        } else if (typeof incident.tmX === "number" && typeof incident.tmY === "number") {
+          geocoder.transCoord(incident.tmX, incident.tmY, (results, status) => {
+            if (status === kakao.maps.services.Status.OK && results[0]) {
+              drawIncident(incident, Number(results[0].y), Number(results[0].x))
+            }
+          }, {
+            input_coord: kakao.maps.services.Coords.WTM,
+            output_coord: kakao.maps.services.Coords.WGS84,
+          })
+        }
+      })
+    }
     return () => {
+      active = false
       roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
       roadOverlaysRef.current = []
       incidentOverlaysRef.current.clear()
     }
-  }, [incidents, mapReady, onSelectIncident, roadSpeeds, showTrafficLines])
+  }, [incidents, mapReady, onSelectIncident, roadSpeeds, showIncidents, showTrafficLines])
 
   useEffect(() => {
     const map = mapRef.current
@@ -324,10 +317,14 @@ export default function MapPlaceholder({
         <button type="button" onClick={focusCurrentLocation} className="glass shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-[#007aff] pointer-events-auto">◎ 내 위치</button>
         <span role="status" className="glass px-2 py-1.5 rounded-lg text-[11px] text-[#4a4a68] max-w-72">{locationStatus}</span>
       </div>
-      <div className="absolute top-3 right-24 z-10">
+      <div className="absolute top-3 right-24 z-10 flex flex-col items-end gap-2">
         <button type="button" aria-pressed={showTrafficLines} onClick={() => setShowTrafficLines((value) => !value)} className="glass interactive-control px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showTrafficLines ? "#007aff" : "#6b6b8a" }}>
           <span className={`switch-track ${showTrafficLines ? "is-on" : ""}`}><span className="switch-thumb" /></span>
           <span className="hidden sm:inline">실시간 </span>혼잡도 {showTrafficLines ? "ON" : "OFF"}
+        </button>
+        <button type="button" aria-pressed={showIncidents} onClick={() => setShowIncidents((value) => !value)} className="glass interactive-control px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showIncidents ? "#ff3b30" : "#6b6b8a" }}>
+          <span className={`switch-track incident-switch ${showIncidents ? "is-on" : ""}`}><span className="switch-thumb" /></span>
+          돌발상황 {showIncidents ? "ON" : "OFF"}
         </button>
       </div>
       <div className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm" style={{ borderRadius: 12 }}>

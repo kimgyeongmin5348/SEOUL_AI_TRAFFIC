@@ -16,7 +16,7 @@ import {
   predictionData as defaultPredictionData,
   congestionPrediction as defaultCongestionPrediction,
 } from "../data/mock"
-import { fetchPredictionData } from "../services/api"
+import { fetchPredictionData, fetchRoadPrediction, searchPredictionRoads, PredictionRoadOption } from "../services/api"
 import { useEffect } from "react"
 
 const trendColor = { up: "#ff3b30", down: "#34c759", stable: "#007aff" }
@@ -29,11 +29,17 @@ const levelBg = {
 
 export default function Prediction() {
   const [horizon, setHorizon] = useState("+1시간")
+  const [roadQuery, setRoadQuery] = useState("")
+  const [selectedRoad, setSelectedRoad] = useState("")
+  const [roadOptions, setRoadOptions] = useState<PredictionRoadOption[]>([])
+  const [roadLoading, setRoadLoading] = useState(false)
+  const [roadError, setRoadError] = useState("")
   const [predState, setPredState] = useState({
     predictions: defaultPredictionData,
     congestion: defaultCongestionPrediction,
     latestAt: null as string | null,
     isFromDb: false,
+    roads: defaultCongestionPrediction.map((road) => ({ ...road, predictions: defaultPredictionData })),
   })
 
   useEffect(() => {
@@ -41,6 +47,7 @@ export default function Prediction() {
     fetchPredictionData().then((res) => {
       if (active) {
         setPredState(res)
+        setSelectedRoad(res.roads[0]?.road || "")
       }
     })
     return () => {
@@ -48,8 +55,47 @@ export default function Prediction() {
     }
   }, [])
 
-  const predictionData = predState.predictions
-  const congestionPrediction = predState.congestion
+  useEffect(() => {
+    let active = true
+    const timer = window.setTimeout(() => {
+      searchPredictionRoads(roadQuery === selectedRoad ? "" : roadQuery).then((roads) => {
+        if (active) setRoadOptions(roads)
+      }).catch(() => {
+        if (active) setRoadOptions([])
+      })
+    }, roadQuery ? 220 : 0)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [roadQuery, selectedRoad])
+
+  const roadMatches = predState.roads.filter((item) =>
+    item.road.replace(/\s/g, "").includes(roadQuery.trim().replace(/\s/g, "")),
+  )
+  const activeRoad = predState.roads.find((item) => item.road === selectedRoad) || predState.roads[0]
+  const predictionData = activeRoad?.predictions || predState.predictions
+  const congestionPrediction = roadQuery.trim() ? roadMatches : predState.roads.slice(0, 5)
+
+  const selectRoad = async (option: PredictionRoadOption) => {
+    setRoadLoading(true)
+    setRoadError("")
+    setRoadQuery(option.spot_name)
+    try {
+      const prediction = await fetchRoadPrediction(option.spot_id)
+      setPredState((state) => ({
+        ...state,
+        isFromDb: true,
+        predictions: prediction.predictions,
+        roads: [prediction, ...state.roads.filter((item) => item.road !== prediction.road)],
+      }))
+      setSelectedRoad(prediction.road)
+    } catch (err) {
+      setRoadError(err instanceof Error ? err.message : "도로 예측에 실패했습니다.")
+    } finally {
+      setRoadLoading(false)
+    }
+  }
 
   return (
     <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
@@ -91,8 +137,46 @@ export default function Prediction() {
                 predState.isFromDb ? "bg-[#34c759]" : "bg-[#5e5ce6]"
               }`}
             />
-            {predState.isFromDb ? "DB 학습 모델" : "예시 모델"} · 신뢰도 {predictionData[0].confidence}%
+            {predState.isFromDb ? "DB 학습 모델" : "예시 모델"} · 신뢰도 {predictionData[0]?.confidence ?? 0}%
           </div>
+        </div>
+
+        <div className="glass p-3 mt-4" style={{ borderRadius: 18 }}>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <input
+                value={roadQuery}
+                onChange={(event) => setRoadQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && roadOptions[0]) void selectRoad(roadOptions[0])
+                }}
+                placeholder="예측할 도로 검색 (예: 강변북로, 성산로)"
+                className="w-full rounded-2xl bg-white/60 border border-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#007aff]/20"
+              />
+              {roadQuery.trim() && roadQuery !== selectedRoad && (
+                <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 glass rounded-2xl p-1.5 shadow-xl max-h-56 overflow-y-auto">
+                  {roadOptions.slice(0, 8).map((item) => (
+                    <button key={item.spot_id} type="button" onClick={() => void selectRoad(item)} className="interactive-control w-full text-left px-3 py-2 rounded-xl text-sm text-[#33334d] hover:bg-white/70">
+                      {item.spot_name}
+                    </button>
+                  ))}
+                  {!roadOptions.length && <p className="px-3 py-3 text-xs text-[#6b6b8a]">예측 가능한 측정 도로가 없습니다.</p>}
+                </div>
+              )}
+            </div>
+            <button type="button" disabled={!roadOptions.length || roadLoading} onClick={() => roadOptions[0] && void selectRoad(roadOptions[0])} className="interactive-control px-5 py-3 rounded-2xl text-sm font-semibold text-white disabled:opacity-40" style={{ background: "linear-gradient(135deg,#007aff,#5e5ce6)" }}>
+              {roadLoading ? "AI 예측 중…" : "도로 예측 보기"}
+            </button>
+          </div>
+          <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
+            <span className="text-[11px] text-[#6b6b8a] py-1.5 whitespace-nowrap">대표 도로</span>
+            {roadOptions.slice(0, 5).map((item) => (
+              <button key={item.spot_id} type="button" onClick={() => void selectRoad(item)} className="interactive-control px-2.5 py-1 rounded-full text-[11px] whitespace-nowrap" style={{ background: item.spot_name === selectedRoad ? "rgba(0,122,255,.12)" : "rgba(255,255,255,.55)", color: item.spot_name === selectedRoad ? "#007aff" : "#6b6b8a" }}>
+                {item.spot_name}
+              </button>
+            ))}
+          </div>
+          {roadError && <p role="alert" className="mt-2 text-xs text-red-600">{roadError}</p>}
         </div>
 
         {/* Horizon selector */}
@@ -134,7 +218,7 @@ export default function Prediction() {
                   fontSize: 15,
                 }}
               >
-                교통량 예측 vs 실제
+                {activeRoad?.road || "대표 도로"} · 교통량 예측 vs 실제
               </h3>
               <div
                 className="flex items-center gap-3 text-xs"
@@ -350,7 +434,7 @@ export default function Prediction() {
               fontSize: 15,
             }}
           >
-            도로별 혼잡 예측
+            {roadQuery.trim() ? `“${roadQuery}” 검색 결과` : "대표 도로별 혼잡 예측"}
           </h3>
           <div className="overflow-x-auto">
             <table
@@ -403,6 +487,7 @@ export default function Prediction() {
                 ))}
               </tbody>
             </table>
+            {!congestionPrediction.length && <p className="py-8 text-center text-sm text-[#6b6b8a]">검색된 예측 도로가 없습니다.</p>}
           </div>
         </div>
       </main>

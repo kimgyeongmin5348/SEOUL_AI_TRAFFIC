@@ -54,7 +54,11 @@ def load_model(path, modified):
 
 
 def build_features(history, weather, target):
-    """Exact hourly lags; never substitute stale rows for missing hours."""
+    """Build lag features from fresh observations plus a 30-day hourly profile.
+
+    The trained artifact still receives the same columns it was trained with,
+    while a single missing collection hour no longer disables inference.
+    """
     if not weather:
         raise ValueError("예측에 필요한 기상 관측값이 부족합니다.")
     weather = dict(weather)
@@ -70,11 +74,21 @@ def build_features(history, weather, target):
     frame["measured_at"] = pd.to_datetime(frame["measured_at"])
     rows, metadata = [], []
     for (spot, direction), group in frame.groupby(["spot_id", "direction_code"]):
+        group = group.sort_values("measured_at")
         volumes = group.set_index("measured_at")["volume"].astype(float)
         hours = [target - timedelta(hours=h) for h in range(1, 25)]
-        if not all(h in volumes.index for h in hours):
-            continue
-        past = volumes.loc[hours]
+
+        def observed_or_profile(moment):
+            if moment in volumes.index:
+                value = volumes.loc[moment]
+                if np.isscalar(value):
+                    return float(value)
+                return float(value.iloc[-1])
+            same_hour = volumes[(volumes.index.hour == moment.hour) & (volumes.index < target)]
+            valid = same_hour[np.isfinite(same_hour) & (same_hour >= 0)]
+            return float(valid.median()) if not valid.empty else math.nan
+
+        past = pd.Series([observed_or_profile(hour) for hour in hours], index=hours)
         if not np.isfinite(past).all() or (past < 0).any():
             continue
         last = group.iloc[-1]
@@ -92,7 +106,7 @@ def build_features(history, weather, target):
         rows.append(row)
         metadata.append({"spot_id": spot, "spot_name": last["spot_name"], "baseline": float(past.iloc[23]), "direction_code": int(direction), "tm_x": float(last["tm_x"]), "tm_y": float(last["tm_y"])})
     if not rows:
-        raise ValueError("최근 24시간의 연속 교통량이 부족해 AI 추천을 계산할 수 없습니다.")
+        raise ValueError("실시간 교통량과 최근 시간대별 이력이 부족해 AI 추천을 계산할 수 없습니다.")
     return pd.DataFrame(rows), metadata
 
 
@@ -157,7 +171,7 @@ def predict_routes(db, candidates, now, departure_at=None):
         WHERE v.spot_id IN :spot_ids AND v.measured_at >= :start AND v.measured_at < :target
         GROUP BY v.spot_id, s.spot_name, s.tm_x, s.tm_y, v.direction_code, v.measured_at
         ORDER BY v.measured_at
-    """).bindparams(bindparam("spot_ids", expanding=True)), {"spot_ids": spot_ids, "start": target-timedelta(hours=27), "target": target}).mappings())
+    """).bindparams(bindparam("spot_ids", expanding=True)), {"spot_ids": spot_ids, "start": target-timedelta(days=30), "target": target}).mappings())
     weather = db.execute(text("""
         SELECT temperature_c, rainfall_mm, humidity_pct, wind_speed_ms, pressure_hpa, observed_at
         FROM weather_measurements WHERE weather_station_id='108'
@@ -196,5 +210,61 @@ def predict_routes(db, candidates, now, departure_at=None):
             "available": available, "routes": results,
             "observed_at": observed.isoformat()+"+09:00",
             "weather_at": weather["observed_at"].isoformat()+"+09:00", "forecast_steps": forecast_steps,
-            "message": f"베스트 모델 교통량 예측 반영 · 후보 {eligible_count}/{len(results)}개 평가 · {forecast_steps}시간 순차 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측 유지 · 도로명 기준 양방향 합산 · 소요시간은 OSRM 추정치" if available
+            "message": f"베스트 모델 교통량 예측 반영 · 후보 {eligible_count}/{len(results)}개 평가 · 실시간 관측과 최근 30일 시간대 패턴 사용 · {forecast_steps}시간 순차 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측 유지 · 도로명 기준 양방향 합산 · 소요시간은 OSRM 추정치" if available
             else "예측 반영 범위가 50% 이상인 경로 후보가 없어 AI 추천을 보류했습니다."}
+
+
+def predict_spot_series(db, spot_id, now, horizon_hours=3):
+    """Predict one traffic observation spot on demand for the prediction UI."""
+    model, report = best_saved_model()
+    target = now.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    spot = db.execute(text("""
+        SELECT spot_id, spot_name, tm_x, tm_y FROM traffic_spots WHERE spot_id=:spot_id
+    """), {"spot_id": spot_id}).mappings().first()
+    if not spot:
+        raise ValueError("선택한 도로 측정지점을 찾을 수 없습니다.")
+    history = list(db.execute(text("""
+        SELECT v.spot_id, s.spot_name, s.tm_x, s.tm_y, v.direction_code,
+               v.measured_at, SUM(v.traffic_volume) AS volume
+        FROM traffic_volume_measurements v JOIN traffic_spots s ON s.spot_id=v.spot_id
+        WHERE v.spot_id=:spot_id AND v.measured_at>=:start AND v.measured_at<:target
+        GROUP BY v.spot_id, s.spot_name, s.tm_x, s.tm_y, v.direction_code, v.measured_at
+        ORDER BY v.measured_at
+    """), {"spot_id": spot_id, "start": target-timedelta(days=30), "target": target}).mappings())
+    weather = db.execute(text("""
+        SELECT temperature_c, rainfall_mm, humidity_pct, wind_speed_ms, pressure_hpa, observed_at
+        FROM weather_measurements WHERE weather_station_id='108'
+        AND observed_at<=:now AND observed_at>=:start
+        ORDER BY observed_at DESC LIMIT 1
+    """), {"now": target, "start": target-timedelta(hours=36)}).mappings().first()
+    if not history:
+        raise ValueError("선택한 도로의 최근 교통량이 없습니다.")
+    observed = max(row["measured_at"] for row in history)
+    if target - observed > timedelta(hours=3):
+        raise ValueError("선택한 도로의 실시간 교통량이 3시간 이상 지연됐습니다.")
+
+    records = [dict(row) for row in history]
+    forecast_target = observed + timedelta(hours=1)
+    end = target + timedelta(hours=horizon_hours)
+    columns = report["feature_columns"]
+    points = []
+    while forecast_target <= end:
+        features, metadata = build_features(records, weather, forecast_target)
+        predictions = np.asarray(model.predict(features[columns]), dtype=float)
+        if not np.isfinite(predictions).all():
+            raise ValueError("모델이 유효하지 않은 예측값을 반환했습니다.")
+        for value, meta in zip(predictions, metadata, strict=True):
+            records.append({**meta, "measured_at": forecast_target, "volume": max(0., float(value))})
+        if forecast_target >= target:
+            points.append({
+                "target_at": forecast_target.isoformat()+"+09:00",
+                "predicted_volume": round(sum(max(0., float(value)) for value in predictions), 1),
+            })
+        forecast_target += timedelta(hours=1)
+    current = sum(float(row["volume"]) for row in history if row["measured_at"] == observed)
+    return {
+        "spot_id": spot["spot_id"], "road": spot["spot_name"],
+        "observed_at": observed.isoformat()+"+09:00", "current_volume": round(current, 1),
+        "model_version": report["model_version"], "algorithm": report["algorithm"],
+        "points": points,
+    }

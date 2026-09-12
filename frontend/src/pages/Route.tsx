@@ -22,8 +22,8 @@ const POPULAR_ROUTES = [
 export default function Route() {
   const [searchParams] = useSearchParams()
   const { user } = useAuth()
-  const initialOrigin = searchParams.get("origin") || "마포구 합정동"
-  const initialDest = searchParams.get("dest") || "강남구 역삼동"
+  const initialOrigin = searchParams.get("origin") || ""
+  const initialDest = searchParams.get("dest") || ""
   const departureAt = searchParams.get("departure") || undefined
   const [originPlace, setOriginPlace] = useState<PlaceSuggestion | null>(null)
   const [destPlace, setDestPlace] = useState<PlaceSuggestion | null>(null)
@@ -157,7 +157,16 @@ export default function Route() {
       setDestPlace(null)
       void runTextAnalysis(qOrigin, qDest)
     } else {
-      void runTextAnalysis(initialOrigin, initialDest)
+      requestId.current++
+      setOrigin(qOrigin || "")
+      setDest(qDest || "")
+      setOriginPlace(null)
+      setDestPlace(null)
+      setRouteList([])
+      setOriginPoint(null)
+      setDestPoint(null)
+      setPredictionMessage("")
+      setError("")
     }
   }, [searchParams])
 
