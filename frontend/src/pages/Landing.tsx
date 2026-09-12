@@ -1,6 +1,7 @@
 import { useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import NavBar from "../components/NavBar"
+import { reverseGeocodeCurrentLocation } from "../services/placeSearch"
 
 const features = [
   {
@@ -89,6 +90,8 @@ export default function Landing() {
   const [dest, setDest] = useState("")
   const [timeMode, setTimeMode] = useState("now")
   const [departureAt, setDepartureAt] = useState("")
+  const [locating, setLocating] = useState(false)
+  const [locationMessage, setLocationMessage] = useState("")
   const timeInputRef = useRef<HTMLInputElement>(null)
 
   const toLocalInput = (date: Date) => {
@@ -117,6 +120,32 @@ export default function Landing() {
   const handleSwap = () => {
     setOrigin(dest)
     setDest(origin)
+  }
+
+  const useCurrentLocation = () => {
+    if (!window.isSecureContext || !navigator.geolocation) {
+      setLocationMessage("위치 기능은 HTTPS 또는 localhost에서 사용할 수 있습니다.")
+      return
+    }
+    setLocating(true)
+    setLocationMessage("현재 위치를 확인하고 있습니다…")
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const place = await reverseGeocodeCurrentLocation(coords.latitude, coords.longitude)
+        const roadName = place.roadAddress || place.address || place.name
+        setOrigin(roadName)
+        setLocationMessage(`${roadName} · 도로명 확인 완료`)
+      } catch (err) {
+        setLocationMessage(err instanceof Error && err.message === "OUTSIDE_SEOUL"
+          ? "현 위치가 서울이 아닙니다. 현위치로부터 경로설정을 사용하지 못합니다."
+          : "현재 위치의 도로명 주소를 확인하지 못했습니다.")
+      } finally {
+        setLocating(false)
+      }
+    }, () => {
+      setLocating(false)
+      setLocationMessage("현재 위치를 확인할 수 없습니다. 위치 권한을 확인해 주세요.")
+    }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 })
   }
 
   return (
@@ -308,10 +337,12 @@ export default function Landing() {
                 <button
                   type="button"
                   aria-label="현재 위치 사용"
+                  onClick={useCurrentLocation}
+                  disabled={locating}
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-xl text-[#007aff] hover:bg-[rgba(0,122,255,0.1)] transition-colors text-xs font-medium"
                   style={{ fontFamily: "var(--font-body)" }}
                 >
-                  현위치
+                  {locating ? "확인 중…" : "현위치"}
                 </button>
               </div>
 
@@ -361,6 +392,10 @@ export default function Landing() {
               </div>
               </div>
 
+              {locationMessage && (
+                <p role="status" className="px-1 text-left text-[11px] text-[#6b6b8a]">{locationMessage}</p>
+              )}
+
               {/* Time selector */}
               <div className="flex gap-2 mt-1">
                 {[
@@ -372,7 +407,7 @@ export default function Landing() {
                     key={option.mode}
                     type="button"
                     onClick={() => selectOffset(option.mode, option.minutes)}
-                    className="flex-1 py-2 text-xs font-medium transition-all"
+                    className="interactive-control flex-1 py-2 text-xs font-medium transition-all"
                     style={{
                       borderRadius: 12,
                       background:
@@ -386,6 +421,8 @@ export default function Landing() {
                           : "rgba(255,255,255,0.9)"
                       }`,
                       fontFamily: "var(--font-body)",
+                      transform: timeMode === option.mode ? "translateY(-1px)" : undefined,
+                      boxShadow: timeMode === option.mode ? "0 4px 12px rgba(0,122,255,.12)" : undefined,
                     }}
                   >
                     {option.label}
@@ -394,7 +431,7 @@ export default function Landing() {
                 <button
                   type="button"
                   onClick={selectCustomTime}
-                  className="flex-1 py-2 text-xs font-medium transition-all"
+                  className="interactive-control flex-1 py-2 text-xs font-medium transition-all"
                   style={{
                     borderRadius: 12,
                     background: timeMode === "custom" ? "rgba(0,122,255,0.12)" : "rgba(240,242,248,0.8)",

@@ -4,7 +4,7 @@ import Sidebar from "../components/Sidebar"
 import MapPlaceholder from "../components/MapPlaceholder"
 import PlaceSearchInput from "../components/PlaceSearchInput"
 import { getLiveSeoulRoutes, RouteResult } from "../services/routing"
-import { resolvePlace } from "../services/placeSearch"
+import { resolvePlace, reverseGeocodeCurrentLocation } from "../services/placeSearch"
 import { fetchFavoriteRoutes, recordRouteSearch, FavoriteRouteItem } from "../services/api"
 import { useAuth } from "../auth"
 import type { PlaceSuggestion } from "../types/place"
@@ -52,22 +52,25 @@ export default function Route() {
     const id = ++locationId.current
     setLocating(true)
     setLocationMessage("현재 위치를 확인하고 있습니다…")
-    navigator.geolocation.getCurrentPosition(({ coords }) => {
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
       if (id !== locationId.current) return
-      const currentPlace: PlaceSuggestion = {
-        id: "current-location",
-        name: "현 위치",
-        address: "",
-        roadAddress: "",
-        category: "현재 위치",
-        lat: coords.latitude,
-        lng: coords.longitude,
-        source: "current",
+      try {
+        setLocationMessage("도로명 주소를 확인하고 있습니다…")
+        const currentPlace = await reverseGeocodeCurrentLocation(coords.latitude, coords.longitude)
+        if (id !== locationId.current) return
+        const displayAddress = currentPlace.roadAddress || currentPlace.address || currentPlace.name
+        setOrigin(displayAddress)
+        setOriginPlace(currentPlace)
+        setLocationMessage(`${displayAddress} · 정확도 약 ${Math.round(coords.accuracy)}m`)
+      } catch (err) {
+        if (id !== locationId.current) return
+        setOriginPlace(null)
+        setLocationMessage(err instanceof Error && err.message === "OUTSIDE_SEOUL"
+          ? "현 위치가 서울이 아닙니다. 현위치로부터 경로설정을 사용하지 못합니다."
+          : "현재 위치의 도로명 주소를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+      } finally {
+        if (id === locationId.current) setLocating(false)
       }
-      setOrigin("현 위치")
-      setOriginPlace(currentPlace)
-      setLocating(false)
-      setLocationMessage(`현 위치를 출발지로 설정했습니다 (정확도 약 ${Math.round(coords.accuracy)}m). 목적지를 입력하고 AI 경로 분석을 눌러 주세요.`)
     }, (failure) => {
       if (id !== locationId.current) return
       setLocating(false)
@@ -76,7 +79,7 @@ export default function Route() {
         : failure.code === 3
           ? "위치 확인 시간이 초과되었습니다. 다시 시도하거나 출발지를 직접 입력해 주세요."
           : "현재 위치를 확인할 수 없습니다. 기기의 위치 서비스를 켜거나 출발지를 직접 입력해 주세요.")
-    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 })
+    }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 })
   }
   const [dbFavorites, setDbFavorites] = useState<FavoriteRouteItem[]>([])
 
