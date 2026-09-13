@@ -208,7 +208,7 @@ AWS RDS MySQL 데이터베이스 접속 정보를 `backend/.env` 파일로 생�
 uv run python main.py
 # 별도 터미널
 cd frontend
-pnpm dev
+npm run dev
 ```
 
 화면: http://localhost:5173/dashboard. Vite의 `/api` 프록시가 로컬 8000번 FastAPI 서버로 연결합니다.
