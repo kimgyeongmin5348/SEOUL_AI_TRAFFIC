@@ -177,24 +177,6 @@ AWS RDS MySQL 데이터베이스 접속 정보를 `backend/.env` 파일로 생�
 
 ---
 
-## 📊 ★ AI 모델 학습용 데이터셋 준비 방법 (팀원 필독!)
-
-> **⚠️ 대용량 데이터 Git 미포함 안내**  
-> 전처리된 학습 데이터(`traffic_training_dataset.csv`)는 **약 487만 행(1GB 이상)**으로 GitHub 파일 용량 제한(100MB)을 초과하므로 Git에 커밋되지 않습니다. 대신 이미 **클라우드 DB(AWS RDS)에 2년 치 전수 데이터가 완벽히 구축**되어 있습니다.
-
-팀원은 프로젝트를 클론한 후, **터미널에서 아래 명령어 딱 한 줄만 실행**하면 본인 컴퓨터에 자동으로 487만 행짜리 정제 데이터셋이 1분 만에 생성됩니다!
-
-```bash
-# RDS DB에서 488만 건을 가져와 결측치 0인 전처리 학습 데이터셋 자동 생성
-uv run python scripts/process_data.py
-```
-
-### 📁 생성되는 산출물 확인
-* `data/processed/traffic_training_dataset.csv`: **4,871,862 행 $\times$ 27 컬럼** (결측치 0건 완전 데이터셋)
-* `data/processed/feature_meta.json`: 27개 특성 컬럼 메타데이터 정의서
-
----
-
 ## 🛠️ 프로젝트 주요 스크립트 안내
 
 | 실행 명령어 | 설명 |

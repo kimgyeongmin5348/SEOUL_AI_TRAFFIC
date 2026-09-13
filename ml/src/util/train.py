@@ -25,7 +25,9 @@ def load_time_split(dataset_path: Path, target: str = "target_volume", nrows: in
     df = pd.read_csv(dataset_path, nrows=nrows)
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime").reset_index(drop=True)
-    excluded = {target, "datetime", "spot_id", "spot_name"}
+    excluded = {
+        target, "datetime", "spot_id", "spot_name", "link_id", "road_key", "mapping_method"
+    }
     features = [col for col in df.columns if col not in excluded and pd.api.types.is_numeric_dtype(df[col])]
     split_index = max(1, int(len(df) * TIME_SPLIT_RATIO))
     cutoff = df.loc[split_index, "datetime"] if split_index < len(df) else df["datetime"].max()
@@ -41,7 +43,9 @@ def load_full_dataset(dataset_path: Path, target: str = "target_volume", nrows: 
     df = pd.read_csv(dataset_path, nrows=nrows)
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime").reset_index(drop=True)
-    excluded = {target, "datetime", "spot_id", "spot_name"}
+    excluded = {
+        target, "datetime", "spot_id", "spot_name", "link_id", "road_key", "mapping_method"
+    }
     features = [col for col in df.columns if col not in excluded and pd.api.types.is_numeric_dtype(df[col])]
     if df.empty or not features:
         raise ValueError("empty dataset or no numeric features")
@@ -234,13 +238,38 @@ def main() -> None:
     from ml.src.models.xgboost_model import train_model as train_xgboost
 
     trainers = {
-        "xgboost": train_xgboost,
-        "lightgbm": train_lightgbm,
+        "xgboost": ("XGBoost", train_xgboost),
+        "lightgbm": ("LightGBM", train_lightgbm),
     }
-    selected = trainers.values() if args.model == "all" else (trainers[args.model],)
-    for trainer in selected:
-        trainer(input_path=args.input, nrows=args.nrows, no_db=args.no_db)
+    targets = trainers.items() if args.model == "all" else [(args.model, trainers[args.model])]
+
+    results = []
+    print("\n" + "=" * 65)
+    print(f"🚀 RoadPulse AI 모델 일괄 학습 파이프라인 시작 (대상: {args.model})")
+    print("=" * 65)
+
+    for idx, (name, (algo, trainer)) in enumerate(targets, start=1):
+        print(f"\n>>> [{idx}/{len(targets)}] {algo} 모델 학습 시작...")
+        res = trainer(input_path=args.input, nrows=args.nrows, no_db=args.no_db)
+        results.append(res)
+
+    print("\n" + "=" * 65)
+    print("📊 전체 모델 학습 완료 및 평가 요약:")
+    print("=" * 65)
+    header = f"{'Model Version':<28} {'Algorithm':<10} {'RMSE':<9} {'MAE':<9} {'R²':<8} {'Accepted'}"
+    print(header)
+    print("-" * 65)
+    for r in results:
+        v = r.get("model_version", "-")
+        a = r.get("algorithm", "-")
+        rmse = f"{r.get('rmse', 0.0):.2f}"
+        mae = f"{r.get('mae', 0.0):.2f}"
+        r2 = f"{r.get('r2', 0.0):.4f}"
+        acc = "✅ YES" if r.get("accepted") else "❌ NO (기존 우수)"
+        print(f"{v:<28} {a:<10} {rmse:<9} {mae:<9} {r2:<8} {acc}")
+    print("=" * 65 + "\n")
 
 
 if __name__ == "__main__":
     main()
+
