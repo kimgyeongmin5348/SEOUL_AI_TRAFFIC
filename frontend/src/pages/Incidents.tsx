@@ -58,6 +58,16 @@ export default function Incidents() {
   }, [])
 
   const incidents = incidentsState.incidents
+
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < 640 : false
+  )
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640)
+    window.addEventListener("resize", handleResize)
+    return () => window.removeEventListener("resize", handleResize)
+  }, [])
   const filters = ["전체", "사고", "공사", "통제", "기타"]
 
   const filtered =
@@ -162,31 +172,26 @@ export default function Incidents() {
             {/* List */}
             <div className="lg:w-[400px] flex flex-col gap-3 animate-slide-up-delay-1">
               {/* Filters */}
-              <div
-                className="glass flex gap-1 p-1.5"
-                style={{ borderRadius: 16 }}
-              >
-                {filters.map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFilter(f)}
-                    className="flex-1 py-1.5 text-xs font-medium transition-all"
-                    style={{
-                      borderRadius: 11,
-                      background:
-                        filter === f ? "rgba(0,122,255,0.12)" : "transparent",
-                      color: filter === f ? "#007aff" : "#6b6b8a",
-                      fontFamily: "var(--font-body)",
-                    }}
-                  >
-                    {f}
-                  </button>
-                ))}
+              <div className="liquid-glass-capsule w-full justify-between p-1 overflow-x-auto no-scrollbar">
+                {filters.map((f) => {
+                  const isActive = filter === f
+                  return (
+                    <button
+                      key={f}
+                      onClick={() => setFilter(f)}
+                      className={`liquid-glass-pill flex-1 shrink-0 text-center py-1.5 px-2 text-xs ${
+                        isActive ? "is-active" : ""
+                      }`}
+                    >
+                      {f}
+                    </button>
+                  )
+                })}
               </div>
 
               <div
-                className="flex flex-col gap-2 overflow-y-auto"
-                style={{ maxHeight: 540 }}
+                className="flex flex-col gap-2 overflow-y-auto no-scrollbar"
+                style={{ maxHeight: isMobile ? 360 : 540 }}
               >
                 {filtered.length === 0 ? (
                   <div className="glass p-8 text-center" style={{ borderRadius: 18 }}>
@@ -293,7 +298,7 @@ export default function Incidents() {
               style={{ borderRadius: 24, overflow: "hidden" }}
             >
               <MapPlaceholder
-                height={560}
+                height={isMobile ? 320 : 560}
                 incidents={incidents}
                 selectedIncidentId={selected}
                 onSelectIncident={(inc) => setSelected(inc.id)}

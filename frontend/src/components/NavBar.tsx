@@ -196,10 +196,9 @@ export default function NavBar() {
     >
       <div className="py-2 px-1 sm:px-4 max-w-6xl mx-auto">
         <div
-          className="liquid-glass-nav flex items-center justify-between px-3.5 sm:px-5 py-2 sm:py-2.5 transition-all duration-300"
+          className="liquid-glass-nav relative flex items-center justify-between px-3.5 sm:px-5 py-2 sm:py-2.5 transition-all duration-300"
           style={{
-            borderRadius: 16,
-            boxShadow: "0 8px 28px rgba(0, 0, 0, 0.12)",
+            borderRadius: 20,
           }}
         >
           {/* Logo */}
@@ -209,11 +208,11 @@ export default function NavBar() {
             onClick={() => setMobileMenuOpen(false)}
           >
             <div
-              className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center transition-transform duration-200 group-hover:scale-105"
+              className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_0_16px_rgba(56,189,248,0.55)]"
               style={{
-                background: "#2563eb",
-                borderRadius: 9,
-                boxShadow: "0 2px 8px rgba(0,122,255,0.35)",
+                background: "linear-gradient(135deg, #2563eb, #38bdf8)",
+                borderRadius: 10,
+                boxShadow: "0 2px 10px rgba(37, 99, 235, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.45)",
               }}
             >
               <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
@@ -236,7 +235,7 @@ export default function NavBar() {
                 fontFamily: "var(--font-display)",
                 fontWeight: 700,
                 letterSpacing: "-0.02em",
-                textShadow: "none",
+                textShadow: "0 2px 10px rgba(0,0,0,0.3)",
               }}
               className="text-white text-[16px] sm:text-[17px]"
             >
@@ -245,7 +244,7 @@ export default function NavBar() {
           </Link>
 
           {/* Desktop Navigation Links */}
-          <div className="hidden md:flex items-center gap-1 sm:gap-2">
+          <div className="hidden md:flex items-center gap-1.5 sm:gap-2">
             {desktopLinks.map((l) => {
               const active = pathname === l.href
               return (
@@ -255,12 +254,12 @@ export default function NavBar() {
                   aria-current={active ? "page" : undefined}
                   className={`px-3.5 py-1.5 text-xs sm:text-sm font-medium transition-all duration-200 rounded-xl ${
                     active
-                      ? "text-white bg-white/[0.16] border border-white/[0.25]"
-                      : "text-white/70 hover:text-white hover:bg-white/[0.08]"
+                      ? "text-white bg-white/[0.14] border border-white/[0.22] shadow-[0_2px_10px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.28)]"
+                      : "text-white/75 hover:text-white hover:bg-white/[0.08] hover:translate-y-[-1px]"
                   }`}
                   style={{
                     fontFamily: "var(--font-body)",
-                    textShadow: "none",
+                    textShadow: active ? "0 0 12px rgba(255,255,255,0.3)" : "none",
                   }}
                 >
                   {l.label}
@@ -278,12 +277,12 @@ export default function NavBar() {
                   type="button"
                   onClick={() => void logout()}
                   title={user.email}
-                  className="button-glide px-4 py-2 text-xs sm:text-sm font-semibold text-white transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
+                  className="button-glide px-4 py-2 text-xs sm:text-sm font-semibold text-white transition-all duration-200 flex items-center gap-1.5 cursor-pointer hover:shadow-[0_6px_20px_rgba(37,99,235,0.5)] hover:translate-y-[-1px]"
                   style={{
                     borderRadius: 14,
-                    background: "#2563eb",
+                    background: "linear-gradient(135deg, #2563eb, #3b82f6)",
                     fontFamily: "var(--font-body)",
-                    boxShadow: "0 4px 14px rgba(0, 122, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
+                    boxShadow: "0 4px 14px rgba(37, 99, 235, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.4)",
                   }}
                 >
                   <span>로그아웃</span>
@@ -291,12 +290,12 @@ export default function NavBar() {
               ) : (
                 <Link
                   to="/login"
-                  className="button-glide px-4 py-2 text-xs sm:text-sm font-semibold text-white transition-all duration-200 inline-block cursor-pointer"
+                  className="button-glide px-4 py-2 text-xs sm:text-sm font-semibold text-white transition-all duration-200 inline-block cursor-pointer hover:shadow-[0_6px_20px_rgba(37,99,235,0.5)] hover:translate-y-[-1px]"
                   style={{
                     borderRadius: 14,
-                    background: "#2563eb",
+                    background: "linear-gradient(135deg, #2563eb, #3b82f6)",
                     fontFamily: "var(--font-body)",
-                    boxShadow: "0 4px 14px rgba(0, 122, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
+                    boxShadow: "0 4px 14px rgba(37, 99, 235, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.4)",
                   }}
                 >
                   로그인

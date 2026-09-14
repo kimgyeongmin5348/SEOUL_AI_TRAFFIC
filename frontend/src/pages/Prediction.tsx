@@ -101,6 +101,15 @@ export default function Prediction() {
     }
   }, [roadQuery, selectedRoad])
 
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener("resize", checkMobile)
+    return () => window.removeEventListener("resize", checkMobile)
+  }, [])
+
   const activeRoad =
     predState.roads.find((item) => item.road === selectedRoad) ||
     predState.roads[0]
@@ -133,20 +142,17 @@ export default function Prediction() {
   }
 
   return (
-    <div className="min-h-full flex relative" style={{ minHeight: "100vh" }}>
+    <div className="min-h-full flex relative" style={{ minHeight: "100dvh" }}>
       <SubpageBackground />
       <Sidebar />
-      <main className="relative z-10 flex-1 md:pl-28 md:pr-8 px-4 pb-24 md:pb-8 pt-[max(68px,calc(env(safe-area-inset-top)+60px))] md:pt-6 max-w-7xl mx-auto w-full">
+      <main className="relative z-10 flex-1 md:pl-28 md:pr-8 px-3 sm:px-6 pb-24 md:pb-8 pt-[max(64px,calc(env(safe-area-inset-top)+56px))] md:pt-6 max-w-7xl mx-auto w-full">
         <div className="animate-slide-up">
-          <div className="flex items-start justify-between mb-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
             <div>
               <h1
-                className="text-white"
+                className="text-white text-xl sm:text-2xl font-bold tracking-tight"
                 style={{
                   fontFamily: "var(--font-display)",
-                  fontWeight: 700,
-                  fontSize: 26,
-                  letterSpacing: "-0.02em",
                   textShadow: "0 2px 12px rgba(0,0,0,0.35)",
                 }}
               >
@@ -190,7 +196,7 @@ export default function Prediction() {
                     void selectRoad(roadOptions[0])
                 }}
                 placeholder="예측할 도로 검색 (예: 강남대로, 종로, 성산로)"
-                className="w-full rounded-2xl bg-white/60 border border-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#007aff]/20"
+                className="w-full rounded-2xl bg-white/60 border border-white/80 px-4 py-3 text-base sm:text-sm outline-none focus:ring-2 focus:ring-[#007aff]/30"
               />
               {roadQuery.trim() && roadQuery !== selectedRoad && (
                 <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 glass rounded-2xl p-1.5 shadow-xl max-h-56 overflow-y-auto">
@@ -216,35 +222,40 @@ export default function Prediction() {
               type="button"
               disabled={!roadOptions.length || roadLoading}
               onClick={() => roadOptions[0] && void selectRoad(roadOptions[0])}
-              className="interactive-control button-glide px-5 py-3 rounded-2xl text-sm font-semibold text-white disabled:opacity-40 cursor-pointer"
+              className="interactive-control button-glide px-5 py-3 rounded-2xl text-sm font-semibold text-white disabled:opacity-40 cursor-pointer shrink-0"
               style={{ background: "linear-gradient(135deg,#007aff,#5e5ce6)" }}
             >
               {roadLoading ? "AI 예측 중…" : "도로 예측 보기"}
             </button>
           </div>
           {roadOptions.length > 0 && (
-            <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
-              <span className="text-[11px] text-[#6b6b8a] py-1.5 whitespace-nowrap">
+            <div className="flex items-center gap-1.5 mt-3 pt-2.5 border-t border-black/5 overflow-x-auto no-scrollbar pb-1">
+              <span className="text-[11px] text-[#6b6b8a] py-1 whitespace-nowrap font-medium shrink-0">
                 측정 지점
               </span>
-              {roadOptions.slice(0, 6).map((item) => (
-                <button
-                  key={item.spot_id}
-                  type="button"
-                  onClick={() => void selectRoad(item)}
-                  className="interactive-control px-2.5 py-1 rounded-full text-[11px] whitespace-nowrap cursor-pointer transition-colors"
-                  style={{
-                    background:
-                      item.spot_name === selectedRoad
-                        ? "rgba(0,122,255,.15)"
-                        : "rgba(255,255,255,.55)",
-                    color:
-                      item.spot_name === selectedRoad ? "#007aff" : "#6b6b8a",
-                  }}
-                >
-                  {item.spot_name}
-                </button>
-              ))}
+              {roadOptions.slice(0, 6).map((item) => {
+                const isSelected = item.spot_name === selectedRoad
+                return (
+                  <button
+                    key={item.spot_id}
+                    type="button"
+                    onClick={() => void selectRoad(item)}
+                    className="interactive-control px-3 py-1 rounded-xl text-xs whitespace-nowrap cursor-pointer transition-all duration-200"
+                    style={{
+                      background: isSelected
+                        ? "linear-gradient(135deg, #2563eb, #38bdf8)"
+                        : "rgba(0, 0, 0, 0.05)",
+                      color: isSelected ? "#ffffff" : "#4a4a68",
+                      fontWeight: isSelected ? 600 : 500,
+                      boxShadow: isSelected
+                        ? "0 2px 8px rgba(37, 99, 235, 0.35)"
+                        : "none",
+                    }}
+                  >
+                    {item.spot_name}
+                  </button>
+                )
+              })}
             </div>
           )}
           {roadError && (
@@ -282,30 +293,20 @@ export default function Prediction() {
         ) : (
           <>
             {/* Horizon selector */}
-            <div className="flex gap-2 my-4 animate-slide-up-delay-2">
-              {["지금", "+30분", "+1시간", "+2시간", "+3시간"].map((h) => (
-                <button
-                  key={h}
-                  onClick={() => setHorizon(h)}
-                  className="button-glide px-4 py-2 text-sm font-medium transition-all cursor-pointer"
-                  style={{
-                    borderRadius: 14,
-                    background:
-                      horizon === h
-                        ? "linear-gradient(135deg, #5e5ce6, #007aff)"
-                        : "rgba(255,255,255,0.72)",
-                    color: horizon === h ? "white" : "#6b6b8a",
-                    border: "1px solid rgba(255,255,255,0.8)",
-                    boxShadow:
-                      horizon === h
-                        ? "0 4px 16px rgba(94,92,230,0.3)"
-                        : "0 2px 8px rgba(0,0,0,0.06)",
-                    fontFamily: "var(--font-display)",
-                  }}
-                >
-                  {h}
-                </button>
-              ))}
+            <div className="liquid-glass-capsule my-4 animate-slide-up-delay-2 flex-nowrap overflow-x-auto no-scrollbar py-1 px-1.5">
+              {["지금", "+30분", "+1시간", "+2시간", "+3시간"].map((h) => {
+                const isActive = horizon === h
+                return (
+                  <button
+                    key={h}
+                    onClick={() => setHorizon(h)}
+                    className={`liquid-glass-pill shrink-0 ${isActive ? "is-active" : ""}`}
+                    style={{ fontFamily: "var(--font-display)" }}
+                  >
+                    {h}
+                  </button>
+                )
+              })}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-slide-up-delay-3">
@@ -382,8 +383,9 @@ export default function Prediction() {
                     />
                     <XAxis
                       dataKey="time"
+                      interval={isMobile ? 1 : 0}
                       tick={{
-                        fontSize: 11,
+                        fontSize: isMobile ? 9 : 11,
                         fill: "#6b6b8a",
                         fontFamily: "var(--font-mono)",
                       }}

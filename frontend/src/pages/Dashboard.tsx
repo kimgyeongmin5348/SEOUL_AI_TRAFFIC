@@ -10,6 +10,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("")
   const [selectedIncidentId, setSelectedIncidentId] = useState<number | string | null>(null)
   const [favoriteRoutes, setFavoriteRoutes] = useState<FavoriteRouteItem[]>([])
+  const [isMobile, setIsMobile] = useState(false)
   const [data, setData] = useState({
     kpi: { avgSpeed: 0, avgSpeedDelta: 0, congested: 0, incidents: 0 },
     incidents: [] as Array<any>,
@@ -17,6 +18,13 @@ export default function Dashboard() {
     latestAt: null as string | null,
     isFromDb: false,
   })
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener("resize", checkMobile)
+    return () => window.removeEventListener("resize", checkMobile)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -104,28 +112,25 @@ export default function Dashboard() {
   ]
 
   return (
-    <div className="min-h-full flex relative" style={{ minHeight: "100vh" }}>
+    <div className="min-h-full flex relative" style={{ minHeight: "100dvh" }}>
       <SubpageBackground />
       <Sidebar />
 
-      <main className="relative z-10 flex-1 md:pl-24 pb-24 md:pb-0 pt-[max(62px,calc(env(safe-area-inset-top)+54px))] md:pt-0">
+      <main className="relative z-10 flex-1 md:pl-28 md:pr-8 px-3 sm:px-6 pb-24 md:pb-8 pt-[max(64px,calc(env(safe-area-inset-top)+56px))] md:pt-6 max-w-7xl mx-auto w-full">
         {/* Header */}
-        <div className="px-4 md:px-8 pt-4 md:pt-6 pb-2 animate-slide-up">
-          <div className="flex items-center justify-between mb-2">
+        <div className="pt-2 md:pt-4 pb-3 animate-slide-up">
+          <div className="flex items-center justify-between gap-2 mb-2">
             <div>
               <h1
-                className="text-white leading-tight"
+                className="text-white text-xl sm:text-2xl font-bold tracking-tight"
                 style={{
                   fontFamily: "var(--font-display)",
-                  fontWeight: 700,
-                  fontSize: 26,
-                  letterSpacing: "-0.02em",
                   textShadow: "0 2px 12px rgba(0,0,0,0.35)",
                 }}
               >
                 교통 대시보드
               </h1>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 {data.isFromDb && (
                   <span
                     className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium"
@@ -153,9 +158,9 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-            <div className="text-right hidden sm:block">
+            <div className="text-right">
               <p
-                className="text-xs text-white/70"
+                className="text-[11px] sm:text-xs text-white/70"
                 style={{ fontFamily: "var(--font-mono)" }}
               >
                 {new Date().toLocaleDateString("ko-KR", {
@@ -165,7 +170,7 @@ export default function Dashboard() {
                 })}
               </p>
               <p
-                className="text-sm font-semibold text-white"
+                className="text-xs sm:text-sm font-semibold text-white"
                 style={{ fontFamily: "var(--font-mono)" }}
               >
                 {new Date().toLocaleTimeString("ko-KR", {
@@ -178,7 +183,7 @@ export default function Dashboard() {
         </div>
 
         {/* Map + Side panel */}
-        <div className="px-4 md:px-8 flex flex-col lg:flex-row gap-4 mb-4 animate-slide-up-delay-1">
+        <div className="flex flex-col lg:flex-row gap-4 mb-4 animate-slide-up-delay-1">
           {/* Map */}
           <div
             className="glass flex-1 min-w-0 flex flex-col"
@@ -213,10 +218,8 @@ export default function Dashboard() {
                   placeholder="도로명 또는 지역 검색 (예: 강남대로, 마포구, 올림픽대로)..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-xs rounded-xl outline-none placeholder:text-[#b0b0c8]"
+                  className="w-full pl-9 pr-4 py-2.5 text-base sm:text-xs rounded-xl outline-none placeholder:text-[#b0b0c8] bg-[rgba(240,242,248,0.8)] border border-white/80 focus:ring-2 focus:ring-[#007aff]/30"
                   style={{
-                    background: "rgba(240,242,248,0.8)",
-                    border: "1px solid rgba(255,255,255,0.8)",
                     fontFamily: "var(--font-body)",
                   }}
                 />
@@ -230,13 +233,13 @@ export default function Dashboard() {
                 )}
               </div>
               {/* 추천 검색 칩 */}
-              <div className="flex items-center gap-1.5 mt-2 overflow-x-auto text-xs">
-                <span className="text-[#6b6b8a] whitespace-nowrap text-[11px]">빠른 이동:</span>
+              <div className="flex items-center gap-1.5 mt-2 overflow-x-auto no-scrollbar text-xs">
+                <span className="text-[#6b6b8a] whitespace-nowrap text-[11px] shrink-0">빠른 이동:</span>
                 {["강남", "여의도", "마포", "종로", "강변북로", "올림픽대로", "내부순환로"].map((place) => (
                   <button
                     key={place}
                     onClick={() => setSearch(place)}
-                    className="px-2 py-0.5 rounded-lg bg-white/70 hover:bg-white text-[#4a4a68] border border-black/5 transition-all text-[11px] whitespace-nowrap cursor-pointer"
+                    className="px-2 py-0.5 rounded-lg bg-white/70 hover:bg-white text-[#4a4a68] border border-black/5 transition-all text-[11px] whitespace-nowrap cursor-pointer shrink-0"
                   >
                     {place}
                   </button>
@@ -244,7 +247,7 @@ export default function Dashboard() {
               </div>
             </div>
             <MapPlaceholder
-              height={420}
+              height={isMobile ? 320 : 440}
               searchQuery={search}
               incidents={data.incidents}
               roadSpeeds={data.roadSpeeds}

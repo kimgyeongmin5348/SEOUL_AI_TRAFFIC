@@ -1,12 +1,20 @@
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
 import SubpageBackground from "../components/SubpageBackground"
 import { fetchFavoriteRoutes, FavoriteRouteItem } from "../services/api"
 
-const statusColor = { green: "#34c759", yellow: "#ff9500", red: "#ff3b30" }
-const statusLabel = { green: "원활", yellow: "서행", red: "혼잡" }
-const rankBadges = ["🥇 1위", "🥈 2위", "🥉 3위", "4위"]
+const statusColor: Record<string, string> = {
+  green: "#34c759",
+  yellow: "#ff9500",
+  red: "#ff3b30",
+}
+
+const statusLabel: Record<string, string> = {
+  green: "원활",
+  yellow: "서행",
+  red: "정체",
+}
 
 export default function Favorites() {
   const navigate = useNavigate()
@@ -27,26 +35,23 @@ export default function Favorites() {
   }, [])
 
   return (
-    <div className="min-h-full flex relative" style={{ minHeight: "100vh" }}>
+    <div className="min-h-full flex relative" style={{ minHeight: "100dvh" }}>
       <SubpageBackground />
       <Sidebar />
-      <main className="relative z-10 flex-1 md:pl-28 md:pr-8 px-4 pb-24 md:pb-8 pt-[max(68px,calc(env(safe-area-inset-top)+60px))] md:pt-6 max-w-7xl mx-auto w-full">
+      <main className="relative z-10 flex-1 md:pl-28 md:pr-8 px-3 sm:px-6 pb-24 md:pb-8 pt-[max(64px,calc(env(safe-area-inset-top)+56px))] md:pt-6 max-w-7xl mx-auto w-full">
         <div className="animate-slide-up">
-          <div className="flex items-center justify-between mb-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
             <h1
-              className="text-white"
+              className="text-white text-xl sm:text-2xl font-bold tracking-tight"
               style={{
                 fontFamily: "var(--font-display)",
-                fontWeight: 700,
-                fontSize: 26,
-                letterSpacing: "-0.02em",
                 textShadow: "0 2px 12px rgba(0,0,0,0.35)",
               }}
             >
               나의 즐겨찾기 경로
             </h1>
             <span
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
+              className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
               style={{
                 background: "rgba(0,122,255,0.2)",
                 color: "#60a5fa",
@@ -59,7 +64,7 @@ export default function Favorites() {
             </span>
           </div>
           <p
-            className="text-white/70 text-sm mb-6"
+            className="text-white/70 text-xs sm:text-sm mb-5"
             style={{ fontFamily: "var(--font-body)" }}
           >
             로그인한 계정에서 자주 검색한 경로를 실시간으로 모니터링하고 빠른 분석을 제공합니다.
@@ -67,10 +72,10 @@ export default function Favorites() {
         </div>
 
         {/* 2-Column Responsive Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* Left Column: Top Favorite Routes List */}
           <div className="lg:col-span-7 flex flex-col gap-3 animate-slide-up-delay-1">
-            <div className="flex items-center justify-between mb-1 px-1">
+            <div className="flex items-center justify-between mb-0.5 px-1">
               <span className="text-xs font-semibold text-white/80 uppercase tracking-wider">
                 자주 찾는 경로 목록
               </span>
@@ -91,7 +96,7 @@ export default function Favorites() {
                 return (
                   <div
                     key={r.id}
-                    className="glass glass-hover item-glide p-5 cursor-pointer border border-transparent hover:border-[#007aff]/40 shadow-sm"
+                    className="glass glass-hover item-glide p-4 sm:p-5 cursor-pointer border border-transparent hover:border-[#007aff]/40 shadow-sm"
                     style={{ borderRadius: 22 }}
                     onClick={() =>
                       navigate(
@@ -100,10 +105,10 @@ export default function Favorites() {
                     }
                     title="클릭 시 이 경로로 즉시 분석합니다"
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start sm:items-center gap-3 min-w-0">
                         <div
-                          className="w-11 h-11 flex items-center justify-center text-sm font-bold flex-shrink-0"
+                          className="w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0"
                           style={{
                             background:
                               idx === 0
@@ -119,22 +124,22 @@ export default function Favorites() {
                         >
                           {idx + 1}위
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap mb-1">
                             <span
-                              className="font-semibold text-[#1a1a2e] text-base truncate"
+                              className="font-semibold text-[#1a1a2e] text-sm sm:text-base truncate"
                               style={{ fontFamily: "var(--font-display)" }}
                             >
                               {r.label}
                             </span>
                             <span
-                              className="text-xs px-2 py-0.5 rounded-full font-bold text-[#007aff] bg-blue-50 border border-blue-100 flex-shrink-0"
+                              className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full font-bold text-[#007aff] bg-blue-50 border border-blue-100 flex-shrink-0"
                               style={{ fontFamily: "var(--font-mono)" }}
                             >
                               {r.search_count}회 검색
                             </span>
                             <span
-                              className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                              className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0"
                               style={{
                                 background: `${color}15`,
                                 color,
@@ -153,23 +158,23 @@ export default function Favorites() {
                         </div>
                       </div>
 
-                      <div className="text-right flex-shrink-0 pl-3">
-                        <div className="flex items-end gap-1.5 justify-end">
+                      <div className="flex items-center sm:flex-col sm:items-end justify-between sm:justify-center border-t sm:border-t-0 pt-2 sm:pt-0 border-black/5 flex-shrink-0">
+                        <div className="flex items-end gap-1 justify-end">
                           <span
                             className="text-[#1a1a2e]"
                             style={{
                               fontFamily: "var(--font-display)",
                               fontWeight: 700,
-                              fontSize: 28,
+                              fontSize: 24,
                               letterSpacing: "-0.02em",
                             }}
                           >
                             {r.currentTime}
                           </span>
-                          <span className="text-sm text-[#6b6b8a] mb-1">분</span>
+                          <span className="text-xs sm:text-sm text-[#6b6b8a] mb-0.5">분</span>
                         </div>
                         <p
-                          className="text-xs font-medium"
+                          className="text-[11px] sm:text-xs font-medium"
                           style={{
                             color:
                               r.delta > 5
@@ -192,7 +197,7 @@ export default function Favorites() {
             {/* New route search shortcut button */}
             <button
               onClick={() => navigate("/route")}
-              className="glass p-5 flex items-center gap-3 hover:bg-white/80 transition-colors text-left w-full cursor-pointer"
+              className="glass p-4 sm:p-5 flex items-center gap-3 hover:bg-white/80 transition-colors text-left w-full cursor-pointer"
               style={{
                 borderRadius: 22,
                 border: "1.5px dashed rgba(0,122,255,0.4)",
@@ -231,7 +236,7 @@ export default function Favorites() {
           {/* Right Column: Useful Stats & Quick Preset Recommendations */}
           <div className="lg:col-span-5 flex flex-col gap-4 animate-slide-up-delay-2">
             {/* Widget 1: Real-time Route Monitoring Summary */}
-            <div className="glass p-5" style={{ borderRadius: 24 }}>
+            <div className="glass p-4 sm:p-5" style={{ borderRadius: 24 }}>
               <div className="flex items-center justify-between mb-3.5">
                 <h3
                   className="font-bold text-[#1a1a2e] text-base"
@@ -270,7 +275,7 @@ export default function Favorites() {
             </div>
 
             {/* Widget 2: Quick Recommended Routes */}
-            <div className="glass p-5" style={{ borderRadius: 24 }}>
+            <div className="glass p-4 sm:p-5" style={{ borderRadius: 24 }}>
               <h3
                 className="font-bold text-[#1a1a2e] text-base mb-1"
                 style={{ fontFamily: "var(--font-display)" }}

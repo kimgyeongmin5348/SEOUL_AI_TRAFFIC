@@ -441,24 +441,31 @@ export default function Sidebar() {
       {/* 2. Desktop Sidebar (Screens >= 768px)                     */}
       {/* ======================================================== */}
       <aside
-        className="liquid-glass-nav sidebar-floating hidden md:flex flex-col w-[78px] fixed left-3 top-1/2 z-40 py-3 gap-1"
+        className="liquid-glass-nav sidebar-floating hidden md:flex flex-col w-[78px] fixed left-4 top-1/2 z-50 py-3 gap-1"
         style={{ borderRadius: 28 }}
       >
-        <Link to="/" className="flex justify-center mb-3">
+        <Link to="/" className="flex justify-center mb-3 group" title="홈으로 이동">
           <div
-            className="w-8 h-8 flex items-center justify-center"
+            className="w-8 h-8 flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:shadow-[0_0_18px_rgba(56,189,248,0.6)]"
             style={{
-              background: "linear-gradient(135deg, #007aff, #5e5ce6)",
+              background: "linear-gradient(135deg, #2563eb, #38bdf8)",
               borderRadius: 10,
+              boxShadow: "0 2px 10px rgba(37,99,235,0.45), inset 0 1px 1px rgba(255,255,255,0.45)",
             }}
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
               <path
                 d="M2 9C2 5.13 5.13 2 9 2s7 3.13 7 7-3.13 7-7 7-7-3.13-7-7z"
                 stroke="white"
-                strokeWidth="1.5"
+                strokeWidth="1.6"
               />
-              <circle cx="9" cy="9" r="1.5" fill="white" />
+              <path
+                d="M9 5v4l2.5 2.5"
+                stroke="white"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+              <circle cx="9" cy="9" r="1.2" fill="white" />
             </svg>
           </div>
         </Link>
@@ -532,12 +539,11 @@ export default function Sidebar() {
       {/* 3. Mobile Bottom Nav Bar (Screens < 768px)               */}
       {/* ======================================================== */}
       <nav
-        className="md:hidden fixed bottom-2 left-2.5 right-2.5 z-50 liquid-glass-nav flex items-center px-1"
+        className="md:hidden fixed bottom-1.5 left-2 right-2 sm:left-3 sm:right-3 z-50 liquid-glass-nav flex items-center px-0.5 sm:px-1"
         style={{
           borderRadius: 22,
-          paddingTop: 6,
-          paddingBottom: "max(8px, env(safe-area-inset-bottom))",
-          boxShadow: "0 12px 36px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.15)",
+          paddingTop: 5,
+          paddingBottom: "max(10px, env(safe-area-inset-bottom))",
         }}
       >
         {(() => {
@@ -557,7 +563,7 @@ export default function Sidebar() {
                   }}
                 >
                   <div
-                    className="mx-1 h-[46px] rounded-xl"
+                    className="mx-0.5 sm:mx-1 h-[44px] rounded-xl"
                     style={{
                       background: "rgba(255, 255, 255, 0.18)",
                       border: "1px solid rgba(255, 255, 255, 0.38)",
@@ -576,25 +582,24 @@ export default function Sidebar() {
                   <Link
                     key={item.href}
                     to={item.href}
-                      aria-current={active ? "page" : undefined}
-                    className="sidebar-liquid-link relative z-10 flex flex-col items-center justify-center h-[46px] px-1"
+                    aria-current={active ? "page" : undefined}
+                    className="sidebar-liquid-link relative z-10 flex flex-col items-center justify-center h-[44px] px-0.5"
                   >
                     <div
-                      className="transition-all duration-300"
+                      className="transition-all duration-300 scale-90 sm:scale-100"
                       style={{
                         color: active ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
                         filter: active
                           ? "drop-shadow(0 0 6px rgba(0, 122, 255, 0.8))"
                           : "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
-                        transform: active ? "scale(1.08)" : "scale(1)",
+                        transform: active ? "scale(1.05)" : "scale(1)",
                       }}
                     >
                       {item.icon}
                     </div>
                     <span
-                      className="transition-all duration-300"
+                      className="transition-all duration-300 text-[9px] sm:text-[10px] tracking-tight leading-tight mt-0.5 truncate"
                       style={{
-                        fontSize: 10,
                         fontWeight: active ? 700 : 500,
                         color: active ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
                         textShadow: active

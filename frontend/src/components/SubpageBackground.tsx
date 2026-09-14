@@ -11,8 +11,8 @@ export default function SubpageBackground() {
         style={{
           backgroundImage: "url('/seoul-bg.jpg')",
           backgroundPosition: "center 28%",
-          opacity: 0.32,
-          filter: "brightness(0.85) contrast(1.05) saturate(1.15)",
+          opacity: 0.38,
+          filter: "brightness(0.88) contrast(1.08) saturate(1.15)",
         }}
       />
 
@@ -21,7 +21,7 @@ export default function SubpageBackground() {
         className="absolute inset-0"
         style={{
           background: `
-            linear-gradient(180deg, rgba(12, 20, 36, 0.72) 0%, rgba(12, 20, 36, 0.38) 35%, rgba(12, 20, 36, 0.8) 75%, #0c1424 100%),
+            linear-gradient(180deg, rgba(12, 20, 36, 0.7) 0%, rgba(12, 20, 36, 0.32) 35%, rgba(12, 20, 36, 0.78) 75%, #0c1424 100%),
             radial-gradient(ellipse at 85% 10%, rgba(27, 49, 80, 0.45) 0%, transparent 60%)
           `,
         }}

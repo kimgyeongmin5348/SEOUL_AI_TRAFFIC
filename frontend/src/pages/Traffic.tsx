@@ -60,6 +60,15 @@ export default function Traffic() {
     }
   }, [selectedPeriod])
 
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener("resize", checkMobile)
+    return () => window.removeEventListener("resize", checkMobile)
+  }, [])
+
   const roadSpeedData = trafficData.roadSpeeds
   const trafficTimeData = trafficData.timeData
   const road =
@@ -68,10 +77,10 @@ export default function Traffic() {
     null
 
   return (
-    <div className="min-h-full flex relative" style={{ minHeight: "100vh" }}>
+    <div className="min-h-full flex relative" style={{ minHeight: "100dvh" }}>
       <SubpageBackground />
       <Sidebar />
-      <main className="relative z-10 flex-1 md:pl-28 md:pr-8 px-4 pb-24 md:pb-8 pt-[max(68px,calc(env(safe-area-inset-top)+60px))] md:pt-6 max-w-7xl mx-auto w-full">
+      <main className="relative z-10 flex-1 md:pl-28 md:pr-8 px-3 sm:px-6 pb-24 md:pb-8 pt-[max(64px,calc(env(safe-area-inset-top)+56px))] md:pt-6 max-w-7xl mx-auto w-full">
         <div className="animate-slide-up">
           <h1
             className="text-white mb-1"
@@ -131,54 +140,28 @@ export default function Traffic() {
           </div>
         </div>
 
-        {/* Filters */}
-        <div
-          className="glass animate-slide-up-delay-1 flex flex-wrap gap-2 p-3 mb-5 items-center"
-          style={{ borderRadius: 18 }}
-        >
+        {/* Liquid Glass Filter Capsule */}
+        <div className="liquid-glass-capsule animate-slide-up-delay-1 flex-nowrap mb-5 max-w-full overflow-x-auto no-scrollbar py-1 px-1.5">
           {PERIOD_OPTIONS.map((t) => {
             const isActive = selectedPeriod === t.key
             return (
               <button
                 key={t.key}
                 onClick={() => setSelectedPeriod(t.key)}
-                className="px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all duration-200 cursor-pointer"
-                style={{
-                  background: isActive
-                    ? "rgba(0,122,255,0.18)"
-                    : "rgba(0,0,0,0.04)",
-                  color: isActive ? "#007aff" : "#6b6b8a",
-                  border: isActive
-                    ? "1px solid rgba(0,122,255,0.3)"
-                    : "1px solid rgba(0,0,0,0.06)",
-                  boxShadow: isActive
-                    ? "0 2px 8px rgba(0,122,255,0.18)"
-                    : "none",
-                  fontFamily: "var(--font-body)",
-                }}
+                className={`liquid-glass-pill ${isActive ? "is-active" : ""}`}
               >
                 {t.label}
               </button>
             )
           })}
-          {roadSpeedData.length > 0 && <div className="w-px h-5 bg-black/10 mx-1" />}
+          {roadSpeedData.length > 0 && <div className="liquid-glass-divider" />}
           {roadSpeedData.slice(0, 8).map((r) => {
             const isSelected = selectedRoad === r.road
             return (
               <button
                 key={r.road}
                 onClick={() => setSelectedRoad(r.road)}
-                className="px-3 py-1.5 text-xs font-medium rounded-xl transition-all duration-200 cursor-pointer"
-                style={{
-                  background: isSelected
-                    ? "rgba(0,122,255,0.15)"
-                    : "transparent",
-                  color: isSelected ? "#007aff" : "#6b6b8a",
-                  border: isSelected
-                    ? "1px solid rgba(0,122,255,0.25)"
-                    : "1px solid transparent",
-                  fontFamily: "var(--font-body)",
-                }}
+                className={`liquid-glass-pill ${isSelected ? "is-active" : ""}`}
               >
                 {r.road}
               </button>
@@ -274,8 +257,8 @@ export default function Traffic() {
                           selectedPeriod === "week"
                             ? 0
                             : selectedPeriod === "month"
-                            ? 3
-                            : 1
+                            ? (isMobile ? 6 : 3)
+                            : (isMobile ? 3 : 1)
                         }
                       />
                       <YAxis
@@ -506,8 +489,9 @@ export default function Traffic() {
                     />
                     <XAxis
                       dataKey="road"
+                      interval={isMobile ? 1 : 0}
                       tick={{
-                        fontSize: 11,
+                        fontSize: isMobile ? 9 : 11,
                         fill: "#6b6b8a",
                         fontFamily: "var(--font-body)",
                       }}
