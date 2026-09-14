@@ -145,10 +145,16 @@ def rank_candidates(candidates, predictions, metadata):
     for candidate in candidates:
         total = sum(s.duration_sec for s in candidate.steps)
         matched, penalty, predicted, typical, count = 0., 0., 0., 0., 0
+        matched_road_names = []
+        unmatched_road_names = []
         for step in candidate.steps:
             observations = roads.get(road_key(step.name)) if step.name else None
             if not observations:
+                if step.name:
+                    unmatched_road_names.append(step.name)
                 continue
+            if step.name:
+                matched_road_names.append(step.name)
             # Both measured directions are pooled: this is a road-level proxy.
             forecast = sum(p for p, _, _ in observations)
             baseline = sum(b for _, b, _ in observations)
@@ -170,7 +176,11 @@ def rank_candidates(candidates, predictions, metadata):
                         "typical_volume": round(typical / matched, 1) if matched else None,
                         "predicted_vs_typical_percent": round((predicted / typical - 1) * 100, 1) if typical > 0 else None,
                         "distance_m": round(candidate.distance_m, 1) if getattr(candidate, "distance_m", None) is not None else None,
-                        "matched_steps": count, "ai": False})
+                        "matched_steps": count,
+                        "matched_road_names": list(dict.fromkeys(matched_road_names)),
+                        "unmatched_road_names": list(dict.fromkeys(unmatched_road_names)),
+                        "match_ratio": round(count / len(candidate.steps), 3) if candidate.steps else 0,
+                        "ai": False})
     # Incomplete candidates must not win simply because they have no penalty.
     # A low-coverage alternative should not, however, suppress a different
     # candidate whose own coverage is sufficient for model-based ranking.

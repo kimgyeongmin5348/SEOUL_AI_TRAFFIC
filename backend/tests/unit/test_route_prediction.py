@@ -40,6 +40,9 @@ def test_predictions_change_recommendation_and_incomplete_routes_are_excluded():
     assert result[0]["base_duration_sec"] == 600
     assert result[0]["traffic_penalty_sec"] == 600
     assert result[0]["traffic_penalty_percent"] == 100
+    assert result[0]["matched_road_names"] == ["강남대로"]
+    assert result[0]["unmatched_road_names"] == []
+    assert result[0]["match_ratio"] == 1
     result, ok = rank_candidates(routes, [100, 200], meta)
     assert ok and result[0]["ai"]
     result, ok = rank_candidates(routes, [200], meta[:1])

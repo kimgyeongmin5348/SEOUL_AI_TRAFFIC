@@ -142,12 +142,14 @@ class DataPipelineService:
             })
             .sort_values("datetime")
         )
+        weather_hourly["weather_source_datetime"] = weather_hourly["datetime"]
 
         # 강수량 결측치는 0.0mm(비 안 옴)으로 대체
         weather_hourly["rainfall_mm"] = weather_hourly["rainfall_mm"].fillna(0.0)
-        # 기타 기상 결측치는 시계열 보간(선형보간 후 전후값 채움)
+        # 온라인 추론과 같은 조건을 유지하기 위해 과거 관측값만 사용합니다.
         for col in ["temperature_c", "humidity_pct", "wind_speed_ms", "pressure_hpa"]:
-            weather_hourly[col] = weather_hourly[col].interpolate(method="linear").bfill().ffill()
+            weather_hourly[col] = weather_hourly[col].ffill()
+        weather_hourly["weather_source_datetime"] = weather_hourly["weather_source_datetime"].ffill()
 
         # ---------------------------------------------------------------------
         # 3. 교통량 + 날씨 + 지점정보 조인 (Merge)
@@ -156,10 +158,19 @@ class DataPipelineService:
         merged = pd.merge(grouped_traffic, weather_hourly, on="datetime", how="left")
         merged = pd.merge(merged, df_spots[["spot_id", "spot_name", "tm_x", "tm_y"]], on="spot_id", how="left")
 
-        # 날씨 누락분 보정
+        # 관측 이전 구간은 미래값으로 채우지 않고 학습에서 제외합니다.
+        merged["weather_observed"] = (
+            merged["weather_source_datetime"] == merged["datetime"]
+        ).astype(int)
+        merged["weather_age_hours"] = (
+            (merged["datetime"] - merged["weather_source_datetime"]).dt.total_seconds() / 3600
+        )
+        merged = merged.dropna(subset=[
+            "temperature_c", "humidity_pct", "wind_speed_ms", "pressure_hpa",
+        ]).reset_index(drop=True)
+
+        # 강수량만 결측을 0으로 해석합니다. 다른 결측은 위에서 제거했습니다.
         merged["rainfall_mm"] = merged["rainfall_mm"].fillna(0.0)
-        for col in ["temperature_c", "humidity_pct", "wind_speed_ms", "pressure_hpa"]:
-            merged[col] = merged[col].fillna(merged[col].median())
 
         # ---------------------------------------------------------------------
         # 4. 시간 주기성 Feature Engineering
@@ -218,7 +229,11 @@ class DataPipelineService:
             "total_rows": int(len(clean_df)),
             "total_columns": int(len(clean_df.columns)),
             "target_column": "target_volume",
-            "feature_columns": [c for c in clean_df.columns if c not in ["target_volume", "datetime", "spot_id", "spot_name"]],
+            "feature_columns": [
+                c for c in clean_df.columns
+                if c not in ["target_volume", "datetime", "spot_id", "spot_name"]
+                and pd.api.types.is_numeric_dtype(clean_df[c])
+            ],
             "all_columns": list(clean_df.columns),
             "date_range": {
                 "start": str(clean_df["datetime"].min()),
