@@ -406,6 +406,7 @@ export default function Sidebar() {
                     <Link
                       key={item.href}
                       to={item.href}
+                      aria-current={active ? "page" : undefined}
                       onClick={() => setMobileMenuOpen(false)}
                       className={`flex items-center gap-3 px-3 py-2 rounded-2xl transition-all duration-150 ${
                         active ? "bg-[#007aff]/10 text-[#007aff]" : "text-[#2c2c44] hover:bg-white/60"
@@ -484,6 +485,7 @@ export default function Sidebar() {
                     <Link
                       key={item.href}
                       to={item.href}
+                      aria-current={active ? "page" : undefined}
                       className={`sidebar-liquid-link relative z-10 flex flex-col items-center justify-center h-[52px] w-full ${
                         active ? "is-active" : ""
                       }`}
@@ -574,6 +576,7 @@ export default function Sidebar() {
                   <Link
                     key={item.href}
                     to={item.href}
+                      aria-current={active ? "page" : undefined}
                     className="sidebar-liquid-link relative z-10 flex flex-col items-center justify-center h-[46px] px-1"
                   >
                     <div

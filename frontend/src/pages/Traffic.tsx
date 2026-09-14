@@ -13,34 +13,33 @@ import {
 } from "recharts"
 import Sidebar from "../components/Sidebar"
 import SubpageBackground from "../components/SubpageBackground"
-import { fetchTrafficData } from "../services/api"
+import { fetchTrafficData, TrafficPeriod, TrafficAnalysisResult } from "../services/api"
 
 const levelColor = { red: "#ff3b30", yellow: "#ff9500", green: "#34c759" }
 
+const PERIOD_OPTIONS: Array<{ key: TrafficPeriod; label: string }> = [
+  { key: "today", label: "오늘" },
+  { key: "yesterday", label: "어제" },
+  { key: "week", label: "1주일" },
+  { key: "month", label: "1개월" },
+]
+
 export default function Traffic() {
   const [loading, setLoading] = useState(true)
+  const [selectedPeriod, setSelectedPeriod] = useState<TrafficPeriod>("today")
   const [selectedRoad, setSelectedRoad] = useState("")
-  const [trafficData, setTrafficData] = useState<{
-    timeData: Array<{ time: string; volume: number; speed: number }>
-    roadSpeeds: Array<{
-      road: string
-      speed: number
-      avg: number
-      level: "red" | "yellow" | "green"
-    }>
-    latestAt: string | null
-    isFromDb: boolean
-  }>({
+  const [trafficData, setTrafficData] = useState<TrafficAnalysisResult>({
     timeData: [],
     roadSpeeds: [],
     latestAt: null,
     isFromDb: false,
+    period: "today",
   })
 
   useEffect(() => {
     let active = true
     setLoading(true)
-    fetchTrafficData()
+    fetchTrafficData(selectedPeriod)
       .then((res) => {
         if (active) {
           setTrafficData(res)
@@ -59,7 +58,7 @@ export default function Traffic() {
     return () => {
       active = false
     }
-  }, [])
+  }, [selectedPeriod])
 
   const roadSpeedData = trafficData.roadSpeeds
   const trafficTimeData = trafficData.timeData
@@ -91,7 +90,13 @@ export default function Traffic() {
               className="text-white/70 text-sm"
               style={{ fontFamily: "var(--font-body)" }}
             >
-              시간대별 교통량 및 도로 속도 데이터
+              {selectedPeriod === "today"
+                ? "오늘 시간대별 교통량 및 실시간 도로 속도"
+                : selectedPeriod === "yesterday"
+                ? "어제 시간대별 교통량 및 주요 도로 속도"
+                : selectedPeriod === "week"
+                ? "최근 7일간 일별 교통량 추이 및 주요 도로 속도"
+                : "최근 30일간 일별 교통량 추이 및 주요 도로 속도"}
             </p>
             {trafficData.isFromDb && (
               <span
@@ -112,7 +117,11 @@ export default function Traffic() {
                 className="text-xs text-white/70"
                 style={{ fontFamily: "var(--font-mono)" }}
               >
-                수집:{" "}
+                기준:{" "}
+                {new Date(trafficData.latestAt).toLocaleDateString("ko-KR", {
+                  month: "numeric",
+                  day: "numeric",
+                })}{" "}
                 {new Date(trafficData.latestAt).toLocaleTimeString("ko-KR", {
                   hour: "2-digit",
                   minute: "2-digit",
@@ -124,42 +133,57 @@ export default function Traffic() {
 
         {/* Filters */}
         <div
-          className="glass animate-slide-up-delay-1 flex flex-wrap gap-2 p-3 mb-5"
+          className="glass animate-slide-up-delay-1 flex flex-wrap gap-2 p-3 mb-5 items-center"
           style={{ borderRadius: 18 }}
         >
-          {["오늘", "어제", "1주일", "1개월"].map((t, i) => (
-            <button
-              key={t}
-              className="px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{
-                borderRadius: 10,
-                background: i === 0 ? "rgba(0,122,255,0.12)" : "transparent",
-                color: i === 0 ? "#007aff" : "#6b6b8a",
-                fontFamily: "var(--font-body)",
-              }}
-            >
-              {t}
-            </button>
-          ))}
-          {roadSpeedData.length > 0 && <div className="w-px bg-black/10 mx-1" />}
-          {roadSpeedData.slice(0, 8).map((r) => (
-            <button
-              key={r.road}
-              onClick={() => setSelectedRoad(r.road)}
-              className="px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{
-                borderRadius: 10,
-                background:
-                  selectedRoad === r.road
+          {PERIOD_OPTIONS.map((t) => {
+            const isActive = selectedPeriod === t.key
+            return (
+              <button
+                key={t.key}
+                onClick={() => setSelectedPeriod(t.key)}
+                className="px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all duration-200 cursor-pointer"
+                style={{
+                  background: isActive
+                    ? "rgba(0,122,255,0.18)"
+                    : "rgba(0,0,0,0.04)",
+                  color: isActive ? "#007aff" : "#6b6b8a",
+                  border: isActive
+                    ? "1px solid rgba(0,122,255,0.3)"
+                    : "1px solid rgba(0,0,0,0.06)",
+                  boxShadow: isActive
+                    ? "0 2px 8px rgba(0,122,255,0.18)"
+                    : "none",
+                  fontFamily: "var(--font-body)",
+                }}
+              >
+                {t.label}
+              </button>
+            )
+          })}
+          {roadSpeedData.length > 0 && <div className="w-px h-5 bg-black/10 mx-1" />}
+          {roadSpeedData.slice(0, 8).map((r) => {
+            const isSelected = selectedRoad === r.road
+            return (
+              <button
+                key={r.road}
+                onClick={() => setSelectedRoad(r.road)}
+                className="px-3 py-1.5 text-xs font-medium rounded-xl transition-all duration-200 cursor-pointer"
+                style={{
+                  background: isSelected
                     ? "rgba(0,122,255,0.15)"
                     : "transparent",
-                color: selectedRoad === r.road ? "#007aff" : "#6b6b8a",
-                fontFamily: "var(--font-body)",
-              }}
-            >
-              {r.road}
-            </button>
-          ))}
+                  color: isSelected ? "#007aff" : "#6b6b8a",
+                  border: isSelected
+                    ? "1px solid rgba(0,122,255,0.25)"
+                    : "1px solid transparent",
+                  fontFamily: "var(--font-body)",
+                }}
+              >
+                {r.road}
+              </button>
+            )
+          })}
         </div>
 
         {loading ? (
@@ -202,14 +226,30 @@ export default function Traffic() {
                 style={{ borderRadius: 20 }}
               >
                 <h3
-                  className="text-[#1a1a2e] mb-4"
+                  className="text-[#1a1a2e] mb-4 flex items-center justify-between"
                   style={{
                     fontFamily: "var(--font-display)",
                     fontWeight: 600,
                     fontSize: 15,
                   }}
                 >
-                  시간대별 교통량
+                  <span>
+                    {selectedPeriod === "today"
+                      ? "오늘 시간대별 교통량"
+                      : selectedPeriod === "yesterday"
+                      ? "어제 시간대별 교통량"
+                      : selectedPeriod === "week"
+                      ? "최근 7일간 일별 교통량 추이"
+                      : "최근 30일간 일별 교통량 추이"}
+                  </span>
+                  <span
+                    className="text-xs text-[#6b6b8a] font-normal"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                  >
+                    {selectedPeriod === "today" || selectedPeriod === "yesterday"
+                      ? "단위: 대/시간"
+                      : "단위: 대/일"}
+                  </span>
                 </h3>
                 {trafficTimeData.length > 0 ? (
                   <ResponsiveContainer width="100%" height={220}>
@@ -230,7 +270,13 @@ export default function Traffic() {
                         }}
                         tickLine={false}
                         axisLine={false}
-                        interval={2}
+                        interval={
+                          selectedPeriod === "week"
+                            ? 0
+                            : selectedPeriod === "month"
+                            ? 3
+                            : 1
+                        }
                       />
                       <YAxis
                         tick={{
@@ -254,45 +300,51 @@ export default function Traffic() {
                           "교통량",
                         ]}
                       />
-                      <ReferenceLine
-                        x="08:00"
-                        stroke="#ff3b30"
-                        strokeDasharray="3 3"
-                        strokeWidth={1}
-                        label={{
-                          value: "출근 피크",
-                          position: "top",
-                          fontSize: 9,
-                          fill: "#ff3b30",
-                          fontFamily: "var(--font-mono)",
-                        }}
-                      />
-                      <ReferenceLine
-                        x="18:00"
-                        stroke="#ff9500"
-                        strokeDasharray="3 3"
-                        strokeWidth={1}
-                        label={{
-                          value: "퇴근 피크",
-                          position: "top",
-                          fontSize: 9,
-                          fill: "#ff9500",
-                          fontFamily: "var(--font-mono)",
-                        }}
-                      />
+                      {(selectedPeriod === "today" || selectedPeriod === "yesterday") &&
+                        trafficTimeData.some((d) => d.time === "08:00") && (
+                          <ReferenceLine
+                            x="08:00"
+                            stroke="#ff3b30"
+                            strokeDasharray="3 3"
+                            strokeWidth={1}
+                            label={{
+                              value: "출근 피크",
+                              position: "top",
+                              fontSize: 9,
+                              fill: "#ff3b30",
+                              fontFamily: "var(--font-mono)",
+                            }}
+                          />
+                        )}
+                      {(selectedPeriod === "today" || selectedPeriod === "yesterday") &&
+                        trafficTimeData.some((d) => d.time === "18:00") && (
+                          <ReferenceLine
+                            x="18:00"
+                            stroke="#ff9500"
+                            strokeDasharray="3 3"
+                            strokeWidth={1}
+                            label={{
+                              value: "퇴근 피크",
+                              position: "top",
+                              fontSize: 9,
+                              fill: "#ff9500",
+                              fontFamily: "var(--font-mono)",
+                            }}
+                          />
+                        )}
                       <Line
                         type="monotone"
                         dataKey="volume"
                         stroke="#007aff"
                         strokeWidth={2.5}
-                        dot={false}
+                        dot={selectedPeriod === "week" ? { r: 3, fill: "#007aff" } : false}
                         activeDot={{ r: 5, fill: "#007aff" }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-[220px] flex items-center justify-center text-xs text-[#6b6b8a]">
-                    시간대별 교통량 데이터가 없습니다.
+                    선택한 기간의 교통량 데이터가 없습니다.
                   </div>
                 )}
               </div>

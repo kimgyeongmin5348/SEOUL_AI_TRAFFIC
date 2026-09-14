@@ -281,74 +281,47 @@ export async function fetchDashboardData() {
   }
 }
 
-// 2. 교통량 및 속도 분석 데이터
-export async function fetchTrafficData() {
-  const [trafficRes, speedRes, hourlyRes] = await Promise.all([
-    fetchDbDataset<TrafficRow>("traffic"),
-    fetchDbDataset<SpeedRow>("speed"),
-    fetchDbDataset<TrafficHourlyRow>("traffic_hourly"),
-  ])
+export type TrafficPeriod = "today" | "yesterday" | "week" | "month"
 
-  let timeData: Array<{ time: string; volume: number; speed: number }> = []
-  let roadSpeeds: Array<{
+export interface TrafficAnalysisResult {
+  timeData: Array<{ time: string; volume: number; speed: number }>
+  roadSpeeds: Array<{
     road: string
     speed: number
     avg: number
     level: "red" | "yellow" | "green"
-  }> = []
-  let latestAt: string | null = null
+  }>
+  latestAt: string | null
+  isFromDb: boolean
+  period: TrafficPeriod
+}
 
-  if (hourlyRes && hourlyRes.rows.length > 0) {
-    timeData = hourlyRes.rows.map((r) => ({
-      time: r.hour_label,
-      volume: Math.round(r.avg_volume || r.total_volume),
-      speed: 40,
-    }))
-    latestAt = hourlyRes.latest_at
+// 2. 교통량 및 속도 분석 데이터
+export async function fetchTrafficData(
+  period: TrafficPeriod = "today",
+  road?: string
+): Promise<TrafficAnalysisResult> {
+  try {
+    const params = new URLSearchParams()
+    params.set("period", period)
+    if (road) params.set("road", road)
+    const res = await fetch(`/api/traffic/analysis?${params.toString()}`, {
+      headers: { Accept: "application/json" },
+    })
+    if (res.ok) {
+      const data = (await res.json()) as TrafficAnalysisResult
+      return data
+    }
+  } catch (err) {
+    console.warn(`[API] Failed to fetch /api/traffic/analysis`, err)
   }
-
-  if (speedRes && speedRes.rows.length > 0) {
-    if (!latestAt) {
-      latestAt = speedRes.latest_at
-    }
-    const roadMap = new Map<string, { total: number; count: number }>()
-    for (const r of speedRes.rows) {
-      const name = r.road_name?.trim() || ""
-      if (name && r.speed_kmh !== null) {
-        const cur = roadMap.get(name) || { total: 0, count: 0 }
-        cur.total += r.speed_kmh
-        cur.count += 1
-        roadMap.set(name, cur)
-      }
-    }
-    if (roadMap.size > 0) {
-      const dbRoads = Array.from(roadMap.entries()).map(([road, stat]) => {
-        const avgSpeed = Math.round(stat.total / stat.count)
-        return {
-          road,
-          speed: avgSpeed,
-          avg: Math.round(avgSpeed * 1.15),
-          level: (avgSpeed < 25 ? "red" : avgSpeed < 50 ? "yellow" : "green") as
-            | "red"
-            | "yellow"
-            | "green",
-        }
-      })
-      roadSpeeds = dbRoads.slice(0, 15)
-    }
-  }
-
-  const hasDb = Boolean(
-    (speedRes && speedRes.rows.length > 0) ||
-    (hourlyRes && hourlyRes.rows.length > 0) ||
-    (trafficRes && trafficRes.rows.length > 0)
-  )
 
   return {
-    timeData,
-    roadSpeeds,
-    latestAt,
-    isFromDb: hasDb,
+    timeData: [],
+    roadSpeeds: [],
+    latestAt: null,
+    isFromDb: false,
+    period,
   }
 }
 

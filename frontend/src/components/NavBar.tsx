@@ -198,8 +198,8 @@ export default function NavBar() {
         <div
           className="liquid-glass-nav flex items-center justify-between px-3.5 sm:px-5 py-2 sm:py-2.5 transition-all duration-300"
           style={{
-            borderRadius: 24,
-            boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.25) inset",
+            borderRadius: 16,
+            boxShadow: "0 8px 28px rgba(0, 0, 0, 0.12)",
           }}
         >
           {/* Logo */}
@@ -211,7 +211,7 @@ export default function NavBar() {
             <div
               className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center transition-transform duration-200 group-hover:scale-105"
               style={{
-                background: "linear-gradient(135deg, #007aff, #5e5ce6)",
+                background: "#2563eb",
                 borderRadius: 9,
                 boxShadow: "0 2px 8px rgba(0,122,255,0.35)",
               }}
@@ -236,7 +236,7 @@ export default function NavBar() {
                 fontFamily: "var(--font-display)",
                 fontWeight: 700,
                 letterSpacing: "-0.02em",
-                textShadow: "0 2px 8px rgba(0,0,0,0.5)",
+                textShadow: "none",
               }}
               className="text-white text-[16px] sm:text-[17px]"
             >
@@ -252,6 +252,7 @@ export default function NavBar() {
                 <Link
                   key={l.href}
                   to={l.href}
+                  aria-current={active ? "page" : undefined}
                   className={`px-3.5 py-1.5 text-xs sm:text-sm font-medium transition-all duration-200 rounded-xl ${
                     active
                       ? "text-white bg-white/[0.16] border border-white/[0.25]"
@@ -259,9 +260,7 @@ export default function NavBar() {
                   }`}
                   style={{
                     fontFamily: "var(--font-body)",
-                    textShadow: active
-                      ? "0 0 10px rgba(0, 122, 255, 0.7), 0 1px 2px rgba(0, 0, 0, 0.5)"
-                      : "0 1px 2px rgba(0, 0, 0, 0.4)",
+                    textShadow: "none",
                   }}
                 >
                   {l.label}
@@ -282,7 +281,7 @@ export default function NavBar() {
                   className="button-glide px-4 py-2 text-xs sm:text-sm font-semibold text-white transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
                   style={{
                     borderRadius: 14,
-                    background: "linear-gradient(135deg, #007aff, #5e5ce6)",
+                    background: "#2563eb",
                     fontFamily: "var(--font-body)",
                     boxShadow: "0 4px 14px rgba(0, 122, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
                   }}
@@ -295,7 +294,7 @@ export default function NavBar() {
                   className="button-glide px-4 py-2 text-xs sm:text-sm font-semibold text-white transition-all duration-200 inline-block cursor-pointer"
                   style={{
                     borderRadius: 14,
-                    background: "linear-gradient(135deg, #007aff, #5e5ce6)",
+                    background: "#2563eb",
                     fontFamily: "var(--font-body)",
                     boxShadow: "0 4px 14px rgba(0, 122, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
                   }}
@@ -391,7 +390,7 @@ export default function NavBar() {
                   to="/login"
                   onClick={() => setMobileMenuOpen(false)}
                   className="px-3 py-1 text-xs font-semibold text-white rounded-xl shadow-sm flex-shrink-0"
-                  style={{ background: "linear-gradient(135deg, #007aff, #5e5ce6)" }}
+                  style={{ background: "#2563eb" }}
                 >
                   로그인
                 </Link>
@@ -406,6 +405,7 @@ export default function NavBar() {
                   <Link
                     key={item.href}
                     to={item.href}
+                    aria-current={active ? "page" : undefined}
                     onClick={() => setMobileMenuOpen(false)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all duration-150 active:scale-[0.99] ${
                       active ? "bg-white/15 text-white" : "text-white/80 hover:bg-white/10"
