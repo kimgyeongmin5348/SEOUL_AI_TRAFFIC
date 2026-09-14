@@ -39,9 +39,11 @@ class Settings(BaseSettings):
     # settings live with the backend because the API key must never reach the
     # browser.
     nvidia_llm_model: str | None = Field(default=None, validation_alias="NVIDIA_LLM_MODEL")
+    nvidia_route_llm_model: str | None = Field(default=None, validation_alias="NVIDIA_ROUTE_LLM_MODEL")
     nvidia_llm_base_url: str | None = Field(default=None, validation_alias="NVIDIA_LLM_BASE_URL")
     nvidia_api_key: str | None = Field(default=None, validation_alias="NVIDIA_API_KEY")
-    llm_timeout_seconds: float = Field(default=20.0, validation_alias="LLM_TIMEOUT_SECONDS", gt=0, le=60)
+    llm_timeout_seconds: float = Field(default=30.0, validation_alias="LLM_TIMEOUT_SECONDS", gt=0, le=120)
+    chat_timeout_seconds: float = Field(default=60.0, validation_alias="CHAT_TIMEOUT_SECONDS", gt=0, le=180)
 
 
 @lru_cache

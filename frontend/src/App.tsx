@@ -11,6 +11,8 @@ const Weather = lazy(() => import("./pages/Weather"))
 const Prediction = lazy(() => import("./pages/Prediction"))
 const Favorites = lazy(() => import("./pages/Favorites"))
 const Login = lazy(() => import("./pages/Login"))
+const Chatbot = lazy(() => import("./pages/Chatbot"))
+import ChatbotWidget from "./components/ChatbotWidget"
 
 export default function App() {
   return (
@@ -32,10 +34,12 @@ export default function App() {
           <Route path="/weather" element={<Weather />} />
           <Route path="/prediction" element={<Prediction />} />
           <Route path="/favorites" element={<RequireAuth><Favorites /></RequireAuth>} />
+          <Route path="/chatbot" element={<Chatbot />} />
           <Route path="/login" element={<Login />} />
           <Route path="*" element={<Landing />} />
         </Routes>
       </Suspense>
+      <ChatbotWidget />
       </AuthProvider>
     </BrowserRouter>
   )

@@ -13,6 +13,7 @@ export default function NavBar() {
     { href: "/", label: "서비스 소개" },
     { href: "/dashboard", label: "실시간 교통" },
     { href: "/prediction", label: "AI 예측" },
+    { href: "/chatbot", label: "AI 챗봇" },
     { href: "/favorites", label: "즐겨찾기" },
   ]
 
@@ -153,6 +154,19 @@ export default function NavBar() {
             strokeWidth="1.6"
             strokeLinejoin="round"
           />
+        </svg>
+      ),
+    },
+    {
+      href: "/chatbot",
+      label: "AI 챗봇",
+      desc: "서울 교통 대화형 AI 비서 (Thinking)",
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+          <rect x="3" y="5" width="14" height="11" rx="3" stroke="currentColor" strokeWidth="1.6" />
+          <circle cx="7.5" cy="10" r="1" fill="currentColor" />
+          <circle cx="12.5" cy="10" r="1" fill="currentColor" />
+          <path d="M10 2v3M3 10H1M19 10h-2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         </svg>
       ),
     },

@@ -693,3 +693,29 @@ export async function fetchNearbyParking(
   }
   return (body.lots || []) as ParkingLotItem[]
 }
+
+export interface ChatMessage {
+  role: "user" | "assistant"
+  content: string
+  thinking?: string | null
+}
+
+export interface ChatResponse {
+  reply: string
+  thinking?: string | null
+  model: string
+  error?: string
+}
+
+export async function sendChatMessage(messages: { role: string; content: string }[]): Promise<ChatResponse> {
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages }),
+  })
+  const body = await response.json()
+  if (!response.ok) {
+    throw new Error(typeof body.detail === "string" ? body.detail : "챗봇과의 연결에 실패했습니다.")
+  }
+  return body as ChatResponse
+}
