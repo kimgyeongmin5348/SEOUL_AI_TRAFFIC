@@ -451,11 +451,11 @@ export default function Dashboard() {
                     medium: "#ff9500",
                     low: "#34c759",
                   }
-                  const isSelected = selectedIncidentId === inc.id
+                  const isSelected = selectedIncidentId != null && String(selectedIncidentId) === String(inc.id)
                   return (
                     <div
                       key={inc.id}
-                      onClick={() => setSelectedIncidentId(inc.id)}
+                      onClick={() => setSelectedIncidentId(isSelected ? null : inc.id)}
                       className={`flex items-start justify-between p-2 rounded-xl cursor-pointer transition-all ${isSelected ? "bg-white shadow-sm border border-[#007aff]/40" : "hover:bg-white/50 border border-transparent"}`}
                       title="클릭 시 지도에서 해당 위치로 이동합니다"
                     >

@@ -3,6 +3,7 @@ import precisionRoadsData from "../data/seoul_roads.json"
 import seoulBoundaryData from "../data/seoulBoundary.json"
 import { loadKakaoMaps } from "../services/kakaoMaps"
 import { resolvePlace } from "../services/placeSearch"
+import type { ParkingLotItem } from "../services/api"
 
 export interface IncidentItem {
   id: number | string
@@ -29,6 +30,9 @@ interface MapProps {
   routeCoordinates?: [number, number][]
   originPoint?: { name: string; lat: number; lng: number }
   destPoint?: { name: string; lat: number; lng: number }
+  parkingLots?: ParkingLotItem[]
+  selectedParkingLotId?: string | null
+  onSelectParkingLot?: (lot: ParkingLotItem) => void
 }
 
 type MapOverlay = kakao.maps.Polyline | kakao.maps.CustomOverlay | kakao.maps.Circle | kakao.maps.Polygon
@@ -61,6 +65,9 @@ export default function MapPlaceholder({
   routeCoordinates,
   originPoint,
   destPoint,
+  parkingLots = [],
+  selectedParkingLotId = null,
+  onSelectParkingLot,
 }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<kakao.maps.Map | null>(null)
@@ -69,13 +76,17 @@ export default function MapPlaceholder({
   const routeOverlaysRef = useRef<MapOverlay[]>([])
   const searchOverlayRef = useRef<kakao.maps.CustomOverlay | null>(null)
   const locationOverlaysRef = useRef<MapOverlay[]>([])
-  const incidentOverlaysRef = useRef(new Map<string | number, { overlay: kakao.maps.CustomOverlay; lat: number; lng: number }>())
+  const incidentOverlaysRef = useRef(new Map<string, { overlay: kakao.maps.CustomOverlay; lat: number; lng: number }>())
+  const parkingOverlaysRef = useRef<kakao.maps.CustomOverlay[]>([])
+  const selectedMarkerOverlayRef = useRef<kakao.maps.CustomOverlay | null>(null)
+  const flyAnimationTimersRef = useRef<number[]>([])
   const currentPosition = useRef<GeolocationCoordinates | null>(null)
   const searchRequestId = useRef(0)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState("")
   const [showTrafficLines, setShowTrafficLines] = useState(true)
   const [showIncidents, setShowIncidents] = useState(true)
+  const [showParking, setShowParking] = useState(true)
   const [locationStatus, setLocationStatus] = useState("현재 위치 확인 중…")
   const viewHasContext = Boolean(searchQuery || routeCoordinates?.length || selectedIncidentId != null)
 
@@ -195,7 +206,7 @@ export default function MapPlaceholder({
       button.addEventListener("click", () => onSelectIncident?.(incident))
       const overlay = new kakao.maps.CustomOverlay({ map, position, content: button, clickable: true, zIndex: 8 })
       roadOverlaysRef.current.push(overlay)
-      incidentOverlaysRef.current.set(incident.id, { overlay, lat, lng })
+      incidentOverlaysRef.current.set(String(incident.id), { overlay, lat, lng })
     }
     if (showIncidents) {
       const geocoder = new kakao.maps.services.Geocoder()
@@ -253,14 +264,154 @@ export default function MapPlaceholder({
     }
   }, [destPoint, mapReady, originPoint, routeCoordinates])
 
+  // 선택된 돌발상황 위치로 부드러운 애니메이션 panTo 이동 및 펄스 하이라이트
   useEffect(() => {
     const map = mapRef.current
-    if (!mapReady || !map || selectedIncidentId == null) return
-    const selected = incidentOverlaysRef.current.get(selectedIncidentId)
-    if (!selected) return
-    map.panTo(new kakao.maps.LatLng(selected.lat, selected.lng))
+    if (!mapReady || !map) return
+
+    selectedMarkerOverlayRef.current?.setMap(null)
+    selectedMarkerOverlayRef.current = null
+
+    if (selectedIncidentId == null) return
+
+    const clearFlyTimers = () => {
+      flyAnimationTimersRef.current.forEach((t) => window.clearTimeout(t))
+      flyAnimationTimersRef.current = []
+    }
+
+    const moveToPosition = (lat: number, lng: number, incident?: IncidentItem) => {
+      clearFlyTimers()
+      const position = new kakao.maps.LatLng(lat, lng)
+      const curLevel = map.getLevel()
+      const needsZoomOut = curLevel <= 5
+
+      // 1단계: 멀어지기 (Zoom-out) - 기존 화면이 확대되어 있으면 레벨 7로 시야를 넓혀 전체 조망
+      if (needsZoomOut) {
+        map.setLevel(7, { animate: true })
+      }
+
+      // 2단계: 목표 지점으로 비행 이동 (Pan-to) - 줌아웃 효과 시작 직후 부드럽게 목표 지점으로 이동
+      const panDelay = needsZoomOut ? 220 : 0
+      const t1 = window.setTimeout(() => {
+        if (mapRef.current) {
+          mapRef.current.panTo(position)
+        }
+      }, panDelay)
+      flyAnimationTimersRef.current.push(t1)
+
+      // 3단계: 가까워지기 (Zoom-in) - 목표 지점 상공에 도달하면서 상세 레벨(4)로 깊숙이 다이빙
+      const zoomInDelay = panDelay + 550
+      const t2 = window.setTimeout(() => {
+        if (mapRef.current) {
+          mapRef.current.setLevel(4, { animate: true })
+        }
+      }, zoomInDelay)
+      flyAnimationTimersRef.current.push(t2)
+
+      // 선택된 돌발상황 위치에 반짝이는 펄스 링 하이라이트 오버레이
+      const pulseEl = document.createElement("div")
+      pulseEl.style.cssText = "position: relative; display: flex; align-items: center; justify-content: center; pointer-events: none;"
+      pulseEl.innerHTML = `
+        <div style="position: absolute; width: 50px; height: 50px; border-radius: 50%; background: rgba(255, 59, 48, 0.35); animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+        <div style="position: absolute; width: 32px; height: 32px; border-radius: 50%; background: rgba(255, 59, 48, 0.6); border: 2.5px solid white; box-shadow: 0 3px 10px rgba(0,0,0,0.35);"></div>
+        <div style="position: relative; z-index: 2; font-size: 16px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));">${incident?.type === "사고" ? "🚨" : incident?.type === "공사" ? "🚧" : "⚠️"}</div>
+      `
+      const highlight = new kakao.maps.CustomOverlay({
+        map,
+        position,
+        content: pulseEl,
+        zIndex: 15,
+      })
+      selectedMarkerOverlayRef.current = highlight
+    }
+
+    const key = String(selectedIncidentId)
+    const cached = incidentOverlaysRef.current.get(key)
+    const targetInc = incidents.find((i) => String(i.id) === key)
+
+    if (cached) {
+      moveToPosition(cached.lat, cached.lng, targetInc)
+    } else if (targetInc) {
+      if (typeof targetInc.lat === "number" && typeof targetInc.lng === "number") {
+        moveToPosition(targetInc.lat, targetInc.lng, targetInc)
+      } else if (typeof targetInc.tmX === "number" && typeof targetInc.tmY === "number") {
+        const geocoder = new kakao.maps.services.Geocoder()
+        geocoder.transCoord(
+          targetInc.tmX,
+          targetInc.tmY,
+          (results, status) => {
+            if (status === kakao.maps.services.Status.OK && results[0]) {
+              moveToPosition(Number(results[0].y), Number(results[0].x), targetInc)
+            }
+          },
+          {
+            input_coord: kakao.maps.services.Coords.WTM,
+            output_coord: kakao.maps.services.Coords.WGS84,
+          }
+        )
+      }
+    }
+
+    return () => {
+      clearFlyTimers()
+    }
+  }, [mapReady, selectedIncidentId, incidents])
+
+  // 주차장 마커 렌더링
+  useEffect(() => {
+    const map = mapRef.current
+    parkingOverlaysRef.current.forEach((o) => o.setMap(null))
+    parkingOverlaysRef.current = []
+
+    if (!mapReady || !map || !showParking || !parkingLots.length) return
+
+    parkingLots.forEach((lot) => {
+      const position = new kakao.maps.LatLng(lot.latitude, lot.longitude)
+      const hasLive = lot.realtime_status === "AVAILABLE" && lot.available_spaces !== null
+      const isSelected = selectedParkingLotId === lot.parking_code
+
+      const button = document.createElement("button")
+      button.type = "button"
+      button.className = "group relative flex items-center transition-transform hover:scale-110 active:scale-95"
+      button.style.cursor = "pointer"
+      button.setAttribute("aria-label", `${lot.name} 주차장`)
+
+      const badge = document.createElement("div")
+      badge.className = `flex items-center gap-1 px-2 py-1 rounded-xl font-bold shadow-md border ${
+        isSelected
+          ? "bg-[#007aff] text-white border-white scale-110 z-10 ring-2 ring-[#007aff]"
+          : hasLive
+            ? "bg-emerald-600 text-white border-white/90"
+            : "bg-[#2c3e50] text-white border-white/80"
+      }`
+      badge.style.fontSize = "11px"
+      badge.innerHTML = `<span>🅿️</span><span>${hasLive ? `${lot.available_spaces}대` : lot.name.slice(0, 5)}</span>`
+
+      button.appendChild(badge)
+      button.addEventListener("click", () => {
+        onSelectParkingLot?.(lot)
+      })
+
+      const overlay = new kakao.maps.CustomOverlay({
+        map,
+        position,
+        content: button,
+        clickable: true,
+        zIndex: isSelected ? 12 : 9,
+      })
+      parkingOverlaysRef.current.push(overlay)
+    })
+  }, [mapReady, showParking, parkingLots, selectedParkingLotId, onSelectParkingLot])
+
+  // 선택된 주차장으로 부드럽게 이동
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map || !selectedParkingLotId) return
+    const target = parkingLots.find((p) => p.parking_code === selectedParkingLotId)
+    if (!target) return
+    map.panTo(new kakao.maps.LatLng(target.latitude, target.longitude))
     map.setLevel(4)
-  }, [mapReady, selectedIncidentId])
+  }, [mapReady, selectedParkingLotId, parkingLots])
 
   useEffect(() => {
     const map = mapRef.current
@@ -273,23 +424,26 @@ export default function MapPlaceholder({
     const id = ++searchRequestId.current
     const timer = window.setTimeout(() => {
       resolvePlace(query).then((place) => {
-        if (id !== searchRequestId.current || !mapRef.current) return
+        if (!place || id !== searchRequestId.current || !mapRef.current) return
         searchOverlayRef.current?.setMap(null)
         const position = new kakao.maps.LatLng(place.lat, place.lng)
         searchOverlayRef.current = new kakao.maps.CustomOverlay({
-          map: mapRef.current, position, content: makePill(`📍 ${place.name}`, "#007aff"), yAnchor: 1.2, zIndex: 10,
+          map: mapRef.current,
+          position,
+          content: makePill(place.name, "#007aff"),
+          zIndex: 10,
         })
         mapRef.current.panTo(position)
         mapRef.current.setLevel(4)
-      }).catch(() => {})
-    }, 300)
+      })
+    }, 250)
     return () => window.clearTimeout(timer)
   }, [mapReady, searchQuery])
 
   const focusCurrentLocation = () => {
     const coords = currentPosition.current
     if (!coords || !mapRef.current) {
-      setLocationStatus("현재 위치를 확인하고 있습니다…")
+      setLocationStatus("기기의 위치 서비스를 켠 후 잠시 기다려 주세요.")
       return
     }
     mapRef.current.panTo(new kakao.maps.LatLng(coords.latitude, coords.longitude))
@@ -326,6 +480,12 @@ export default function MapPlaceholder({
           <span className={`switch-track incident-switch ${showIncidents ? "is-on" : ""}`}><span className="switch-thumb" /></span>
           돌발상황 {showIncidents ? "ON" : "OFF"}
         </button>
+        {parkingLots.length > 0 && (
+          <button type="button" aria-pressed={showParking} onClick={() => setShowParking((value) => !value)} className="glass interactive-control px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showParking ? "#007aff" : "#6b6b8a" }}>
+            <span className={`switch-track ${showParking ? "is-on" : ""}`}><span className="switch-thumb" /></span>
+            🅿️ 주차장 {showParking ? "ON" : "OFF"}
+          </button>
+        )}
       </div>
       <div className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm" style={{ borderRadius: 12 }}>
         {[
@@ -341,6 +501,12 @@ export default function MapPlaceholder({
         <div className="w-px h-3 bg-black/10 mx-1" />
         <span className="text-[11px] text-[#ff3b30] font-semibold">🚨 사고</span>
         <span className="text-[11px] text-[#ff9500] font-semibold">🚧 공사</span>
+        {parkingLots.length > 0 && (
+          <>
+            <div className="w-px h-3 bg-black/10 mx-1" />
+            <span className="text-[11px] text-[#007aff] font-semibold">🅿️ 주차장 ({parkingLots.length}곳)</span>
+          </>
+        )}
       </div>
     </div>
   )

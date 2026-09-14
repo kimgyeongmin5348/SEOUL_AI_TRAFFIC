@@ -33,7 +33,25 @@ interface ModelRanking {
   algorithm: string
   message: string
   target_at: string
-  routes: { id: string; ai: boolean; coverage: number; predicted_volume: number | null; score: number }[]
+  routes: {
+    id: string
+    ai: boolean
+    coverage: number
+    predicted_volume: number | null
+    score: number
+    base_duration_sec: number
+    traffic_penalty_sec: number
+    traffic_penalty_percent: number
+    typical_volume: number | null
+    predicted_vs_typical_percent: number | null
+    distance_m: number | null
+  }[]
+  explanation?: {
+    selected_route_id: string | null
+    text: string
+    source: "llm" | "template" | "system"
+    llm_model: string | null
+  }
 }
 
 function explainRouteChoice(
@@ -83,6 +101,7 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       signal: AbortSignal.timeout(45000),
       body: JSON.stringify({ departure_at: departureAt, candidates: candidates.map((r, i) => ({
         id: String.fromCharCode(65 + i), duration_sec: r.duration,
+        distance_m: r.distance,
         steps: steps[i].map(step => ({ name: step.name || "", duration_sec: step.duration })),
       })) }),
     })
@@ -106,7 +125,9 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       avgSpeed: Math.round(r.distance / r.duration * 3.6),
       traffic: "원활", trafficLevel: "green", incidents: 0, weather: "미연동", delay: 0,
       ai,
-      reason: explainRouteChoice(prediction, ranking?.routes || [], names, ranking?.algorithm),
+      reason: ranking?.explanation?.selected_route_id === id
+        ? ranking.explanation.text
+        : explainRouteChoice(prediction, ranking?.routes || [], names, ranking?.algorithm),
       coordinates: r.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
       modelVersion: ranking?.model_version, coverage: prediction?.coverage,
       predictedVolume: prediction?.predicted_volume,
