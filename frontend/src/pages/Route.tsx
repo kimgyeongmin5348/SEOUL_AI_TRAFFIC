@@ -637,6 +637,13 @@ export default function Route() {
                     color: selectedRoute.speedPenaltySec ? "#ff9500" : "#6b6b8a",
                   },
                   {
+                    label: "속도 관측 매칭 범위",
+                    value: selectedRoute.speedMatchRatio === undefined
+                      ? "미적용"
+                      : `${Math.round(selectedRoute.speedMatchRatio * 100)}%`,
+                    color: "#007aff",
+                  },
+                  {
                     label: "AI 최적 추천 여부",
                     value: selectedRoute?.ai ? "★ 추천 경로" : "일반 경로",
                     color: selectedRoute?.ai ? "#5e5ce6" : "#6b6b8a",

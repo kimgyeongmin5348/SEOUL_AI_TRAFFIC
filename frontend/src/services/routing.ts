@@ -19,6 +19,8 @@ export interface RouteResult {
   coverage?: number
   predictedVolume?: number | null
   speedPenaltySec?: number
+  speedMatchRatio?: number
+  speedObservedAt?: string | null
   incidentDetails?: RouteIncident[]
 }
 
@@ -59,6 +61,8 @@ interface ModelRanking {
     incident_count: number
     incident_penalty_sec: number
     speed_penalty_sec: number
+    speed_match_ratio: number
+    speed_observed_at: string | null
     incidents: RouteIncident[]
   }[]
   explanation?: {
@@ -152,6 +156,8 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       modelVersion: ranking?.model_version, coverage: prediction?.coverage,
       predictedVolume: prediction?.predicted_volume,
       speedPenaltySec: prediction?.speed_penalty_sec,
+      speedMatchRatio: prediction?.speed_match_ratio,
+      speedObservedAt: prediction?.speed_observed_at,
       incidentDetails: prediction?.incidents,
     }
   })

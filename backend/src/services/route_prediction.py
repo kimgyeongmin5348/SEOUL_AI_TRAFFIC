@@ -265,6 +265,8 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
         matched, penalty, incident_penalty, speed_penalty, predicted, typical, count = 0., 0., 0., 0., 0., 0., 0
         matched_road_names = []
         unmatched_road_names = []
+        speed_road_names = []
+        speed_observed_at = []
         route_incidents = {}
         coordinates = getattr(candidate, "coordinates", [])
         for step in candidate.steps:
@@ -281,6 +283,8 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
             )
             speed = speeds_by_road.get(road_key(step.name))
             if speed and getattr(step, "distance_m", None) and speed["speed_kmh"] > 0:
+                speed_road_names.append(step.name)
+                speed_observed_at.append(speed["measured_at"])
                 observed_duration = step.distance_m / (float(speed["speed_kmh"]) / 3.6)
                 speed_penalty += max(0.0, observed_duration - step.duration_sec)
             observations = roads.get(road_key(step.name)) if step.name else None
@@ -310,6 +314,9 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
                         "traffic_penalty_percent": round(traffic_penalty_ratio * 100, 1),
                         "incident_penalty_sec": round(incident_penalty, 2),
                         "speed_penalty_sec": round(speed_penalty, 2),
+                        "speed_matched_road_names": list(dict.fromkeys(speed_road_names)),
+                        "speed_match_ratio": round(len(set(speed_road_names)) / len(candidate.steps), 3) if candidate.steps else 0,
+                        "speed_observed_at": max(speed_observed_at).isoformat() if speed_observed_at else None,
                         "incident_count": len(incident_rows),
                         "incidents": [{
                             "incident_id": incident["incident_id"],

@@ -99,7 +99,7 @@ def test_current_speed_adds_only_positive_delay_penalty():
             {"spot_name": "테헤란로", "baseline": 100}]
     result, _ = rank_candidates(
         routes, [100, 100], meta,
-        speeds_by_road={"강남대로": {"speed_kmh": 30}},
+        speeds_by_road={"강남대로": {"speed_kmh": 30, "measured_at": datetime(2026, 9, 10, 8)}},
     )
     assert result[0]["speed_penalty_sec"] == pytest.approx(600)
     assert result[1]["speed_penalty_sec"] == 0
