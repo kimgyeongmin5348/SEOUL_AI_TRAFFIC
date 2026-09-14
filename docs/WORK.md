@@ -21,12 +21,6 @@
     - R²: `0.9005`
 - 백엔드 단위 테스트 결과: `30 passed`
 
-### 다음 작업
-
-- 돌발상황을 경로 링크·좌표와 정밀 매칭한다.
-- 사고·공사·통제·고장 유형과 영향시간을 경로 비용에 반영한다.
-- 새 학습 데이터셋으로 교통량·속도·통행시간 모델을 재학습하고 비교한다.
-
 ### 돌발상황 1차 반영
 
 - `incidents.link_id`와 `road_segments.road_name`을 연결해 활성 돌발을 경로 도로명과 매칭했다.
@@ -107,3 +101,28 @@
 - 오늘 추가한 대용량 export, 링크 데이터셋, 돌발·속도 점수, 링크 모델 평가 핵심 로직에 짧은 주석을 보강했다.
 - [ai_route_recommendation_flow.html](ai_route_recommendation_flow.html)에 현재 운영 추천과 오프라인 링크 모델 평가 흐름을 standalone HTML로 시각화했다.
 - 검증 결과: 백엔드 테스트 `35 passed`, 프론트 빌드 성공
+
+## 2026-09-15
+
+### 링크 방향·기하 정보 조사
+
+- 문제 정의서 기준 진행도를 점검했다: 단계 1 완료, 단계 2 약 80%, 단계 3·4 미착수.
+- `road_segments.link_id`는 `1120006300`처럼 10자리 숫자로, 국가교통정보센터 표준노드링크 ID 체계와 형식이 같다. 링크 기하는 표준노드링크 shapefile로 확보할 수 있다.
+- `traffic_spot_road_maps`는 이미 `spatial_name_2025`, `spatial_nearest_2025` 방식과 매칭 거리를 저장하고 있다. 즉 지점→링크 공간 매칭은 한 번 수행됐으나 생성 스크립트와 기하 원본이 저장소에 없다.
+- 서울시 `LinkWithLoad` API는 `axis_dir`(상행/하행), `link_seq`를 제공한다. `seoul_client.get_road_links`가 이 값을 읽지만 `collector_service.sync_road_segments`가 `road_segments`에 저장하지 않고 버린다.
+    - 어제 "원천에 방향 필드 없음"으로 보류한 것은 정정한다. 방향 정보는 원천에 있고 수집 단계에서 누락된 것이다.
+- `traffic_volume_measurements`는 `direction_code`, `lane_no`를 보유한다. 추천 단계 `route_prediction.py`가 양방향을 합산하는 것이 문제이며 데이터 부재가 아니다.
+- 이 PC에서 RDS 접속이 timeout돼 DB 직접 조회는 못 했다. 위 내용은 `schema.sql`, `data/external/raw_spot_road_maps.csv`, 수집 코드 기준이다.
+
+### 다음 작업
+
+1. `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
+2. 표준노드링크 기하를 확보해 `road_segments`에 시·종점 좌표 또는 geometry를 추가한다. RDS `link_id`와 표준링크 ID 일치율을 먼저 샘플로 검증한다.
+3. OSRM step 좌표를 링크 기하에 map-match하고 진행 방위와 `axis_direction`을 비교해 방향 일치 여부를 저장한다.
+4. `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.
+5. 매칭 방법·거리·방향 일치율을 API 응답과 링크 데이터셋에 기록한다.
+6. 매칭된 링크의 시간대별 `travel_time_sec`로 경로별 `actual_duration_sec`를 재구성하고 품질 등급을 저장한다.
+7. `/api/routes/predict` 요청 시 `route_request_id`와 후보 경로를 로그 테이블에 저장해 경로 학습 데이터셋 축적을 시작한다.
+8. Top-1 accuracy, pairwise ranking accuracy, regret 계산 스크립트를 추가한다.
+9. 화면에 AI 점수가 ETA가 아님을 명시한다.
+10. `inbbong` 브랜치를 `main`에 PR로 병합한다.
