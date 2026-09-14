@@ -37,6 +37,9 @@ def test_predictions_change_recommendation_and_incomplete_routes_are_excluded():
             {"spot_name": "테헤란로(역삼역)", "baseline": 100}]
     result, ok = rank_candidates(routes, [200, 100], meta)
     assert ok and result[1]["ai"] and not result[0]["ai"]
+    assert result[0]["base_duration_sec"] == 600
+    assert result[0]["traffic_penalty_sec"] == 600
+    assert result[0]["traffic_penalty_percent"] == 100
     result, ok = rank_candidates(routes, [100, 200], meta)
     assert ok and result[0]["ai"]
     result, ok = rank_candidates(routes, [200], meta[:1])
@@ -126,6 +129,9 @@ def test_real_model_with_delayed_observations_reaches_current_hour():
     assert result["target_at"] == "2026-09-10T09:00:00+09:00"
     assert result["routes"][0]["ai"]
     assert result["routes"][0]["predicted_volume"] >= 0
+    assert result["target_context"]["weekday"] == "목요일"
+    assert result["osrm_comparison"]["osrm_default_route_id"] == "A"
+    assert result["osrm_comparison"]["estimated_minutes_saved"] == 0
     db.execute.side_effect = [spots, traffic, climate]
     with pytest.raises(ValueError, match="지연"):
         predict_routes(db, [candidate("A", 600, "강남대로")], target+timedelta(days=1))

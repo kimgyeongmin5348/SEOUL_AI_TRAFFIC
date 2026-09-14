@@ -5,7 +5,13 @@ import MapPlaceholder from "../components/MapPlaceholder"
 import PlaceSearchInput from "../components/PlaceSearchInput"
 import { getLiveSeoulRoutes, RouteResult } from "../services/routing"
 import { resolvePlace, reverseGeocodeCurrentLocation } from "../services/placeSearch"
-import { fetchFavoriteRoutes, recordRouteSearch, FavoriteRouteItem } from "../services/api"
+import {
+  fetchFavoriteRoutes,
+  fetchNearbyParking,
+  recordRouteSearch,
+  FavoriteRouteItem,
+  ParkingLotItem,
+} from "../services/api"
 import { useAuth } from "../auth"
 import type { PlaceSuggestion } from "../types/place"
 
@@ -39,6 +45,10 @@ export default function Route() {
   const [locationMessage, setLocationMessage] = useState("")
   const [error, setError] = useState("")
   const [predictionMessage, setPredictionMessage] = useState("")
+  const [parkingLots, setParkingLots] = useState<ParkingLotItem[]>([])
+  const [parkingMessage, setParkingMessage] = useState("")
+  const [selectedParkingCode, setSelectedParkingCode] = useState<string | null>(null)
+  const [isParkingCollapsed, setIsParkingCollapsed] = useState(false)
   const requestId = useRef(0)
   const locationId = useRef(0)
 
@@ -97,6 +107,9 @@ export default function Route() {
     setLoading(true)
     setError("")
     setPredictionMessage("")
+    setParkingLots([])
+    setParkingMessage("주변 주차장을 확인하고 있습니다…")
+    setSelectedParkingCode(null)
     setRouteList([])
     setOriginPoint(null)
     setDestPoint(null)
@@ -105,6 +118,12 @@ export default function Route() {
       void recordRouteSearch(startPlace.name, endPlace.name).catch(() => {})
     }
     try {
+      const parkingRequest = fetchNearbyParking(endPlace.lat, endPlace.lng)
+        .then((lots) => ({ lots, error: "" }))
+        .catch((parkingError) => ({
+          lots: [] as ParkingLotItem[],
+          error: parkingError instanceof Error ? parkingError.message : "주변 주차장을 불러오지 못했습니다.",
+        }))
       const res = await getLiveSeoulRoutes(startPlace, endPlace, departureAt)
       if (id !== requestId.current) return
       setPredictionMessage(res.predictionMessage)
@@ -115,6 +134,12 @@ export default function Route() {
       if (best) {
         setSelected(best.id)
       }
+      const parking = await parkingRequest
+      if (id !== requestId.current) return
+      setParkingLots(parking.lots)
+      setParkingMessage(
+        parking.error || (parking.lots.length ? "" : "반경 1.5km 안에 위치가 확인된 일반 주차장이 없습니다."),
+      )
     } catch (err) {
       if (id === requestId.current) setError(err instanceof Error ? err.message : "경로 계산에 실패했습니다. 다시 시도해 주세요.")
     } finally {
@@ -166,6 +191,9 @@ export default function Route() {
       setOriginPoint(null)
       setDestPoint(null)
       setPredictionMessage("")
+      setParkingLots([])
+      setParkingMessage("")
+      setSelectedParkingCode(null)
       setError("")
     }
   }, [searchParams])
@@ -476,8 +504,83 @@ export default function Route() {
                 routeCoordinates={selectedRoute?.coordinates}
                 originPoint={originPoint || undefined}
                 destPoint={destPoint || undefined}
+                parkingLots={parkingLots}
+                selectedParkingLotId={selectedParkingCode}
+                onSelectParkingLot={(lot) => setSelectedParkingCode(lot.parking_code)}
               />
             </div>
+
+            {(parkingLots.length > 0 || parkingMessage) && (
+              <section className="glass p-5 transition-all" style={{ borderRadius: 20 }} aria-label="도착지 주변 주차장">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🅿️</span>
+                    <h3 className="text-[#1a1a2e] font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: 16 }}>
+                      도착지 주변 주차장 {parkingLots.length > 0 && `(${parkingLots.length}곳)`}
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[#6b6b8a]">직선거리 반경 1.5km</span>
+                    {parkingLots.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setIsParkingCollapsed((prev) => !prev)}
+                        className="text-xs font-semibold text-[#007aff] hover:underline px-2.5 py-1 rounded-lg bg-blue-50/80 border border-blue-200/50 cursor-pointer"
+                      >
+                        {isParkingCollapsed ? "목록 펼치기 ▾" : "목록 접기 ▴"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {parkingMessage && <p role="status" className="text-sm text-[#6b6b8a] mt-1">{parkingMessage}</p>}
+
+                {!isParkingCollapsed && parkingLots.length > 0 && (
+                  <div className="grid gap-2.5 sm:grid-cols-2 mt-3">
+                    {parkingLots.map((lot) => {
+                      const isSelected = selectedParkingCode === lot.parking_code
+                      const hasLive = lot.realtime_status === "AVAILABLE" && lot.available_spaces !== null
+                      return (
+                        <article
+                          key={lot.parking_code}
+                          onClick={() => setSelectedParkingCode(lot.parking_code)}
+                          className={`rounded-2xl p-3.5 border transition-all cursor-pointer ${
+                            isSelected
+                              ? "bg-blue-50/80 border-[#007aff] ring-2 ring-[#007aff]/30 shadow-sm"
+                              : "bg-white/70 border-black/5 hover:border-[#007aff]/40 hover:bg-white/90"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm text-[#1a1a2e] truncate">{lot.name}</p>
+                              <p className="text-xs text-[#6b6b8a] truncate mt-0.5">{lot.address}</p>
+                            </div>
+                            <div className="flex flex-col items-end shrink-0">
+                              <span className="text-xs whitespace-nowrap text-[#007aff] font-semibold">
+                                {lot.distance_m < 1000 ? `${lot.distance_m}m` : `${(lot.distance_m / 1000).toFixed(1)}km`}
+                              </span>
+                              <span className="text-[10px] text-[#007aff]/70 mt-0.5 font-medium">지도로 보기 ↗</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 mt-2.5 text-xs">
+                            <span className={`px-2 py-0.5 rounded-lg font-semibold text-[11px] ${
+                              hasLive
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                                : "bg-slate-100 text-slate-500"
+                            }`}>
+                              {hasLive
+                                ? `주차 가능 ${lot.available_spaces}대`
+                                : "실시간 정보 없음"}
+                            </span>
+                            <span className="text-[#6b6b8a]">총 {lot.capacity}면 · {lot.paid ? "유료" : "무료/미확인"}</span>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
 
             {/* Route detail */}
             {selectedRoute && <div className="glass p-5" style={{ borderRadius: 20 }}>
