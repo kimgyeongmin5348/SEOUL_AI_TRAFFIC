@@ -533,6 +533,25 @@ def prediction_for_road(spot_id: str, db: Session = Depends(get_db)):
         raise HTTPException(503, "도로 예측 데이터를 불러오지 못했습니다.") from None
 
 
+from backend.src.llm.chatbot import get_traffic_chat_reply
+
+
+class ChatMessageItem(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessageItem] = Field(min_length=1, max_length=50)
+
+
+@app.post("/api/chat")
+def chat_endpoint(req: ChatRequest):
+    """Conversational endpoint with Thinking model integration for Seoul traffic."""
+    dict_messages = [{"role": m.role, "content": m.content} for m in req.messages]
+    return get_traffic_chat_reply(dict_messages)
+
+
 # Production serves the Vite build from the API origin so HttpOnly login
 # cookies work without cross-site CORS configuration.
 FRONTEND_DIST = Path(__file__).resolve().parents[3] / "frontend" / "dist"

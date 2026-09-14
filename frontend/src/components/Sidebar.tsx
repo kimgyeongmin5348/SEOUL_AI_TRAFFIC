@@ -142,6 +142,20 @@ const navItems = [
     ),
     label: "즐겨찾기",
   },
+  {
+    href: "/chatbot",
+    icon: (
+      // AI 챗봇 아이콘
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <rect x="3" y="5" width="14" height="11" rx="3" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="7.5" cy="10.5" r="1.2" fill="currentColor" />
+        <circle cx="12.5" cy="10.5" r="1.2" fill="currentColor" />
+        <path d="M10 2v3M3 10.5H1M19 10.5h-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M8 13.5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      </svg>
+    ),
+    label: "AI 챗봇",
+  },
 ]
 
 // 홈 전용 아이콘
@@ -157,13 +171,13 @@ const homeIcon = (
   </svg>
 )
 
-// 더보기 메뉴 아이콘
-const menuGridIcon = (
+const chatbotIcon = (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-    <rect x="3" y="3" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-    <rect x="11.5" y="3" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-    <rect x="3" y="11.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
-    <rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+    <rect x="3" y="5" width="14" height="11" rx="3" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="7.5" cy="10.5" r="1.2" fill="currentColor" />
+    <circle cx="12.5" cy="10.5" r="1.2" fill="currentColor" />
+    <path d="M10 2v3M3 10.5H1M19 10.5h-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <path d="M8 13.5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
   </svg>
 )
 
@@ -173,6 +187,7 @@ const mobileBottomNavItems = [
   { href: "/route", label: "경로", icon: navItems[1].icon },
   { href: "/prediction", label: "예측", icon: navItems[5].icon },
   { href: "/favorites", label: "MY", icon: navItems[6].icon },
+  { href: "/chatbot", label: "챗봇", icon: chatbotIcon },
 ]
 
 export default function Sidebar() {
@@ -547,9 +562,7 @@ export default function Sidebar() {
         }}
       >
         {(() => {
-          const mobileIndex = mobileMenuOpen
-            ? 5
-            : mobileBottomNavItems.findIndex((item) => item.href === pathname)
+          const mobileIndex = mobileBottomNavItems.findIndex((item) => item.href === pathname)
 
           return (
             <div className="relative grid grid-cols-6 items-center w-full">
@@ -612,39 +625,6 @@ export default function Sidebar() {
                   </Link>
                 )
               })}
-
-              {/* '전체' (전체 메뉴 토글 버튼) */}
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen((prev) => !prev)}
-                className="sidebar-liquid-link relative z-10 flex flex-col items-center justify-center h-[46px] px-1"
-              >
-                <div
-                  className="transition-all duration-300"
-                  style={{
-                    color: mobileMenuOpen ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
-                    filter: mobileMenuOpen
-                      ? "drop-shadow(0 0 6px rgba(0, 122, 255, 0.8))"
-                      : "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
-                    transform: mobileMenuOpen ? "scale(1.08)" : "scale(1)",
-                  }}
-                >
-                  {menuGridIcon}
-                </div>
-                <span
-                  className="transition-all duration-300"
-                  style={{
-                    fontSize: 10,
-                    fontWeight: mobileMenuOpen ? 700 : 500,
-                    color: mobileMenuOpen ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
-                    textShadow: mobileMenuOpen
-                      ? "0 0 8px rgba(0, 122, 255, 0.9), 0 1px 2px rgba(0, 0, 0, 0.6)"
-                      : "0 1px 2px rgba(0, 0, 0, 0.6)",
-                  }}
-                >
-                  전체
-                </span>
-              </button>
             </div>
           )
         })()}
