@@ -1,4 +1,4 @@
-﻿import {
+import {
   kpiData as defaultKpiData,
   incidents as defaultIncidents,
   roadSpeedData as defaultRoadSpeedData,
@@ -56,6 +56,14 @@ export interface TrafficRow {
   direction_code: string
   traffic_volume: number | null
   collected_at: string
+}
+
+export interface TrafficHourlyRow {
+  hour_label: string
+  hour: number
+  total_volume: number
+  avg_volume: number
+  measured_at: string
 }
 
 export interface PredictionRow {
@@ -137,12 +145,17 @@ export async function fetchDashboardData() {
 
   let mappedIncidents = [...defaultIncidents]
   if (incRes && incRes.rows.length > 0) {
-    kpi.incidents = incRes.rows.length
+    const now = Date.now()
+    const activeRows = incRes.rows.filter((row) => {
+      if (!row.expected_clear_at) return true
+      return new Date(row.expected_clear_at).getTime() > now
+    })
+    kpi.incidents = activeRows.length
     if (!dbLatestTime && incRes.latest_at) {
       dbLatestTime = incRes.latest_at
     }
 
-    mappedIncidents = incRes.rows.map((row, idx) => {
+    mappedIncidents = activeRows.map((row, idx) => {
       let typeStr = "기타"
       let impact: "high" | "medium" | "low" = "medium"
 
@@ -253,17 +266,29 @@ export async function fetchDashboardData() {
 
 // 2. 교통량 및 속도 분석 데이터
 export async function fetchTrafficData() {
-  const [trafficRes, speedRes] = await Promise.all([
+  const [trafficRes, speedRes, hourlyRes] = await Promise.all([
     fetchDbDataset<TrafficRow>("traffic"),
     fetchDbDataset<SpeedRow>("speed"),
+    fetchDbDataset<TrafficHourlyRow>("traffic_hourly"),
   ])
 
   let timeData = [...defaultTrafficTimeData]
   let roadSpeeds = [...defaultRoadSpeedData]
   let latestAt: string | null = null
 
+  if (hourlyRes && hourlyRes.rows.length > 0) {
+    timeData = hourlyRes.rows.map((r) => ({
+      time: r.hour_label,
+      volume: Math.round(r.avg_volume || r.total_volume),
+      speed: 40,
+    }))
+    latestAt = hourlyRes.latest_at
+  }
+
   if (speedRes && speedRes.rows.length > 0) {
-    latestAt = speedRes.latest_at
+    if (!latestAt) {
+      latestAt = speedRes.latest_at
+    }
     const roadMap = new Map<string, { total: number; count: number }>()
     for (const r of speedRes.rows) {
       const name = r.road_name || "기타구간"
@@ -297,7 +322,7 @@ export async function fetchTrafficData() {
     timeData,
     roadSpeeds,
     latestAt,
-    isFromDb: Boolean(trafficRes || speedRes),
+    isFromDb: Boolean(trafficRes || speedRes || hourlyRes),
   }
 }
 
@@ -312,7 +337,13 @@ export async function fetchIncidentsData() {
     }
   }
 
-  const mapped = incRes.rows.map((row, idx) => {
+  const now = Date.now()
+  const activeRows = incRes.rows.filter((row) => {
+    if (!row.expected_clear_at) return true
+    return new Date(row.expected_clear_at).getTime() > now
+  })
+
+  const mapped = activeRows.map((row, idx) => {
     let typeStr = "기타"
     let impact: "high" | "medium" | "low" = "medium"
 
@@ -630,4 +661,40 @@ export async function recordRouteSearch(
   } catch (err) {
     console.warn("[API] recordRouteSearch failed:", err)
   }
+}
+
+export interface ParkingLotItem {
+  parking_code: string
+  name: string
+  address: string
+  latitude: number
+  longitude: number
+  distance_m: number
+  capacity: number
+  occupied_spaces: number | null
+  available_spaces: number | null
+  realtime_status: "AVAILABLE" | "STALE" | "UNSUPPORTED"
+  observed_at: string | null
+  restriction: "BUS_ONLY" | "CARGO_ONLY" | null
+  paid: boolean
+}
+
+export async function fetchNearbyParking(
+  latitude: number,
+  longitude: number,
+  radiusM = 1500,
+  limit = 8,
+): Promise<ParkingLotItem[]> {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    radius_m: String(radiusM),
+    limit: String(limit),
+  })
+  const response = await fetch(`/api/parking/nearby?${params}`)
+  const body = await response.json()
+  if (!response.ok) {
+    throw new Error(typeof body.detail === "string" ? body.detail : "주변 주차장을 불러오지 못했습니다.")
+  }
+  return (body.lots || []) as ParkingLotItem[]
 }

@@ -1,4 +1,4 @@
-﻿"""Read-only snapshots: observations are KST; DB-generated timestamps are UTC."""
+"""Read-only snapshots: observations are KST; DB-generated timestamps are UTC."""
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
@@ -11,22 +11,45 @@ from pathlib import Path
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field as PydanticField
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.src.db.database import get_db
 from backend.src.core.config import settings
+from backend.src.services.parking_service import ParkingApiError, SeoulParkingService
 
 app = FastAPI(title="RoadPulse")
 KST = timezone(timedelta(hours=9))
 SESSION_COOKIE = "roadpulse_session"
 SESSION_DAYS = 30
+parking_service = SeoulParkingService()
 
 
 @app.get("/api/health", tags=["system"])
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/api/parking/nearby", tags=["parking"])
+def nearby_parking(
+    latitude: float = Query(ge=33, le=39),
+    longitude: float = Query(ge=124, le=132),
+    radius_m: int = Query(default=1500, ge=100, le=5000),
+    limit: int = Query(default=10, ge=1, le=30),
+    include_restricted: bool = Query(default=False),
+):
+    try:
+        return parking_service.nearby(
+            latitude=latitude,
+            longitude=longitude,
+            radius_m=radius_m,
+            limit=limit,
+            include_restricted=include_restricted,
+        )
+    except ParkingApiError as exc:
+        raise HTTPException(503, str(exc)) from None
 
 # Identifiers are fixed here; no SQL identifiers come from request input.
 DATASETS = {
@@ -38,10 +61,23 @@ DATASETS = {
         GROUP BY s.spot_name, v.spot_id, v.measured_at, v.direction_code
         ORDER BY v.spot_id, v.direction_code LIMIT 500
     """),
+    "traffic_hourly": ("traffic_volume_measurements", "measured_at", """
+        SELECT DATE_FORMAT(v.measured_at, '%H:00') AS hour_label,
+               HOUR(v.measured_at) AS hour,
+               SUM(v.traffic_volume) AS total_volume,
+               ROUND(AVG(v.traffic_volume)) AS avg_volume,
+               MAX(v.measured_at) AS measured_at
+        FROM traffic_volume_measurements v
+        WHERE v.measured_at >= DATE_SUB(:latest, INTERVAL 23 HOUR) AND v.measured_at <= :latest
+        GROUP BY DATE_FORMAT(v.measured_at, '%H:00'), HOUR(v.measured_at)
+        ORDER BY MAX(v.measured_at) ASC
+    """),
     "speed": ("traffic_speed_measurements", "measured_at", """
         SELECT r.road_name, s.link_id, s.measured_at, s.speed_kmh, s.travel_time_sec, s.collected_at
-        FROM traffic_speed_measurements s LEFT JOIN road_segments r ON r.link_id=s.link_id
-        WHERE s.measured_at=:latest ORDER BY s.link_id LIMIT 500
+        FROM traffic_speed_measurements s 
+        JOIN road_segments r ON r.link_id=s.link_id
+        WHERE s.measured_at=:latest AND r.road_name IS NOT NULL AND r.road_name != ''
+        ORDER BY r.road_name, s.link_id LIMIT 1000
     """),
     "weather": ("weather_measurements", "observed_at", """
         SELECT s.station_name, w.weather_station_id, w.observed_at, w.temperature_c,
@@ -50,11 +86,13 @@ DATASETS = {
         WHERE w.observed_at >= :start AND w.observed_at <= :latest
         ORDER BY w.observed_at DESC, w.weather_station_id LIMIT 500
     """),
-    "incidents": ("incidents", "collected_at", """
+    "incidents": ("incidents", "occurred_at", """
         SELECT incident_id, incident_type, description, occurred_at, expected_clear_at,
                tm_x, tm_y, collected_at
-        FROM incidents WHERE collected_at >= :start AND collected_at <= :latest
-        ORDER BY collected_at DESC, incident_id LIMIT 500
+        FROM incidents 
+        WHERE (expected_clear_at IS NULL OR expected_clear_at > :now_kst)
+          AND occurred_at >= :now_kst - INTERVAL 24 HOUR
+        ORDER BY occurred_at DESC, incident_id LIMIT 200
     """),
     "prediction": ("traffic_predictions", "predicted_at", """
         SELECT p.spot_id, s.spot_name, p.direction_code, p.model_version, p.predicted_at,
@@ -79,13 +117,14 @@ def get_dataset(dataset: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "지원하지 않는 데이터입니다.")
     table, clock, query = DATASETS[dataset]
     try:
+        now_kst = datetime.now(KST).replace(tzinfo=None)
         latest = db.execute(text(f"SELECT MAX({clock}) FROM {table}")).scalar()
         rows = []
         if latest:
             start = latest.replace(hour=0, minute=0, second=0, microsecond=0)
             if clock == "collected_at":
                 start = (latest + timedelta(hours=9)).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=9)
-            rows = [dict(row) for row in db.execute(text(query), {"latest": latest, "start": start}).mappings()]
+            rows = [dict(row) for row in db.execute(text(query), {"latest": latest, "start": start, "now_kst": now_kst}).mappings()]
         return {
             "source": "DB", "mode": "snapshot",
             "latest_at": serialize(latest, timezone.utc if clock in ("collected_at", "predicted_at") else KST),
@@ -96,8 +135,6 @@ def get_dataset(dataset: str, db: Session = Depends(get_db)):
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(503, "DB 조회에 실패했습니다. 연결 설정과 DB 상태를 확인해 주세요.") from None
-
-from pydantic import BaseModel, Field as PydanticField
 
 
 class AuthRequest(BaseModel):
@@ -287,7 +324,10 @@ def record_route_search(req: RouteSearchRequest, user=Depends(current_user), db:
 
 # Candidate geometry is supplied by OSRM; precise GPS coordinates are not stored.
 from typing import Annotated
+
 from pydantic import Field, model_validator
+
+from backend.src.llm.route_explainer import explain_route_recommendation
 from backend.src.services.route_prediction import predict_routes, predict_spot_series
 
 PositiveSeconds = Annotated[float, Field(gt=0, le=604800, allow_inf_nan=False)]
@@ -301,6 +341,7 @@ class RouteStep(BaseModel):
 class RouteCandidate(BaseModel):
     id: str = Field(min_length=1, max_length=20)
     duration_sec: PositiveSeconds
+    distance_m: float | None = Field(default=None, ge=0, le=5_000_000, allow_inf_nan=False)
     steps: list[RouteStep] = Field(min_length=1, max_length=2000)
 
     @model_validator(mode="after")
@@ -331,7 +372,11 @@ def predict_route_candidates(req: RoutePredictionRequest, db: Session = Depends(
         departure = departure.astimezone(KST)
         if departure < now - timedelta(minutes=5) or departure > now + timedelta(hours=3, minutes=5):
             raise HTTPException(422, "출발 시간은 지금부터 3시간 이내로 선택해 주세요.")
-        return predict_routes(db, req.candidates, now, departure)
+        recommendation = predict_routes(db, req.candidates, now, departure)
+        recommendation["explanation"] = explain_route_recommendation(
+            recommendation, req.candidates
+        )
+        return recommendation
     except HTTPException:
         raise
     except ValueError as exc:
