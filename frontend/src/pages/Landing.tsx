@@ -160,7 +160,7 @@ export default function Landing() {
 
       {/* Hero */}
       <section
-        className="relative min-h-screen flex flex-col items-center justify-center px-6 pb-16 overflow-hidden"
+        className="relative min-h-screen flex flex-col items-center justify-center px-3.5 sm:px-6 pb-16 overflow-hidden"
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 96px)" }}
       >
         {/* Background abstract road network */}
@@ -478,7 +478,7 @@ export default function Landing() {
       </section>
 
       {/* Feature cards */}
-      <section className="px-6 pb-24 max-w-5xl mx-auto">
+      <section className="px-3.5 sm:px-6 pb-24 max-w-5xl mx-auto">
         <div className="text-center mb-10">
           <h2
             className="text-[#1a1a2e] mb-2"

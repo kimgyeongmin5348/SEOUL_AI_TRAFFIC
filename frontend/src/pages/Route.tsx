@@ -203,8 +203,8 @@ export default function Route() {
   return (
     <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
       <Sidebar />
-      <main className="flex-1 md:pl-20 pb-24 md:pb-0">
-        <div className="px-4 md:px-8 pt-6 pb-4">
+      <main className="flex-1 md:pl-20 pb-24 md:pb-0 pt-[max(62px,calc(env(safe-area-inset-top)+54px))] md:pt-0">
+        <div className="px-4 md:px-8 pt-4 md:pt-6 pb-4">
           <div className="flex items-center justify-between mb-1">
             <h1
               className="text-[#1a1a2e]"

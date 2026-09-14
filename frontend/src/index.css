@@ -223,3 +223,26 @@ h1, h2, h3, h4, h5, h6 {
   50% { opacity: 0.6; transform: scale(0.85); }
 }
 
+@keyframes mobileMenuSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.mobile-menu-animate {
+  animation: mobileMenuSlideDown 240ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Safe Area Inset Support across all mobile devices */
+.safe-top-padding {
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+
+.safe-bottom-padding {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}

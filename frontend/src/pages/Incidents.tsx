@@ -59,7 +59,7 @@ export default function Incidents() {
   return (
     <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
       <Sidebar />
-      <main className="flex-1 md:pl-20 pb-24 md:pb-0 px-4 md:px-8 pt-6">
+      <main className="flex-1 md:pl-20 pb-24 md:pb-0 px-4 md:px-8 pt-[max(68px,calc(env(safe-area-inset-top)+60px))] md:pt-6">
         <div className="flex items-center justify-between mb-1">
           <h1
             className="text-[#1a1a2e]"

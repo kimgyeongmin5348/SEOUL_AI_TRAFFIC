@@ -27,7 +27,7 @@ export default function Login() {
 
   return (
     <div
-      className="min-h-full flex items-center justify-center px-6"
+      className="min-h-full flex items-center justify-center px-4 sm:px-6 py-6"
       style={{
         background: "linear-gradient(160deg, #e8edf5 0%, #dce3f0 100%)",
       }}

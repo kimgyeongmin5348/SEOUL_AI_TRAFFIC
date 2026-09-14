@@ -1,4 +1,6 @@
+import { useState, useEffect, useRef } from "react"
 import { Link, useLocation } from "react-router-dom"
+import { useAuth } from "../auth"
 
 const navItems = [
   {
@@ -56,7 +58,7 @@ const navItems = [
   {
     href: "/incidents",
     icon: (
-      // 경고 삼각형 (더 두껍고 명확하게)
+      // 경고 삼각형
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
         <path
           d="M10 2.5L1.5 17.5h17L10 2.5z"
@@ -128,7 +130,7 @@ const navItems = [
   {
     href: "/favorites",
     icon: (
-      // 하트 + 경로
+      // 하트
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
         <path
           d="M10 17s-7-4.5-7-9a4 4 0 018 0 4 4 0 018 0c0 4.5-7 9-7 9z"
@@ -142,8 +144,31 @@ const navItems = [
   },
 ]
 
-const mobileNavItems = [
-  { href: "/", label: "홈", icon: navItems[0].icon },
+// 홈 전용 아이콘
+const homeIcon = (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <path
+      d="M3 8.5L10 3l7 5.5V17a1 1 0 01-1 1H4a1 1 0 01-1-1V8.5z"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    />
+    <path d="M7 18v-7h6v7" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+)
+
+// 더보기 메뉴 아이콘
+const menuGridIcon = (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <rect x="3" y="3" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+    <rect x="11.5" y="3" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+    <rect x="3" y="11.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+    <rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+)
+
+const mobileBottomNavItems = [
+  { href: "/", label: "홈", icon: homeIcon },
   { href: "/dashboard", label: "지도", icon: navItems[0].icon },
   { href: "/route", label: "경로", icon: navItems[1].icon },
   { href: "/prediction", label: "예측", icon: navItems[5].icon },
@@ -152,10 +177,268 @@ const mobileNavItems = [
 
 export default function Sidebar() {
   const { pathname } = useLocation()
+  const { user, logout } = useAuth()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Current page title lookup
+  const currentPageItem = navItems.find((item) => item.href === pathname)
+  const currentPageTitle = currentPageItem ? currentPageItem.label : "RoadPulse"
+
+  // Close menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false)
+  }, [pathname])
+
+  // Close on outside click or ESC
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileMenuOpen(false)
+    }
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMobileMenuOpen(false)
+      }
+    }
+
+    if (mobileMenuOpen) {
+      document.addEventListener("keydown", handleKeyDown)
+      document.addEventListener("mousedown", handleClickOutside)
+    }
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown)
+      document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [mobileMenuOpen])
 
   return (
     <>
-      {/* Desktop sidebar */}
+      {/* ======================================================== */}
+      {/* 1. Mobile Top Bar (Only visible on screens < 768px)      */}
+      {/* ======================================================== */}
+      <header
+        ref={menuRef}
+        className="md:hidden fixed top-0 left-0 right-0 z-40"
+        style={{
+          paddingTop: "max(8px, env(safe-area-inset-top))",
+          paddingLeft: "max(10px, env(safe-area-inset-left))",
+          paddingRight: "max(10px, env(safe-area-inset-right))",
+        }}
+      >
+        <div className="py-2 px-1 max-w-6xl mx-auto">
+          <div
+            className="glass flex items-center justify-between px-3.5 py-2.5"
+            style={{
+              borderRadius: 18,
+              boxShadow: "0 8px 24px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+            }}
+          >
+            {/* Logo */}
+            <Link
+              to="/"
+              className="flex items-center gap-2 group flex-shrink-0"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <div
+                className="w-7 h-7 flex items-center justify-center"
+                style={{
+                  background: "linear-gradient(135deg, #007aff, #5e5ce6)",
+                  borderRadius: 9,
+                  boxShadow: "0 2px 8px rgba(0,122,255,0.3)",
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
+                  <path
+                    d="M2 9C2 5.13 5.13 2 9 2s7 3.13 7 7-3.13 7-7 7-7-3.13-7-7z"
+                    stroke="white"
+                    strokeWidth="1.6"
+                  />
+                  <path
+                    d="M9 5v4l2.5 2.5"
+                    stroke="white"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                  <circle cx="9" cy="9" r="1.2" fill="white" />
+                </svg>
+              </div>
+              <span
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 700,
+                  fontSize: 16,
+                  letterSpacing: "-0.02em",
+                }}
+                className="text-[#1a1a2e]"
+              >
+                RoadPulse
+              </span>
+            </Link>
+
+            {/* Current Page Badge */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/[0.04] border border-black/[0.05]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#007aff] pulse-dot" />
+              <span className="text-xs font-semibold text-[#3a3a52]">{currentPageTitle}</span>
+            </div>
+
+            {/* Right actions: User & Hamburger */}
+            <div className="flex items-center gap-1.5">
+              {user ? (
+                <span
+                  title={user.email}
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold"
+                  style={{ background: "#34c759" }}
+                >
+                  ✓
+                </span>
+              ) : (
+                <Link
+                  to="/login"
+                  className="px-2.5 py-1 text-xs font-semibold text-[#007aff] rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  로그인
+                </Link>
+              )}
+
+              {/* Hamburger Button */}
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((prev) => !prev)}
+                aria-label={mobileMenuOpen ? "전체 메뉴 닫기" : "전체 메뉴 열기"}
+                aria-expanded={mobileMenuOpen}
+                className="w-8 h-8 flex items-center justify-center rounded-xl transition-all duration-150 active:scale-90"
+                style={{
+                  background: mobileMenuOpen ? "rgba(0,122,255,0.12)" : "rgba(0,0,0,0.04)",
+                  color: mobileMenuOpen ? "#007aff" : "#1a1a2e",
+                }}
+              >
+                {mobileMenuOpen ? (
+                  <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+                    <path
+                      d="M4 4L14 14M14 4L4 14"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+                    <path
+                      d="M3 4.5H15M3 9H15M3 13.5H15"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile Full Menu Dropdown */}
+          {mobileMenuOpen && (
+            <div
+              className="mt-2 glass p-3 rounded-3xl mobile-menu-animate overflow-hidden border border-white/80 shadow-2xl"
+              style={{
+                maxHeight: "calc(100dvh - 5.5rem)",
+                background: "rgba(255, 255, 255, 0.9)",
+                backdropFilter: "blur(28px) saturate(1.8)",
+                WebkitBackdropFilter: "blur(28px) saturate(1.8)",
+              }}
+            >
+              {/* User Bar */}
+              <div className="flex items-center justify-between px-3 py-2 mb-2 rounded-2xl bg-white/60 border border-white/70">
+                <div className="min-w-0 pr-2">
+                  <p className="text-xs font-semibold text-[#1a1a2e] truncate">
+                    {user ? user.email : "게스트 모드"}
+                  </p>
+                  <p className="text-[10px] text-[#6b6b8a]">
+                    {user ? "개인화 즐겨찾기 동기화 완료" : "로그인 후 개인화 기능 이용 가능"}
+                  </p>
+                </div>
+                {user ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void logout()
+                      setMobileMenuOpen(false)
+                    }}
+                    className="px-2.5 py-1 text-xs font-medium text-red-600 rounded-lg hover:bg-red-50 flex-shrink-0"
+                  >
+                    로그아웃
+                  </button>
+                ) : (
+                  <Link
+                    to="/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="px-3 py-1 text-xs font-semibold text-white rounded-xl flex-shrink-0"
+                    style={{ background: "linear-gradient(135deg, #007aff, #5e5ce6)" }}
+                  >
+                    로그인
+                  </Link>
+                )}
+              </div>
+
+              {/* All Routes Grid */}
+              <div className="grid grid-cols-1 gap-1 max-h-[58dvh] overflow-y-auto pr-0.5">
+                <Link
+                  to="/"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-2xl transition-all duration-150 ${
+                    pathname === "/" ? "bg-[#007aff]/10 text-[#007aff]" : "text-[#2c2c44] hover:bg-white/60"
+                  }`}
+                >
+                  <div
+                    className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{
+                      background: pathname === "/" ? "#007aff" : "rgba(0, 0, 0, 0.04)",
+                      color: pathname === "/" ? "#ffffff" : "#4a4a68",
+                    }}
+                  >
+                    {homeIcon}
+                  </div>
+                  <span className="text-sm font-semibold">서비스 소개</span>
+                </Link>
+
+                {navItems.map((item) => {
+                  const active = pathname === item.href
+                  return (
+                    <Link
+                      key={item.href}
+                      to={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-2xl transition-all duration-150 ${
+                        active ? "bg-[#007aff]/10 text-[#007aff]" : "text-[#2c2c44] hover:bg-white/60"
+                      }`}
+                    >
+                      <div
+                        className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
+                        style={{
+                          background: active ? "#007aff" : "rgba(0, 0, 0, 0.04)",
+                          color: active ? "#ffffff" : "#4a4a68",
+                        }}
+                      >
+                        {item.icon}
+                      </div>
+                      <span className="text-sm font-semibold">{item.label}</span>
+                      {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#007aff]" />}
+                    </Link>
+                  )
+                })}
+              </div>
+
+              <div className="mt-2 pt-2 border-t border-black/5 flex items-center justify-between px-2 text-[10px] text-[#8e8e93]">
+                <span>서울시 AI 교통 관제</span>
+                <span className="font-mono">Mobile Optimized</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* ======================================================== */}
+      {/* 2. Desktop Sidebar (Screens >= 768px)                     */}
+      {/* ======================================================== */}
       <aside
         className="liquid-glass-nav hidden md:flex flex-col w-[78px] fixed left-3 top-1/2 -translate-y-1/2 z-40 py-3 gap-1"
         style={{ borderRadius: 28 }}
@@ -209,22 +492,25 @@ export default function Sidebar() {
         })}
       </aside>
 
-      {/* Mobile bottom nav */}
+      {/* ======================================================== */}
+      {/* 3. Mobile Bottom Nav Bar (Screens < 768px)               */}
+      {/* ======================================================== */}
       <nav
-        className="md:hidden fixed bottom-2 left-3 right-3 z-50 liquid-glass-nav flex justify-around items-center px-2"
+        className="md:hidden fixed bottom-2 left-2.5 right-2.5 z-50 liquid-glass-nav flex justify-around items-center px-1"
         style={{
-          borderRadius: 24,
-          paddingTop: 12,
-          paddingBottom: "max(12px, env(safe-area-inset-bottom))",
+          borderRadius: 22,
+          paddingTop: 8,
+          paddingBottom: "max(10px, env(safe-area-inset-bottom))",
+          boxShadow: "0 12px 36px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)",
         }}
       >
-        {mobileNavItems.map((item) => {
+        {mobileBottomNavItems.map((item) => {
           const active = pathname === item.href
           return (
             <Link
               key={item.href}
               to={item.href}
-              className={`sidebar-liquid-link flex flex-col items-center gap-1 px-3 py-1.5 ${active ? "is-active" : ""}`}
+              className={`sidebar-liquid-link flex flex-col items-center gap-0.5 px-2 py-1 ${active ? "is-active" : ""}`}
               style={{ color: active ? "#007aff" : "#6b6b8a" }}
             >
               {item.icon}
@@ -234,6 +520,19 @@ export default function Sidebar() {
             </Link>
           )
         })}
+
+        {/* '전체' (전체 메뉴 토글 버튼) */}
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen((prev) => !prev)}
+          className={`sidebar-liquid-link flex flex-col items-center gap-0.5 px-2 py-1 ${mobileMenuOpen ? "is-active" : ""}`}
+          style={{ color: mobileMenuOpen ? "#007aff" : "#6b6b8a" }}
+        >
+          {menuGridIcon}
+          <span style={{ fontSize: 10, fontWeight: mobileMenuOpen ? 600 : 400 }}>
+            전체
+          </span>
+        </button>
       </nav>
     </>
   )
