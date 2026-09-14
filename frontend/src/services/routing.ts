@@ -18,6 +18,14 @@ export interface RouteResult {
   modelVersion?: string
   coverage?: number
   predictedVolume?: number | null
+  incidentDetails?: RouteIncident[]
+}
+
+export interface RouteIncident {
+  incident_id: string
+  type: string
+  detail_type: string
+  description: string | null
 }
 
 interface OsrmRoute {
@@ -45,6 +53,9 @@ interface ModelRanking {
     typical_volume: number | null
     predicted_vs_typical_percent: number | null
     distance_m: number | null
+    incident_count: number
+    incident_penalty_sec: number
+    incidents: RouteIncident[]
   }[]
   explanation?: {
     selected_route_id: string | null
@@ -123,7 +134,7 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       time: Math.max(1, Math.round(r.duration / 60)),
       distance: Number((r.distance / 1000).toFixed(1)),
       avgSpeed: Math.round(r.distance / r.duration * 3.6),
-      traffic: "원활", trafficLevel: "green", incidents: 0, weather: "미연동", delay: 0,
+      traffic: "원활", trafficLevel: "green", incidents: prediction?.incident_count || 0, weather: "미연동", delay: 0,
       ai,
       reason: ranking?.explanation?.selected_route_id === id
         ? ranking.explanation.text
@@ -131,6 +142,7 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       coordinates: r.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
       modelVersion: ranking?.model_version, coverage: prediction?.coverage,
       predictedVolume: prediction?.predicted_volume,
+      incidentDetails: prediction?.incidents,
     }
   })
   return { origin, dest, routes, predictionMessage }

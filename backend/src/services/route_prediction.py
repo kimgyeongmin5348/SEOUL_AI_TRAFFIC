@@ -128,7 +128,41 @@ def road_key(name):
     return re.split(r"[(/]", name)[0].strip().replace(" ", "")
 
 
-def rank_candidates(candidates, predictions, metadata):
+def load_active_incidents(db, departure_at):
+    rows = db.execute(text("""
+        SELECT i.incident_id, i.link_id, i.incident_type, i.incident_detail_type,
+               i.occurred_at, i.expected_clear_at, i.description, r.road_name
+        FROM incidents i
+        LEFT JOIN road_segments r ON r.link_id = i.link_id
+        WHERE i.occurred_at <= :departure_at
+          AND (i.expected_clear_at IS NULL OR i.expected_clear_at >= :departure_at)
+    """), {"departure_at": departure_at}).mappings()
+    by_road = {}
+    for incident in rows:
+        road_name = incident.get("road_name")
+        if road_name:
+            by_road.setdefault(road_key(road_name), []).append(dict(incident))
+    return by_road
+
+
+def incident_penalty_multiplier(incident):
+    incident_type = " ".join(
+        str(incident.get(key) or "")
+        for key in ("incident_type", "incident_detail_type")
+    ).lower()
+    if any(word in incident_type for word in ("통제", "차단", "control", "closed")):
+        return 5.0
+    if any(word in incident_type for word in ("사고", "accident", "충돌")):
+        return 0.5
+    if any(word in incident_type for word in ("공사", "construction")):
+        return 0.3
+    if any(word in incident_type for word in ("고장", "breakdown")):
+        return 0.4
+    return 0.2
+
+
+def rank_candidates(candidates, predictions, metadata, incidents_by_road=None):
+    incidents_by_road = incidents_by_road or {}
     roads = {}
     for prediction, meta in zip(predictions, metadata, strict=True):
         if not math.isfinite(float(prediction)):
@@ -144,10 +178,17 @@ def rank_candidates(candidates, predictions, metadata):
     results = []
     for candidate in candidates:
         total = sum(s.duration_sec for s in candidate.steps)
-        matched, penalty, predicted, typical, count = 0., 0., 0., 0., 0
+        matched, penalty, incident_penalty, predicted, typical, count = 0., 0., 0., 0., 0., 0
         matched_road_names = []
         unmatched_road_names = []
+        route_incidents = {}
         for step in candidate.steps:
+            for incident in incidents_by_road.get(road_key(step.name), []):
+                route_incidents[incident["incident_id"]] = incident
+            incident_penalty += step.duration_sec * sum(
+                incident_penalty_multiplier(incident)
+                for incident in incidents_by_road.get(road_key(step.name), [])
+            )
             observations = roads.get(road_key(step.name)) if step.name else None
             if not observations:
                 if step.name:
@@ -167,11 +208,20 @@ def rank_candidates(candidates, predictions, metadata):
             count += 1
         coverage = matched / total if total else 0.
         traffic_penalty_ratio = penalty / total if total else 0.
+        incident_rows = list(route_incidents.values())
         results.append({"id": candidate.id, "coverage": round(coverage, 3),
-                        "score": round(candidate.duration_sec * (1 + traffic_penalty_ratio), 2) if total else candidate.duration_sec,
+                        "score": round(candidate.duration_sec + penalty + incident_penalty, 2) if total else candidate.duration_sec,
                         "base_duration_sec": round(candidate.duration_sec, 2),
                         "traffic_penalty_sec": round(candidate.duration_sec * traffic_penalty_ratio, 2),
                         "traffic_penalty_percent": round(traffic_penalty_ratio * 100, 1),
+                        "incident_penalty_sec": round(incident_penalty, 2),
+                        "incident_count": len(incident_rows),
+                        "incidents": [{
+                            "incident_id": incident["incident_id"],
+                            "type": incident["incident_type"],
+                            "detail_type": incident["incident_detail_type"],
+                            "description": incident["description"],
+                        } for incident in incident_rows],
                         "predicted_volume": round(predicted / matched, 1) if matched else None,
                         "typical_volume": round(typical / matched, 1) if matched else None,
                         "predicted_vs_typical_percent": round((predicted / typical - 1) * 100, 1) if typical > 0 else None,
@@ -240,7 +290,8 @@ def predict_routes(db, candidates, now, departure_at=None):
             records.append({**meta, "measured_at": forecast_target, "volume": max(0., float(value))})
         forecast_target += timedelta(hours=1)
         forecast_steps += 1
-    results, available = rank_candidates(candidates, predictions, metadata)
+    incidents_by_road = load_active_incidents(db, target)
+    results, available = rank_candidates(candidates, predictions, metadata, incidents_by_road)
     eligible_count = sum(route["coverage"] >= .5 for route in results)
     selected = next((route for route in results if route["ai"]), None)
     osrm_default = min(results, key=lambda route: route["base_duration_sec"])

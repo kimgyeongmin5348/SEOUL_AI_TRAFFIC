@@ -627,6 +627,11 @@ export default function Route() {
                     color: "#007aff",
                   },
                   {
+                    label: "경로 내 활성 돌발",
+                    value: selectedRoute.incidents ? `${selectedRoute.incidents}건` : "없음",
+                    color: selectedRoute.incidents ? "#ff3b30" : "#34c759",
+                  },
+                  {
                     label: "AI 최적 추천 여부",
                     value: selectedRoute?.ai ? "★ 추천 경로" : "일반 경로",
                     color: selectedRoute?.ai ? "#5e5ce6" : "#6b6b8a",
@@ -659,6 +664,17 @@ export default function Route() {
                   </div>
                 ))}
               </div>
+              {selectedRoute.incidentDetails && selectedRoute.incidentDetails.length > 0 && (
+                <div className="mt-3 p-3 rounded-xl text-xs" style={{ background: "rgba(255,59,48,0.08)", color: "#7a2d28" }}>
+                  <p className="font-semibold mb-1">돌발상황 반영</p>
+                  {selectedRoute.incidentDetails.map((incident) => (
+                    <p key={incident.incident_id}>
+                      {incident.type} · {incident.detail_type}
+                      {incident.description ? ` · ${incident.description}` : ""}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>}
           </div>
         </div>

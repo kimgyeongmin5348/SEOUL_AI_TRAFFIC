@@ -53,6 +53,27 @@ def test_predictions_change_recommendation_and_incomplete_routes_are_excluded():
         rank_candidates(routes, [np.nan, 100], meta)
 
 
+def test_active_incident_changes_route_score_and_is_reported():
+    routes = [candidate("A", 600, "강남대로"), candidate("B", 600, "테헤란로")]
+    meta = [{"spot_name": "강남대로", "baseline": 100},
+            {"spot_name": "테헤란로", "baseline": 100}]
+    incidents = {
+        "강남대로": [{
+            "incident_id": "INC-1",
+            "incident_type": "사고",
+            "incident_detail_type": "추돌",
+            "description": "차량 사고",
+        }],
+    }
+
+    result, ok = rank_candidates(routes, [100, 100], meta, incidents)
+
+    assert ok and result[1]["ai"] and not result[0]["ai"]
+    assert result[0]["incident_count"] == 1
+    assert result[0]["incident_penalty_sec"] == 300
+    assert result[0]["incidents"][0]["incident_id"] == "INC-1"
+
+
 def test_features_use_exact_lags_and_do_not_mix_directions():
     target = datetime(2026, 9, 10, 9)
     history = [dict(spot_id="A", spot_name="강남대로", tm_x=1, tm_y=2,
@@ -122,11 +143,12 @@ def test_real_model_with_delayed_observations_reaches_current_hour():
     weather = dict(temperature_c=20, rainfall_mm=0, humidity_pct=50, wind_speed_ms=2,
                    pressure_hpa=1000, observed_at=target-timedelta(hours=12))
     db = MagicMock()
-    spots, traffic, climate = MagicMock(), MagicMock(), MagicMock()
+    spots, traffic, climate, incidents = MagicMock(), MagicMock(), MagicMock(), MagicMock()
     spots.mappings.return_value = [{"spot_id": "A", "spot_name": "강남대로"}]
     traffic.mappings.return_value = history
     climate.mappings.return_value.first.return_value = weather
-    db.execute.side_effect = [spots, traffic, climate]
+    incidents.mappings.return_value = []
+    db.execute.side_effect = [spots, traffic, climate, incidents]
     result = predict_routes(db, [candidate("A", 600, "강남대로")], target)
     assert result["forecast_steps"] == 2
     assert result["target_at"] == "2026-09-10T09:00:00+09:00"
@@ -135,6 +157,6 @@ def test_real_model_with_delayed_observations_reaches_current_hour():
     assert result["target_context"]["weekday"] == "목요일"
     assert result["osrm_comparison"]["osrm_default_route_id"] == "A"
     assert result["osrm_comparison"]["estimated_minutes_saved"] == 0
-    db.execute.side_effect = [spots, traffic, climate]
+    db.execute.side_effect = [spots, traffic, climate, incidents]
     with pytest.raises(ValueError, match="지연"):
         predict_routes(db, [candidate("A", 600, "강남대로")], target+timedelta(days=1))
