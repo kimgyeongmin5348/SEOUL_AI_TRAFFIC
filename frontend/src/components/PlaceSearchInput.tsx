@@ -68,7 +68,7 @@ export default function PlaceSearchInput({
         value={value}
         placeholder={placeholder}
         autoComplete="off"
-        className="w-full rounded-xl bg-white px-4 py-3 text-sm outline-none"
+        className="w-full rounded-xl bg-white px-4 py-3 text-base sm:text-sm outline-none border border-black/5 shadow-2xs focus:ring-2 focus:ring-[#007aff]/30 transition-all placeholder:text-gray-400"
         onFocus={() => {
           if (results.length > 0) setOpen(true)
         }}
