@@ -344,6 +344,7 @@ class RouteCandidate(BaseModel):
     duration_sec: PositiveSeconds
     distance_m: float | None = Field(default=None, ge=0, le=5_000_000, allow_inf_nan=False)
     steps: list[RouteStep] = Field(min_length=1, max_length=2000)
+    # OSRM polyline을 돌발 좌표 공간 매칭에 사용합니다.
     coordinates: list[tuple[float, float]] = Field(default_factory=list, max_length=10000)
 
     @model_validator(mode="after")

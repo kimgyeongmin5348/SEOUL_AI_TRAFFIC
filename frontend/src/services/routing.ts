@@ -121,6 +121,7 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       body: JSON.stringify({ departure_at: departureAt, candidates: candidates.map((r, i) => ({
         id: String.fromCharCode(65 + i), duration_sec: r.duration,
         distance_m: r.distance,
+        // 백엔드가 돌발 위치를 경로 polyline과 비교할 수 있게 전달합니다.
         coordinates: r.geometry.coordinates,
         steps: steps[i].map(step => ({
           name: step.name || "",

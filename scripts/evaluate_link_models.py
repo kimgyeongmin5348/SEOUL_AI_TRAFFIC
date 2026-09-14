@@ -38,6 +38,7 @@ def main() -> None:
     frame = frame.sort_values("datetime").reset_index(drop=True)
     cutoff_index = max(1, int(len(frame) * 0.8))
     cutoff = frame.loc[cutoff_index, "datetime"]
+    # 시간순 분할로 미래 링크 관측이 학습에 섞이지 않게 합니다.
     train = frame[frame["datetime"] < cutoff]
     test = frame[frame["datetime"] >= cutoff]
     params = {

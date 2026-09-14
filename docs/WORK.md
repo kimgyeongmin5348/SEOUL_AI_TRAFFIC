@@ -101,3 +101,9 @@
 - 실제 패널티 계산에 사용한 최신 속도 관측 시각을 `speed_observed_at`으로 반환한다.
 - 경로 상세 화면에 속도 관측 매칭 범위를 표시해 낮은 커버리지를 숨기지 않도록 했다.
 - 검증 결과: 경로 추천 테스트 `13 passed`, 프론트 빌드 성공
+
+### 작업 기준 주석·AI 경로 추천 시각화
+
+- 오늘 추가한 대용량 export, 링크 데이터셋, 돌발·속도 점수, 링크 모델 평가 핵심 로직에 짧은 주석을 보강했다.
+- [ai_route_recommendation_flow.html](ai_route_recommendation_flow.html)에 현재 운영 추천과 오프라인 링크 모델 평가 흐름을 standalone HTML로 시각화했다.
+- 검증 결과: 백엔드 테스트 `35 passed`, 프론트 빌드 성공

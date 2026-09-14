@@ -88,6 +88,7 @@ def main():
             for name, path in exported.items():
                 print(f"  • {name:<20} -> {path}")
         elif args.link_only:
+            # 기존 지점 모델과 분리된 link_id 단위 데이터셋을 생성합니다.
             print("\n>>> 도로 링크 단위 학습 데이터셋 생성 시작...\n")
             out_path = pipeline.build_link_training_dataset()
             print_dataset_summary(out_path)

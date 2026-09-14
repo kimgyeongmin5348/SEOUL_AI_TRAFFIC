@@ -50,6 +50,7 @@ class DataPipelineService:
             traffic_path = self.raw_dir / "raw_traffic_volume.csv"
             traffic_rows = 0
             first_chunk = True
+            # 대용량 RDS 결과는 청크로 저장해 read timeout과 메모리 급증을 피합니다.
             for chunk in pd.read_sql(traffic_sql, conn, chunksize=100_000):
                 chunk.to_csv(
                     traffic_path,
@@ -88,6 +89,7 @@ class DataPipelineService:
             speed_path = self.raw_dir / "raw_traffic_speed.csv"
             speed_rows = 0
             first_chunk = True
+            # 속도 원본도 같은 방식으로 분할 export합니다.
             for chunk in pd.read_sql(speed_sql, conn, chunksize=100_000):
                 chunk.to_csv(
                     speed_path,
@@ -368,6 +370,7 @@ class DataPipelineService:
         speed["target_speed_kmh"] = grouped["speed_kmh"].shift(-1)
         speed["target_travel_time_sec"] = grouped["travel_time_sec"].shift(-1)
         speed["target_datetime"] = grouped["datetime"].shift(-1)
+        # 다음 관측이 정확히 한 시간 뒤일 때만 학습 정답으로 사용합니다.
         speed["consecutive_next_hour"] = (
             speed["target_datetime"] - speed["datetime"] == pd.Timedelta(hours=1)
         ).astype(int)
@@ -382,6 +385,7 @@ class DataPipelineService:
         weather["rainfall_mm"] = weather["rainfall_mm"].fillna(0.0)
         for column in ["temperature_c", "humidity_pct", "wind_speed_ms", "pressure_hpa"]:
             weather[column] = weather[column].ffill()
+        # 미래 기상값을 과거 링크 행에 역전파하지 않습니다.
         weather["weather_source_datetime"] = weather["datetime"]
         weather["weather_source_datetime"] = weather["weather_source_datetime"].ffill()
         speed = speed.merge(weather, on="datetime", how="left")
@@ -393,6 +397,7 @@ class DataPipelineService:
         incidents["occurred_at"] = pd.to_datetime(incidents["occurred_at"])
         incidents["expected_clear_at"] = pd.to_datetime(incidents["expected_clear_at"])
         incident_rows = []
+        # 발생·해제 시각이 링크 관측 시각과 겹치는 돌발만 feature로 집계합니다.
         for link_id, group in incidents.groupby("link_id", dropna=True):
             for _, row in group.iterrows():
                 active = speed[(speed["link_id"] == link_id) & (speed["datetime"] >= row["occurred_at"])]

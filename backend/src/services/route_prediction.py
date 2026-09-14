@@ -144,6 +144,7 @@ def road_key(name):
 
 
 def load_active_incidents(db, departure_at):
+    # 출발 시각에 살아 있는 돌발만 먼저 조회해 과거 사고를 제외합니다.
     rows = db.execute(text("""
          SELECT i.incident_id, i.link_id, i.incident_type, i.incident_detail_type,
              i.occurred_at, i.expected_clear_at, i.description, i.tm_x, i.tm_y,
@@ -168,6 +169,7 @@ def load_active_incidents(db, departure_at):
 
 def point_to_polyline_distance_m(longitude, latitude, coordinates):
     """Approximate WGS84 point-to-polyline distance for Seoul-scale routes."""
+    # 서울 범위에서는 위경도를 국소 미터 좌표로 바꿔 빠르게 계산합니다.
     if longitude is None or latitude is None or len(coordinates) < 2:
         return None
     latitude_scale = 111_320.0
@@ -285,6 +287,7 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
             if speed and getattr(step, "distance_m", None) and speed["speed_kmh"] > 0:
                 speed_road_names.append(step.name)
                 speed_observed_at.append(speed["measured_at"])
+                # 관측 속도가 OSRM보다 느릴 때만 추가 지연을 부과합니다.
                 observed_duration = step.distance_m / (float(speed["speed_kmh"]) / 3.6)
                 speed_penalty += max(0.0, observed_duration - step.duration_sec)
             observations = roads.get(road_key(step.name)) if step.name else None
@@ -353,6 +356,7 @@ def incident_time_weight(incident, departure_at, route_duration_sec):
 
 
 def load_latest_road_speeds(db, target):
+    # 최근 3시간의 도로별 최신 관측만 추천 비용에 사용합니다.
     rows = db.execute(text("""
         SELECT r.road_name, v.measured_at, v.speed_kmh, v.travel_time_sec
         FROM traffic_speed_measurements v
