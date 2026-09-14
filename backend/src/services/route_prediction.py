@@ -55,7 +55,7 @@ def load_model(path, modified):
     return joblib.load(path)
 
 
-def build_features(history, weather, target):
+def build_features(history, weather, target, speed_history=None):
     """Build lag features from fresh observations plus a 30-day hourly profile.
 
     The trained artifact still receives the same columns it was trained with,
@@ -75,6 +75,12 @@ def build_features(history, weather, target):
         raise ValueError("최근 교통량 관측값이 없습니다.")
     frame["measured_at"] = pd.to_datetime(frame["measured_at"])
     rows, metadata = [], []
+    speed_frame = pd.DataFrame(
+        speed_history or [],
+        columns=["spot_id", "measured_at", "speed_kmh", "travel_time_sec"],
+    )
+    if not speed_frame.empty:
+        speed_frame["measured_at"] = pd.to_datetime(speed_frame["measured_at"])
     for (spot, direction), group in frame.groupby(["spot_id", "direction_code"]):
         group = group.sort_values("measured_at")
         volumes = group.set_index("measured_at")["volume"].astype(float)
@@ -98,6 +104,13 @@ def build_features(history, weather, target):
             continue
         day = target.weekday()
         row = {k: float(weather[k]) for k in WEATHER}
+        speed_row = speed_frame[
+            (speed_frame["spot_id"] == spot)
+            & (speed_frame["measured_at"] <= target - timedelta(hours=1))
+        ].sort_values("measured_at").tail(1)
+        row["speed_lag_1h"] = float(speed_row["speed_kmh"].iloc[0]) if not speed_row.empty else math.nan
+        row["travel_time_lag_1h"] = float(speed_row["travel_time_sec"].iloc[0]) if not speed_row.empty else math.nan
+        row["speed_data_available"] = int(not speed_row.empty)
         row.update(direction_code=int(direction), tm_x=float(last["tm_x"]), tm_y=float(last["tm_y"]),
                    hour=target.hour, dayofweek=day, is_weekend=int(day >= 5), month=target.month,
                    day=target.day, is_rush_hour=int(day < 5 and target.hour in [7, 8, 9, 18, 19, 20]),
@@ -363,9 +376,19 @@ def predict_routes(db, candidates, now, departure_at=None):
     records = [dict(row) for row in history]
     forecast_target = observed + timedelta(hours=1)
     columns = report["feature_columns"]
+    needs_speed = any(column in columns for column in ("speed_lag_1h", "travel_time_lag_1h"))
+    speed_history = []
+    if needs_speed:
+        speed_history = list(db.execute(text("""
+            SELECT m.spot_id, v.measured_at, v.speed_kmh, v.travel_time_sec
+            FROM traffic_spot_road_maps m
+            JOIN traffic_speed_measurements v ON v.link_id = m.link_id
+            WHERE m.is_primary = TRUE AND v.measured_at >= :start AND v.measured_at <= :target
+            ORDER BY m.spot_id, v.measured_at
+        """), {"start": target - timedelta(days=30), "target": target}).mappings())
     forecast_steps = 0
     while forecast_target <= target:
-        features, metadata = build_features(records, weather, forecast_target)
+        features, metadata = build_features(records, weather, forecast_target, speed_history)
         if set(columns) - set(features.columns):
             raise ValueError("학습 모델의 입력 특성과 현재 추론 특성이 다릅니다.")
         predictions = np.asarray(model.predict(features[columns]), dtype=float)

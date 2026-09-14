@@ -41,21 +41,30 @@ class DataPipelineService:
 
         with engine.connect() as conn:
             # 1. 교통량 원본 -> data/raw/raw_traffic_volume.csv
-            logger.info("  [1/3] Exporting traffic_volume_measurements...")
+            logger.info("  [1/5] Exporting traffic_volume_measurements...")
             traffic_sql = text("""
                 SELECT 
                     id, spot_id, measured_at, direction_code, lane_no, traffic_volume, collected_at
                 FROM traffic_volume_measurements
-                ORDER BY spot_id, measured_at, direction_code, lane_no
             """)
-            df_traffic = pd.read_sql(traffic_sql, conn)
             traffic_path = self.raw_dir / "raw_traffic_volume.csv"
-            df_traffic.to_csv(traffic_path, index=False, encoding="utf-8-sig")
+            traffic_rows = 0
+            first_chunk = True
+            for chunk in pd.read_sql(traffic_sql, conn, chunksize=100_000):
+                chunk.to_csv(
+                    traffic_path,
+                    mode="w" if first_chunk else "a",
+                    header=first_chunk,
+                    index=False,
+                    encoding="utf-8-sig",
+                )
+                traffic_rows += len(chunk)
+                first_chunk = False
             exported_files["traffic_volume"] = traffic_path
-            logger.info(f"    Exported {len(df_traffic)} rows -> {traffic_path.name}")
+            logger.info(f"    Exported {traffic_rows} rows -> {traffic_path.name}")
 
             # 2. 날씨 2년치 원본 -> data/raw/raw_weather.csv
-            logger.info("  [2/3] Exporting weather_measurements...")
+            logger.info("  [2/5] Exporting weather_measurements...")
             weather_sql = text("""
                 SELECT 
                     id, weather_station_id, observed_at, temperature_c, 
@@ -70,8 +79,43 @@ class DataPipelineService:
             exported_files["weather"] = weather_path
             logger.info(f"    Exported {len(df_weather)} rows -> {weather_path.name}")
 
-            # 3. 교통 지점 마스터 -> data/external/raw_traffic_spots.csv
-            logger.info("  [3/3] Exporting traffic_spots metadata...")
+            # 3. 도로 링크 속도·통행시간 -> data/raw/raw_traffic_speed.csv
+            logger.info("  [3/5] Exporting traffic_speed_measurements...")
+            speed_sql = text("""
+                SELECT link_id, measured_at, speed_kmh, travel_time_sec, collected_at
+                FROM traffic_speed_measurements
+            """)
+            speed_path = self.raw_dir / "raw_traffic_speed.csv"
+            speed_rows = 0
+            first_chunk = True
+            for chunk in pd.read_sql(speed_sql, conn, chunksize=100_000):
+                chunk.to_csv(
+                    speed_path,
+                    mode="w" if first_chunk else "a",
+                    header=first_chunk,
+                    index=False,
+                    encoding="utf-8-sig",
+                )
+                speed_rows += len(chunk)
+                first_chunk = False
+            exported_files["traffic_speed"] = speed_path
+            logger.info(f"    Exported {speed_rows} rows -> {speed_path.name}")
+
+            # 4. 교통량 지점-도로 링크 매핑 -> data/external/raw_spot_road_maps.csv
+            logger.info("  [4/5] Exporting traffic_spot_road_maps...")
+            maps_sql = text("""
+                SELECT spot_id, link_id, match_distance_m, match_method, is_primary
+                FROM traffic_spot_road_maps
+                ORDER BY spot_id, link_id
+            """)
+            df_maps = pd.read_sql(maps_sql, conn)
+            maps_path = self.external_dir / "raw_spot_road_maps.csv"
+            df_maps.to_csv(maps_path, index=False, encoding="utf-8-sig")
+            exported_files["spot_road_maps"] = maps_path
+            logger.info(f"    Exported {len(df_maps)} rows -> {maps_path.name}")
+
+            # 5. 교통 지점 마스터 -> data/external/raw_traffic_spots.csv
+            logger.info("  [5/5] Exporting traffic_spots metadata...")
             spots_sql = text("""
                 SELECT spot_id, spot_name, tm_x, tm_y, latitude, longitude
                 FROM traffic_spots
@@ -93,17 +137,21 @@ class DataPipelineService:
     def build_training_dataset(self) -> Path:
         """data/raw 와 data/external 데이터를 결합 및 정제하여 data/processed에 저장합니다."""
         traffic_path = self.raw_dir / "raw_traffic_volume.csv"
+        speed_path = self.raw_dir / "raw_traffic_speed.csv"
         weather_path = self.raw_dir / "raw_weather.csv"
         spots_path = self.external_dir / "raw_traffic_spots.csv"
+        maps_path = self.external_dir / "raw_spot_road_maps.csv"
 
-        if not traffic_path.exists() or not weather_path.exists():
+        if not all(path.exists() for path in (traffic_path, speed_path, weather_path, spots_path, maps_path)):
             logger.info("Raw files not found. Automatically exporting from DB first...")
             self.export_raw_data()
 
         logger.info(">>> Loading raw and external data for processing...")
         df_traffic = pd.read_csv(traffic_path)
+        df_speed = pd.read_csv(speed_path)
         df_weather = pd.read_csv(weather_path)
         df_spots = pd.read_csv(spots_path)
+        df_maps = pd.read_csv(maps_path)
 
         # ---------------------------------------------------------------------
         # 1. 교통량 데이터 정제 및 집계 (시간 단위, 방향별 합산)
@@ -119,6 +167,32 @@ class DataPipelineService:
             .agg({"traffic_volume": "sum"})
             .rename(columns={"traffic_volume": "target_volume"})
         )
+
+        # ---------------------------------------------------------------------
+        # 1-1. 속도·통행시간을 측정지점 단위로 집계 (미래 정보 방지)
+        # ---------------------------------------------------------------------
+        logger.info("  [Processing] Aggregating linked speed and travel time...")
+        df_speed["datetime"] = pd.to_datetime(df_speed["measured_at"]).dt.floor("h")
+        df_speed_hourly = (
+            df_speed.groupby(["link_id", "datetime"], as_index=False)
+            .agg(speed_kmh=("speed_kmh", "mean"), travel_time_sec=("travel_time_sec", "mean"))
+        )
+        df_maps = df_maps[df_maps["is_primary"].astype(bool)]
+        speed_by_spot = df_maps[["spot_id", "link_id"]].merge(
+            df_speed_hourly, on="link_id", how="inner"
+        )
+        speed_by_spot = (
+            speed_by_spot.groupby(["spot_id", "datetime"], as_index=False)
+            .agg(speed_kmh=("speed_kmh", "mean"), travel_time_sec=("travel_time_sec", "mean"))
+            .sort_values(["spot_id", "datetime"])
+        )
+        # The target at t may not use the speed observed during t.
+        speed_by_spot["speed_lag_1h"] = speed_by_spot.groupby("spot_id")["speed_kmh"].shift(1)
+        speed_by_spot["travel_time_lag_1h"] = speed_by_spot.groupby("spot_id")["travel_time_sec"].shift(1)
+        speed_by_spot["speed_data_available"] = speed_by_spot["speed_lag_1h"].notna().astype(int)
+        speed_features = speed_by_spot[[
+            "spot_id", "datetime", "speed_lag_1h", "travel_time_lag_1h", "speed_data_available",
+        ]]
 
         # ---------------------------------------------------------------------
         # 2. 날씨 데이터 정제 (시간 단위 정렬 및 결측치 보정)
@@ -156,6 +230,7 @@ class DataPipelineService:
         # ---------------------------------------------------------------------
         logger.info("  [Processing] Merging traffic volume, weather, and spots...")
         merged = pd.merge(grouped_traffic, weather_hourly, on="datetime", how="left")
+        merged = pd.merge(merged, speed_features, on=["spot_id", "datetime"], how="left")
         merged = pd.merge(merged, df_spots[["spot_id", "spot_name", "tm_x", "tm_y"]], on="spot_id", how="left")
 
         # 관측 이전 구간은 미래값으로 채우지 않고 학습에서 제외합니다.

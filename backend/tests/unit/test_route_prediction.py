@@ -164,6 +164,17 @@ def test_features_fill_missing_recent_hour_from_30_day_hourly_profile():
     assert features.vol_lag_1h.tolist() == [101]
 
 
+def test_api_accepts_optional_route_coordinates():
+    item = dict(
+        id="A",
+        duration_sec=600,
+        coordinates=[[127.0, 37.5], [127.01, 37.5]],
+        steps=[dict(name="강남대로", duration_sec=600)],
+    )
+    response = TestClient(app).post("/api/routes/predict", json={"candidates": [item]})
+    assert response.status_code in {200, 503}
+
+
 def test_api_validates_duplicate_ids_and_durations():
     client = TestClient(app)
     item = dict(id="A", duration_sec=600, steps=[dict(name="강남대로", duration_sec=600)])
