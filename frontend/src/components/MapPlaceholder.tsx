@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import precisionRoadsData from "../data/seoul_roads.json"
 import seoulBoundaryData from "../data/seoulBoundary.json"
 import { loadKakaoMaps } from "../services/kakaoMaps"
 import { resolvePlace } from "../services/placeSearch"
-import type { ParkingLotItem } from "../services/api"
+import { fetchNearbyParking, type ParkingLotItem } from "../services/api"
 
 export interface IncidentItem {
   id: number | string
@@ -87,7 +87,13 @@ export default function MapPlaceholder({
   const [showTrafficLines, setShowTrafficLines] = useState(true)
   const [showIncidents, setShowIncidents] = useState(true)
   const [showParking, setShowParking] = useState(true)
+  const [internalParkingLots, setInternalParkingLots] = useState<ParkingLotItem[]>([])
+  const [internalSelectedParkingCode, setInternalSelectedParkingCode] = useState<string | null>(null)
+  const activeSelectedParkingId = selectedParkingLotId !== undefined && selectedParkingLotId !== null
+    ? selectedParkingLotId
+    : internalSelectedParkingCode
   const [locationStatus, setLocationStatus] = useState("현재 위치 확인 중…")
+  const effectiveParkingLots = parkingLots && parkingLots.length > 0 ? parkingLots : internalParkingLots
   const viewHasContext = Boolean(searchQuery || routeCoordinates?.length || selectedIncidentId != null)
 
   useEffect(() => {
@@ -101,6 +107,9 @@ export default function MapPlaceholder({
       })
       map.addControl(new sdk.maps.MapTypeControl(), sdk.maps.ControlPosition.TOPRIGHT)
       map.addControl(new sdk.maps.ZoomControl(), sdk.maps.ControlPosition.RIGHT)
+      sdk.maps.event.addListener(map, "click", () => {
+        setInternalSelectedParkingCode(null)
+      })
       mapRef.current = map
       const coordinates = seoulBoundaryData.features[0].geometry.coordinates as number[][][][]
       boundaryOverlaysRef.current = coordinates.map((polygon) => new sdk.maps.Polygon({
@@ -127,6 +136,12 @@ export default function MapPlaceholder({
       boundaryOverlaysRef.current = []
       mapRef.current = null
     }
+  }, [])
+
+  const fetchParkingForLocation = useCallback((lat: number, lng: number) => {
+    fetchNearbyParking(lat, lng, 4000, 25)
+      .then((lots) => setInternalParkingLots(lots))
+      .catch((err) => console.warn("Failed to fetch nearby parking:", err))
   }, [])
 
   useEffect(() => {
@@ -156,9 +171,10 @@ export default function MapPlaceholder({
       const marker = new kakao.maps.CustomOverlay({ map, position, content: dot, zIndex: 9 })
       locationOverlaysRef.current = [accuracy, marker]
       setLocationStatus(`내 위치 · 정확도 약 ${Math.round(coords.accuracy)}m`)
-      if (firstFix && !viewHasContext) {
-        map.setCenter(position)
-        map.setLevel(4)
+      if (firstFix) {
+        if (!parkingLots || parkingLots.length === 0) {
+          fetchParkingForLocation(coords.latitude, coords.longitude)
+        }
       }
       firstFix = false
     }, (error) => {
@@ -166,6 +182,10 @@ export default function MapPlaceholder({
       setLocationStatus(error.code === 1
         ? "위치 권한이 꺼져 있습니다. 브라우저 설정에서 허용해 주세요."
         : error.code === 3 ? "위치 확인 시간이 초과되었습니다." : "현재 위치를 확인할 수 없습니다.")
+      if ((!parkingLots || parkingLots.length === 0) && mapRef.current) {
+        const center = mapRef.current.getCenter()
+        fetchParkingForLocation(center.getLat(), center.getLng())
+      }
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 })
     return () => {
       active = false
@@ -173,7 +193,7 @@ export default function MapPlaceholder({
       locationOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
       locationOverlaysRef.current = []
     }
-  }, [mapReady])
+  }, [mapReady, parkingLots, fetchParkingForLocation, viewHasContext])
 
   useEffect(() => {
     const map = mapRef.current
@@ -357,61 +377,172 @@ export default function MapPlaceholder({
     }
   }, [mapReady, selectedIncidentId, incidents])
 
-  // 주차장 마커 렌더링
+  // 주차장 토글 시 데이터가 없으면 현재 내 위치(우선) 또는 지도 중심 좌표 기준 주차장 조회
+  useEffect(() => {
+    if (showParking && (!parkingLots || parkingLots.length === 0) && internalParkingLots.length === 0 && mapReady) {
+      if (currentPosition.current) {
+        fetchParkingForLocation(currentPosition.current.latitude, currentPosition.current.longitude)
+      } else if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          ({ coords }) => {
+            currentPosition.current = coords
+            fetchParkingForLocation(coords.latitude, coords.longitude)
+          },
+          () => {
+            const center = mapRef.current?.getCenter()
+            if (center) fetchParkingForLocation(center.getLat(), center.getLng())
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+        )
+      } else {
+        const center = mapRef.current?.getCenter()
+        if (center) fetchParkingForLocation(center.getLat(), center.getLng())
+      }
+    }
+  }, [showParking, parkingLots, internalParkingLots.length, mapReady, fetchParkingForLocation])
+
+  // 주차장 마커 및 선택 시 상세 정보 팝업 렌더링
   useEffect(() => {
     const map = mapRef.current
     parkingOverlaysRef.current.forEach((o) => o.setMap(null))
     parkingOverlaysRef.current = []
 
-    if (!mapReady || !map || !showParking || !parkingLots.length) return
+    if (!mapReady || !map || !showParking || !effectiveParkingLots.length) return
 
-    parkingLots.forEach((lot) => {
+    effectiveParkingLots.forEach((lot) => {
       const position = new kakao.maps.LatLng(lot.latitude, lot.longitude)
       const hasLive = lot.realtime_status === "AVAILABLE" && lot.available_spaces !== null
-      const isSelected = selectedParkingLotId === lot.parking_code
+      const isSelected = activeSelectedParkingId === lot.parking_code
 
+      const container = document.createElement("div")
+      container.className = "relative flex flex-col items-center"
+      container.style.zIndex = isSelected ? "30" : "10"
+
+      // 1. 선택되었을 때 상세 정보 팝업 카드 (마커 바로 위에 부드럽게 표시)
+      if (isSelected) {
+        const popup = document.createElement("div")
+        popup.className = "absolute bottom-full mb-2.5 z-30 pointer-events-auto"
+        popup.style.minWidth = "230px"
+        popup.style.maxWidth = "270px"
+        popup.style.cursor = "default"
+
+        popup.innerHTML = `
+          <div style="background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 16px; padding: 12px 14px; box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.08); text-align: left;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; border-bottom: 1px solid rgba(0, 0, 0, 0.06); padding-bottom: 8px; margin-bottom: 8px;">
+              <div style="min-width: 0; flex: 1;">
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <span style="font-size: 13px;">🅿️</span>
+                  <span style="font-weight: 700; font-size: 13px; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 175px;" title="${lot.name}">${lot.name}</span>
+                </div>
+                <div style="font-size: 10px; color: #6b6b8a; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 175px;" title="${lot.address}">${lot.address || "주소 정보 없음"}</div>
+              </div>
+              <button type="button" class="parking-close-btn" style="background: none; border: none; padding: 3px; cursor: pointer; color: #8e8e93; border-radius: 6px; display: flex; align-items: center; justify-content: center;" aria-label="닫기" title="닫기">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 5px; font-size: 11px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="color: #6b6b8a;">실시간 현황</span>
+                <span style="font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; ${
+                  hasLive
+                    ? "background: #ecfdf5; color: #065f46; border: 1px solid rgba(16, 185, 129, 0.3);"
+                    : "background: #f1f5f9; color: #64748b; border: 1px solid rgba(148, 163, 184, 0.3);"
+                }">
+                  ${hasLive ? `🟢 가능 ${lot.available_spaces}대` : "⚪ 실시간 미지원"}
+                </span>
+              </div>
+
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="color: #6b6b8a;">총 주차면수</span>
+                <span style="font-weight: 600; color: #1a1a2e;">${lot.capacity ? `${lot.capacity}면` : "정보 없음"}</span>
+              </div>
+
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="color: #6b6b8a;">요금 구분</span>
+                <span style="font-weight: 600; color: #1a1a2e;">${lot.paid ? "💳 유료 주차장" : "🆓 무료 주차장"}</span>
+              </div>
+
+              ${lot.distance_m ? `
+              <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(0, 0, 0, 0.05); padding-top: 5px; margin-top: 2px;">
+                <span style="color: #6b6b8a;">내 위치와의 거리</span>
+                <span style="font-weight: 700; color: #007aff;">${lot.distance_m < 1000 ? `${lot.distance_m}m` : `${(lot.distance_m / 1000).toFixed(1)}km`}</span>
+              </div>` : ""}
+            </div>
+
+            <!-- 말풍선 꼬리 화살표 -->
+            <div style="position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%) rotate(45deg); width: 10px; height: 10px; background: rgba(255, 255, 255, 0.96); border-right: 1px solid rgba(0, 0, 0, 0.12); border-bottom: 1px solid rgba(0, 0, 0, 0.12);"></div>
+          </div>
+        `
+
+        const closeBtn = popup.querySelector(".parking-close-btn") as HTMLButtonElement | null
+        if (closeBtn) {
+          closeBtn.addEventListener("click", (e) => {
+            e.stopPropagation()
+            setInternalSelectedParkingCode(null)
+          })
+        }
+
+        container.appendChild(popup)
+      }
+
+      // 2. 주차장 마커 뱃지 (선택 시 자연스럽게 커짐)
       const button = document.createElement("button")
       button.type = "button"
-      button.className = "group relative flex items-center transition-transform hover:scale-110 active:scale-95"
-      button.style.cursor = "pointer"
+      button.className = "group relative flex items-center cursor-pointer transition-all duration-300"
       button.setAttribute("aria-label", `${lot.name} 주차장`)
 
       const badge = document.createElement("div")
-      badge.className = `flex items-center gap-1 px-2 py-1 rounded-xl font-bold shadow-md border ${
-        isSelected
-          ? "bg-[#007aff] text-white border-white scale-110 z-10 ring-2 ring-[#007aff]"
-          : hasLive
-            ? "bg-emerald-600 text-white border-white/90"
-            : "bg-[#2c3e50] text-white border-white/80"
-      }`
+      badge.className = "flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold border transition-all duration-300"
       badge.style.fontSize = "11px"
-      badge.innerHTML = `<span>🅿️</span><span>${hasLive ? `${lot.available_spaces}대` : lot.name.slice(0, 5)}</span>`
 
+      if (isSelected) {
+        // 선택 시 자연스럽게 커짐 (scale 1.18 및 반짝이는 링 효과)
+        badge.style.transform = "scale(1.18)"
+        badge.style.background = hasLive 
+          ? "linear-gradient(135deg, #10b981, #059669)" 
+          : "linear-gradient(135deg, #007aff, #0051d4)"
+        badge.style.color = "#ffffff"
+        badge.style.borderColor = "#ffffff"
+        badge.style.boxShadow = "0 0 0 3px rgba(255,255,255,0.95), 0 0 16px rgba(0, 122, 255, 0.55), 0 8px 18px rgba(0,0,0,0.3)"
+      } else {
+        badge.style.transform = "scale(1.0)"
+        badge.style.background = hasLive ? "#059669" : "#2c3e50"
+        badge.style.color = "#ffffff"
+        badge.style.borderColor = "rgba(255, 255, 255, 0.85)"
+        badge.style.boxShadow = "0 2px 6px rgba(0,0,0,0.25)"
+      }
+
+      badge.innerHTML = `<span>🅿️</span><span>${hasLive ? `${lot.available_spaces}대` : lot.name.slice(0, 5)}</span>`
       button.appendChild(badge)
-      button.addEventListener("click", () => {
+
+      button.addEventListener("click", (e) => {
+        e.stopPropagation()
+        setInternalSelectedParkingCode((prev) => (prev === lot.parking_code ? null : lot.parking_code))
         onSelectParkingLot?.(lot)
       })
+
+      container.appendChild(button)
 
       const overlay = new kakao.maps.CustomOverlay({
         map,
         position,
-        content: button,
+        content: container,
         clickable: true,
-        zIndex: isSelected ? 12 : 9,
+        zIndex: isSelected ? 30 : 10,
       })
       parkingOverlaysRef.current.push(overlay)
     })
-  }, [mapReady, showParking, parkingLots, selectedParkingLotId, onSelectParkingLot])
+  }, [mapReady, showParking, effectiveParkingLots, activeSelectedParkingId, onSelectParkingLot])
 
-  // 선택된 주차장으로 부드럽게 이동
+  // 선택된 주차장으로 부드럽게 시점 이동 (줌 레벨은 억지로 바꾸지 않고 중심만 이동)
   useEffect(() => {
     const map = mapRef.current
-    if (!mapReady || !map || !selectedParkingLotId) return
-    const target = parkingLots.find((p) => p.parking_code === selectedParkingLotId)
+    if (!mapReady || !map || !activeSelectedParkingId) return
+    const target = effectiveParkingLots.find((p) => p.parking_code === activeSelectedParkingId)
     if (!target) return
     map.panTo(new kakao.maps.LatLng(target.latitude, target.longitude))
-    map.setLevel(4)
-  }, [mapReady, selectedParkingLotId, parkingLots])
+  }, [mapReady, activeSelectedParkingId, effectiveParkingLots])
 
   useEffect(() => {
     const map = mapRef.current
@@ -448,6 +579,9 @@ export default function MapPlaceholder({
     }
     mapRef.current.panTo(new kakao.maps.LatLng(coords.latitude, coords.longitude))
     mapRef.current.setLevel(4)
+    if (!parkingLots || parkingLots.length === 0) {
+      fetchParkingForLocation(coords.latitude, coords.longitude)
+    }
   }
 
   const handleReset = () => {
@@ -457,56 +591,216 @@ export default function MapPlaceholder({
   }
 
   return (
-    <div className="relative overflow-hidden w-full min-w-0 flex-1" style={{ minHeight: height, isolation: "isolate" }}>
-      <div ref={containerRef} className="absolute inset-0" style={{ zIndex: 1 }} />
-      {mapError && (
-        <div role="alert" className="absolute inset-0 z-20 flex items-center justify-center bg-white/90 px-6 text-center text-sm text-red-600">
-          {mapError}<br />카카오 JavaScript 키와 등록 도메인을 확인해 주세요.
-        </div>
-      )}
-      <button type="button" className="glass absolute top-3 left-3 z-10 px-3 py-1.5 text-xs font-semibold text-[#007aff] shadow-sm" style={{ borderRadius: 12 }} onClick={handleReset}>
-        ◎ 서울 전체 보기
-      </button>
-      <div className="absolute left-3 right-14 top-14 z-10 flex items-start gap-2 pointer-events-none">
-        <button type="button" onClick={focusCurrentLocation} className="glass shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-[#007aff] pointer-events-auto">◎ 내 위치</button>
-        <span role="status" className="glass px-2 py-1.5 rounded-lg text-[11px] text-[#4a4a68] max-w-72">{locationStatus}</span>
-      </div>
-      <div className="absolute top-3 right-24 z-10 flex flex-col items-end gap-2">
-        <button type="button" aria-pressed={showTrafficLines} onClick={() => setShowTrafficLines((value) => !value)} className="glass interactive-control px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showTrafficLines ? "#007aff" : "#6b6b8a" }}>
-          <span className={`switch-track ${showTrafficLines ? "is-on" : ""}`}><span className="switch-thumb" /></span>
-          <span className="hidden sm:inline">실시간 </span>혼잡도 {showTrafficLines ? "ON" : "OFF"}
-        </button>
-        <button type="button" aria-pressed={showIncidents} onClick={() => setShowIncidents((value) => !value)} className="glass interactive-control px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showIncidents ? "#ff3b30" : "#6b6b8a" }}>
-          <span className={`switch-track incident-switch ${showIncidents ? "is-on" : ""}`}><span className="switch-thumb" /></span>
-          돌발상황 {showIncidents ? "ON" : "OFF"}
-        </button>
-        {parkingLots.length > 0 && (
-          <button type="button" aria-pressed={showParking} onClick={() => setShowParking((value) => !value)} className="glass interactive-control px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showParking ? "#007aff" : "#6b6b8a" }}>
-            <span className={`switch-track ${showParking ? "is-on" : ""}`}><span className="switch-thumb" /></span>
-            🅿️ 주차장 {showParking ? "ON" : "OFF"}
+    <div className="flex flex-col w-full min-w-0 flex-1">
+      {/* 지도 상단 컨트롤 바 (지도 밖 상단에 일렬 배치) */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 bg-white/70 border-b border-black/[0.06] backdrop-blur-md">
+        {/* 좌측: 서울 전체 / 내 위치 */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={handleReset}
+            className="px-2 py-0.5 text-[11px] font-semibold rounded-lg bg-white/90 hover:bg-white text-[#007aff] border border-black/[0.08] shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
+            title="서울 전체 보기"
+          >
+            <span className="text-[10px]">◎</span>
+            <span>서울 전체</span>
           </button>
-        )}
-      </div>
-      <div className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm" style={{ borderRadius: 12 }}>
-        {[
-          { color: "#34c759", label: "원활 (≥50km/h)" },
-          { color: "#ff9500", label: "서행 (25~49km/h)" },
-          { color: "#ff3b30", label: "혼잡 (<25km/h)" },
-        ].map((item) => (
-          <div key={item.label} className="flex items-center gap-1.5">
-            <div className="w-3 h-1.5 rounded-full" style={{ background: item.color }} />
-            <span className="text-[11px] font-semibold text-[#4a4a68]">{item.label}</span>
+          <button
+            type="button"
+            onClick={focusCurrentLocation}
+            className="px-2 py-0.5 text-[11px] font-semibold rounded-lg bg-white/90 hover:bg-white text-[#007aff] border border-black/[0.08] shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
+            title="내 위치로 이동"
+          >
+            <span className="text-[10px]">📍</span>
+            <span>내 위치</span>
+          </button>
+          {locationStatus && (
+            <span className="hidden xl:inline-block text-[10px] text-[#6b6b8a] truncate max-w-[140px] pl-1">
+              {locationStatus}
+            </span>
+          )}
+        </div>
+
+        {/* 우측: 돌발상황, 실시간혼잡도, 주차장표시 토글 일렬 나열 (슬림 & 컴팩트) */}
+        <div className="liquid-glass-capsule p-1 flex flex-wrap items-center gap-1 rounded-xl">
+          {/* 1. 돌발상황 토글 아이템 */}
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+            <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
+              <span>🚨 돌발상황</span>
+              <span
+                className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
+                  showIncidents
+                    ? "text-[#ff453a] bg-[#ff453a]/20 border border-[#ff453a]/30"
+                    : "text-white/40 bg-white/[0.06]"
+                }`}
+              >
+                {showIncidents ? "ON" : "OFF"}
+              </span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showIncidents}
+              onClick={() => setShowIncidents((value) => !value)}
+              className="relative inline-flex items-center h-4 w-7 shrink-0 cursor-pointer rounded-full border transition-all duration-200 focus:outline-none"
+              style={{
+                background: showIncidents
+                  ? "linear-gradient(135deg, #ff3b30, #ff6259)"
+                  : "rgba(255, 255, 255, 0.15)",
+                borderColor: showIncidents
+                  ? "rgba(255, 99, 90, 0.6)"
+                  : "rgba(255, 255, 255, 0.28)",
+                boxShadow: showIncidents
+                  ? "0 0 8px rgba(255, 59, 48, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.35)"
+                  : "inset 0 1px 2px rgba(0, 0, 0, 0.4)",
+              }}
+              title={`돌발상황 ${showIncidents ? "끄기" : "켜기"}`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                  showIncidents ? "translate-x-3.5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
           </div>
-        ))}
-        <div className="w-px h-3 bg-black/10 mx-1" />
-        <span className="text-[11px] text-[#ff3b30] font-semibold">🚨 사고</span>
-        <span className="text-[11px] text-[#ff9500] font-semibold">🚧 공사</span>
-        {parkingLots.length > 0 && (
-          <>
-            <div className="w-px h-3 bg-black/10 mx-1" />
-            <span className="text-[11px] text-[#007aff] font-semibold">🅿️ 주차장 ({parkingLots.length}곳)</span>
-          </>
+
+          <div className="w-px h-3.5 bg-white/15 hidden sm:block" />
+
+          {/* 2. 실시간혼잡도 토글 아이템 */}
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+            <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
+              <span>🚦 실시간혼잡도</span>
+              <span
+                className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
+                  showTrafficLines
+                    ? "text-[#38bdf8] bg-[#007aff]/20 border border-[#007aff]/30"
+                    : "text-white/40 bg-white/[0.06]"
+                }`}
+              >
+                {showTrafficLines ? "ON" : "OFF"}
+              </span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showTrafficLines}
+              onClick={() => setShowTrafficLines((value) => !value)}
+              className="relative inline-flex items-center h-4 w-7 shrink-0 cursor-pointer rounded-full border transition-all duration-200 focus:outline-none"
+              style={{
+                background: showTrafficLines
+                  ? "linear-gradient(135deg, #007aff, #38bdf8)"
+                  : "rgba(255, 255, 255, 0.15)",
+                borderColor: showTrafficLines
+                  ? "rgba(56, 189, 248, 0.6)"
+                  : "rgba(255, 255, 255, 0.28)",
+                boxShadow: showTrafficLines
+                  ? "0 0 8px rgba(0, 122, 255, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.35)"
+                  : "inset 0 1px 2px rgba(0, 0, 0, 0.4)",
+              }}
+              title={`실시간혼잡도 ${showTrafficLines ? "끄기" : "켜기"}`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                  showTrafficLines ? "translate-x-3.5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="w-px h-3.5 bg-white/15 hidden sm:block" />
+
+          {/* 3. 주차장표시 토글 아이템 */}
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+            <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
+              <span>🅿️ 주차장</span>
+              <span
+                className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
+                  showParking
+                    ? "text-[#38bdf8] bg-[#007aff]/20 border border-[#007aff]/30"
+                    : "text-white/40 bg-white/[0.06]"
+                }`}
+              >
+                {showParking ? "ON" : "OFF"}
+              </span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showParking}
+              onClick={() => setShowParking((value) => !value)}
+              className="relative inline-flex items-center h-4 w-7 shrink-0 cursor-pointer rounded-full border transition-all duration-200 focus:outline-none"
+              style={{
+                background: showParking
+                  ? "linear-gradient(135deg, #007aff, #38bdf8)"
+                  : "rgba(255, 255, 255, 0.15)",
+                borderColor: showParking
+                  ? "rgba(56, 189, 248, 0.6)"
+                  : "rgba(255, 255, 255, 0.28)",
+                boxShadow: showParking
+                  ? "0 0 8px rgba(0, 122, 255, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.35)"
+                  : "inset 0 1px 2px rgba(0, 0, 0, 0.4)",
+              }}
+              title={`주차장 표시 ${showParking ? "끄기" : "켜기"}`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                  showParking ? "translate-x-3.5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 지도 캔버스 영역 (토글 겹침 없음) */}
+      <div
+        className="relative overflow-hidden w-full min-w-0 flex-1"
+        style={{ minHeight: height, isolation: "isolate" }}
+      >
+        <div ref={containerRef} className="absolute inset-0" style={{ zIndex: 1 }} />
+        {mapError && (
+          <div
+            role="alert"
+            className="absolute inset-0 z-20 flex items-center justify-center bg-white/90 px-6 text-center text-sm text-red-600"
+          >
+            {mapError}
+            <br />
+            카카오 JavaScript 키와 등록 도메인을 확인해 주세요.
+          </div>
         )}
+
+        {/* 하단 범례 캡슐 */}
+        <div
+          className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm"
+          style={{ borderRadius: 12 }}
+        >
+          {[
+            { color: "#34c759", label: "원활 (≥50km/h)" },
+            { color: "#ff9500", label: "서행 (25~49km/h)" },
+            { color: "#ff3b30", label: "혼잡 (<25km/h)" },
+          ].map((item) => (
+            <div key={item.label} className="flex items-center gap-1.5">
+              <div
+                className="w-3 h-1.5 rounded-full"
+                style={{ background: item.color }}
+              />
+              <span className="text-[11px] font-semibold text-[#4a4a68]">
+                {item.label}
+              </span>
+            </div>
+          ))}
+          <div className="w-px h-3 bg-black/10 mx-1" />
+          <span className="text-[11px] text-[#ff3b30] font-semibold">🚨 사고</span>
+          <span className="text-[11px] text-[#ff9500] font-semibold">🚧 공사</span>
+          {showParking && effectiveParkingLots.length > 0 && (
+            <>
+              <div className="w-px h-3 bg-black/10 mx-1" />
+              <span className="text-[11px] text-[#007aff] font-semibold">
+                🅿️ 주차장 ({effectiveParkingLots.length}곳)
+              </span>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

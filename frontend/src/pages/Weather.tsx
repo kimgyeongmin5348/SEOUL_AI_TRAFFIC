@@ -1,10 +1,9 @@
-﻿import Sidebar from "../components/Sidebar"
-import { weatherData as defaultWeatherData } from "../data/mock"
+import Sidebar from "../components/Sidebar"
+import SubpageBackground from "../components/SubpageBackground"
 import { fetchWeatherData } from "../services/api"
 import { useState, useEffect } from "react"
 
 const impactColor = { low: "#34c759", medium: "#ff9500", high: "#ff3b30" }
-const impactLabel = { low: "영향 낮음", medium: "주의", high: "영향 높음" }
 
 const SEOUL_DISTRICTS = [
   "종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구",
@@ -13,19 +12,30 @@ const SEOUL_DISTRICTS = [
   "서초구", "강남구", "송파구", "강동구",
 ]
 
-type WeatherInfo = Omit<typeof defaultWeatherData, "trafficImpact"> & {
+interface WeatherInfo {
+  station: string
+  temp: number
+  feelsLike: number
+  humidity: number
+  windSpeed: number
+  pressure: number
+  precipitation: number
+  condition: string
+  icon: string
   trafficImpact: "low" | "medium" | "high"
+  trafficMessage: string
 }
 
 export default function Weather() {
   const [districtIndex, setDistrictIndex] = useState(0)
+  const [loading, setLoading] = useState(true)
   const [weatherState, setWeatherState] = useState<{
-    weather: WeatherInfo
+    weather: WeatherInfo | null
     history: { time: string; temp: number; humidity: number; rain: number }[]
     latestAt: string | null
     isFromDb: boolean
   }>({
-    weather: defaultWeatherData as WeatherInfo,
+    weather: null,
     history: [],
     latestAt: null,
     isFromDb: false,
@@ -33,11 +43,16 @@ export default function Weather() {
 
   useEffect(() => {
     let active = true
-    fetchWeatherData().then((res) => {
-      if (active) {
-        setWeatherState(res)
-      }
-    })
+    setLoading(true)
+    fetchWeatherData()
+      .then((res) => {
+        if (active) {
+          setWeatherState(res)
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
     return () => {
       active = false
     }
@@ -54,275 +69,243 @@ export default function Weather() {
   const district = SEOUL_DISTRICTS[districtIndex]
 
   return (
-    <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
+    <div className="min-h-full flex relative" style={{ minHeight: "100vh" }}>
+      <SubpageBackground />
       <Sidebar />
-      <main className="flex-1 md:pl-20 pb-24 md:pb-0 px-4 md:px-8 pt-6">
-        <h1
-          className="text-[#1a1a2e] mb-1"
-          style={{
-            fontFamily: "var(--font-display)",
-            fontWeight: 700,
-            fontSize: 26,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          기상 정보
-        </h1>
-        <div className="flex items-center gap-2 mb-5">
-          <p
-            className="text-[#6b6b8a] text-sm"
-            style={{ fontFamily: "var(--font-body)" }}
-          >
-            교통에 영향을 주는 기상 변수 분석 · 서울 25개 구 자동 순환
-          </p>
-          <span
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+      <main className="relative z-10 flex-1 md:pl-28 md:pr-8 px-4 pb-24 md:pb-8 pt-[max(68px,calc(env(safe-area-inset-top)+60px))] md:pt-6 max-w-7xl mx-auto w-full">
+        <div className="animate-slide-up">
+          <h1
+            className="text-white mb-1"
             style={{
-              background: weatherState.isFromDb
-                ? "rgba(52,199,89,0.12)"
-                : "rgba(94,92,230,0.12)",
-              color: weatherState.isFromDb ? "#248a3d" : "#5e5ce6",
-              fontFamily: "var(--font-body)",
+              fontFamily: "var(--font-display)",
+              fontWeight: 700,
+              fontSize: 26,
+              letterSpacing: "-0.02em",
+              textShadow: "0 2px 12px rgba(0,0,0,0.35)",
             }}
           >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                weatherState.isFromDb ? "bg-[#34c759]" : "bg-[#5e5ce6]"
-              }`}
-            />
-            {weatherState.isFromDb ? "DB 실시간 연동" : "예시 데이터"}
-          </span>
-          {weatherState.latestAt && (
-            <span
-              className="text-xs text-[#6b6b8a]"
-              style={{ fontFamily: "var(--font-mono)" }}
+            기상 정보
+          </h1>
+          <div className="flex items-center gap-2 mb-5">
+            <p
+              className="text-white/70 text-sm"
+              style={{ fontFamily: "var(--font-body)" }}
             >
-              관측: {new Date(weatherState.latestAt).toLocaleDateString("ko-KR", {
-                month: "short",
-                day: "numeric",
-              })} {new Date(weatherState.latestAt).toLocaleTimeString("ko-KR", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </span>
-          )}
+              교통에 영향을 주는 기상 변수 분석 · 서울 25개 구 자동 순환
+            </p>
+            {weatherState.isFromDb && (
+              <span
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium"
+                style={{
+                  background: "rgba(52,199,89,0.2)",
+                  color: "#34c759",
+                  border: "1px solid rgba(52,199,89,0.3)",
+                  fontFamily: "var(--font-body)",
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#34c759] animate-pulse" />
+                DB 실시간 연동
+              </span>
+            )}
+            {weatherState.latestAt && (
+              <span
+                className="text-xs text-[#6b6b8a]"
+                style={{ fontFamily: "var(--font-mono)" }}
+              >
+                관측: {new Date(weatherState.latestAt).toLocaleDateString("ko-KR", {
+                  month: "short",
+                  day: "numeric",
+                })} {new Date(weatherState.latestAt).toLocaleTimeString("ko-KR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Current weather card */}
+        {loading ? (
           <div
-            key={district}
-            className="lg:col-span-1 p-6 text-white weather-district-card"
-            style={{
-              borderRadius: 24,
-              background: "linear-gradient(160deg, #007aff 0%, #5e5ce6 100%)",
-              boxShadow: "0 12px 40px rgba(0,122,255,0.3)",
-            }}
+            className="glass p-12 text-center flex flex-col items-center justify-center gap-3 my-8 animate-pulse"
+            style={{ borderRadius: 20 }}
           >
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <p
-                  className="text-white/70 text-sm mb-1"
-                  style={{ fontFamily: "var(--font-body)" }}
-                >
-                  {district}
-                </p>
-                <p className="text-[11px] text-white/60 mb-2">{w.station} 대표 관측 · 3초마다 다음 구</p>
-                <p
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 800,
-                    fontSize: 64,
-                    letterSpacing: "-0.03em",
-                    lineHeight: 1,
-                  }}
-                >
-                  {w.temp}°
-                </p>
-                <p
-                  className="text-white/80 mt-1"
-                  style={{ fontFamily: "var(--font-body)", fontSize: 14 }}
-                >
-                  체감 {w.feelsLike}° · {w.condition}
-                </p>
-              </div>
-              <span style={{ fontSize: 56 }}>{w.icon}</span>
-            </div>
-
-            <div
-              className="p-3 rounded-xl mb-4"
-              style={{ background: "rgba(255,255,255,0.15)" }}
+            <div className="w-8 h-8 rounded-full border-2 border-[#007aff] border-t-transparent animate-spin" />
+            <p
+              className="text-white/80 text-sm font-medium"
+              style={{ fontFamily: "var(--font-body)" }}
             >
-              <p
-                className="text-sm font-medium text-white mb-1"
-                style={{ fontFamily: "var(--font-display)" }}
-              >
-                교통 영향도
-              </p>
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-2.5 h-2.5 rounded-full"
-                  style={{ background: impactColor[w.trafficImpact] }}
-                />
-                <p
-                  className="text-xs text-white/90"
-                  style={{ fontFamily: "var(--font-body)" }}
-                >
-                  {w.trafficMessage}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { label: "습도", value: `${w.humidity}%` },
-                { label: "풍속", value: `${w.windSpeed}m/s ${w.windDir}` },
-                { label: "강수량", value: `${w.precipitation}mm` },
-                { label: "기압", value: `${w.pressure}hPa` },
-                { label: "시정", value: `${w.visibility}km` },
-              ].map((item) => (
-                <div key={item.label} className="flex flex-col">
-                  <span
-                    className="text-white/60 text-xs"
-                    style={{ fontFamily: "var(--font-body)" }}
-                  >
-                    {item.label}
-                  </span>
-                  <span
-                    className="text-white font-medium text-sm"
-                    style={{ fontFamily: "var(--font-mono)" }}
-                  >
-                    {item.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 flex items-center gap-1" aria-label={`서울 자치구 ${districtIndex + 1}/${SEOUL_DISTRICTS.length}`}>
-              {SEOUL_DISTRICTS.map((name, index) => (
-                <button
-                  type="button"
-                  key={name}
-                  aria-label={`${name} 보기`}
-                  onClick={() => setDistrictIndex(index)}
-                  className="h-1 flex-1 rounded-full transition-all duration-300"
-                  style={{ background: index === districtIndex ? "white" : "rgba(255,255,255,.25)" }}
-                />
-              ))}
-            </div>
+              실시간 DB 기상 데이터를 수신 중입니다...
+            </p>
           </div>
-
-          {/* Forecast */}
-          <div className="lg:col-span-2 glass p-5" style={{ borderRadius: 24 }}>
-            <h3
-              className="text-[#1a1a2e] mb-4"
+        ) : !w ? (
+          <div className="glass p-12 text-center my-8" style={{ borderRadius: 20 }}>
+            <p
+              className="text-white/80 text-base font-semibold mb-1"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              DB에 저장된 기상 관측 데이터가 없습니다.
+            </p>
+            <p className="text-white/50 text-xs" style={{ fontFamily: "var(--font-body)" }}>
+              기상청 관측망 수집 상태를 확인해 주세요.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-slide-up-delay-1">
+            {/* Current weather card */}
+            <div
+              key={district}
+              className="lg:col-span-1 p-6 text-white weather-district-card cursor-default"
               style={{
-                fontFamily: "var(--font-display)",
-                fontWeight: 600,
-                fontSize: 16,
+                borderRadius: 24,
+                background: "linear-gradient(160deg, #007aff 0%, #5e5ce6 100%)",
+                boxShadow: "0 12px 40px rgba(0,122,255,0.3)",
               }}
             >
-              시간대별 예보 · 교통 영향
-            </h3>
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              {w.forecast.map((f) => {
-                const color = impactColor[f.trafficImpact]
-                return (
-                  <div
-                    key={f.time}
-                    className="flex-shrink-0 flex flex-col items-center gap-2 p-4"
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <p
+                    className="text-white/70 text-sm mb-1"
+                    style={{ fontFamily: "var(--font-body)" }}
+                  >
+                    {district}
+                  </p>
+                  <p className="text-[11px] text-white/60 mb-2">
+                    {w.station} 대표 관측 · 3초마다 다음 구
+                  </p>
+                  <p
                     style={{
-                      background: "rgba(240,242,248,0.7)",
-                      borderRadius: 18,
-                      minWidth: 100,
+                      fontFamily: "var(--font-display)",
+                      fontWeight: 800,
+                      fontSize: 64,
+                      letterSpacing: "-0.03em",
+                      lineHeight: 1,
                     }}
                   >
-                    <span
-                      className="text-xs font-medium text-[#6b6b8a]"
-                      style={{ fontFamily: "var(--font-mono)" }}
-                    >
-                      {f.time}
-                    </span>
-                    <span style={{ fontSize: 28 }}>{f.condition}</span>
-                    <span
-                      className="font-semibold text-[#1a1a2e]"
-                      style={{
-                        fontFamily: "var(--font-display)",
-                        fontSize: 18,
-                      }}
-                    >
-                      {f.temp}°
-                    </span>
-                    <div className="flex flex-col items-center gap-1">
-                      <span
-                        className="text-xs text-[#6b6b8a]"
-                        style={{ fontFamily: "var(--font-body)" }}
-                      >
-                        강수 {f.precipitation}%
-                      </span>
-                      <span
-                        className="text-xs px-2 py-0.5 rounded-full font-medium"
-                        style={{
-                          background: `${color}18`,
-                          color,
-                          fontFamily: "var(--font-body)",
-                        }}
-                      >
-                        {impactLabel[f.trafficImpact]}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+                    {w.temp}°
+                  </p>
+                  <p
+                    className="text-white/80 mt-1"
+                    style={{ fontFamily: "var(--font-body)", fontSize: 14 }}
+                  >
+                    체감 {w.feelsLike}° · {w.condition}
+                  </p>
+                </div>
+                <span style={{ fontSize: 56 }}>{w.icon}</span>
+              </div>
 
-            {/* Weather metrics for traffic */}
-            <div className="mt-4 grid grid-cols-2 gap-3">
               <div
-                className="p-4"
-                style={{
-                  background: "rgba(240,242,248,0.7)",
-                  borderRadius: 18,
-                }}
+                className="p-3 rounded-xl mb-4"
+                style={{ background: "rgba(255,255,255,0.15)" }}
               >
-                <h4
-                  className="text-sm font-semibold text-[#1a1a2e] mb-3"
+                <p
+                  className="text-sm font-medium text-white mb-1"
                   style={{ fontFamily: "var(--font-display)" }}
                 >
-                  🌧 강수와 교통 속도
-                </h4>
+                  교통 영향도
+                </p>
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-2.5 h-2.5 rounded-full"
+                    style={{ background: impactColor[w.trafficImpact] }}
+                  />
+                  <p
+                    className="text-xs text-white/90"
+                    style={{ fontFamily: "var(--font-body)" }}
+                  >
+                    {w.trafficMessage}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "습도", value: `${w.humidity}%` },
+                  { label: "풍속", value: `${w.windSpeed}m/s` },
+                  { label: "강수량", value: `${w.precipitation}mm` },
+                  { label: "기압", value: `${w.pressure}hPa` },
+                ].map((item) => (
+                  <div key={item.label} className="flex flex-col">
+                    <span
+                      className="text-white/60 text-xs"
+                      style={{ fontFamily: "var(--font-body)" }}
+                    >
+                      {item.label}
+                    </span>
+                    <span
+                      className="text-white font-medium text-sm"
+                      style={{ fontFamily: "var(--font-mono)" }}
+                    >
+                      {item.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div
+                className="mt-4 flex items-center gap-1"
+                aria-label={`서울 자치구 ${districtIndex + 1}/${SEOUL_DISTRICTS.length}`}
+              >
+                {SEOUL_DISTRICTS.map((name, index) => (
+                  <button
+                    type="button"
+                    key={name}
+                    aria-label={`${name} 보기`}
+                    onClick={() => setDistrictIndex(index)}
+                    className="h-1 flex-1 rounded-full transition-all duration-300"
+                    style={{
+                      background:
+                        index === districtIndex
+                          ? "white"
+                          : "rgba(255,255,255,.25)",
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Weather impact cards */}
+            <div className="lg:col-span-2 flex flex-col gap-4">
+              <div
+                className="p-5 glass"
+                style={{
+                  borderRadius: 22,
+                }}
+              >
+                <h3
+                  className="text-sm font-semibold text-[#1a1a2e] mb-2"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  🌧 강수와 제동 거리
+                </h3>
                 <p
                   className="text-xs text-[#6b6b8a] leading-relaxed"
                   style={{ fontFamily: "var(--font-body)" }}
                 >
-                  강수량이 증가하면 제동거리와 평균 주행속도에 영향을 줄 수
-                  있습니다. 실제 수집 데이터로 영향도를 분석해 안내할
-                  예정입니다.
+                  강수량이 증가하면 노면 마찰계수가 감소하여 제동거리가 최대 1.8배 길어집니다.
+                  안전거리를 평소보다 2배 이상 확보하세요.
                 </p>
               </div>
               <div
-                className="p-4"
+                className="p-5 glass"
                 style={{
-                  background: "rgba(240,242,248,0.7)",
-                  borderRadius: 18,
+                  borderRadius: 22,
                 }}
               >
-                <h4
-                  className="text-sm font-semibold text-[#1a1a2e] mb-3"
+                <h3
+                  className="text-sm font-semibold text-[#1a1a2e] mb-2"
                   style={{ fontFamily: "var(--font-display)" }}
                 >
-                  💨 풍속과 고가도로
-                </h4>
+                  💨 풍속과 교량/고가 주행
+                </h3>
                 <p
                   className="text-xs text-[#6b6b8a] leading-relaxed"
                   style={{ fontFamily: "var(--font-body)" }}
                 >
-                  현재 예시 풍속은 {w.windSpeed}m/s입니다. 고가도로와 교량
-                  구간의 영향도는 실제 관측 데이터 연동 후 제공합니다.
+                  현재 관측 풍속은 {w.windSpeed}m/s입니다. 한강 교량 및 고가도로 통과 시 횡풍에 유의하여 서행 운전하시기 바랍니다.
                 </p>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   )
