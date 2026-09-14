@@ -9,7 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.src.api.app import app
-from backend.src.services.route_prediction import best_saved_model, build_features, rank_candidates
+from backend.src.services.route_prediction import (
+    best_saved_model,
+    build_features,
+    point_to_polyline_distance_m,
+    rank_candidates,
+)
 
 
 def candidate(id, duration, road):
@@ -72,6 +77,39 @@ def test_active_incident_changes_route_score_and_is_reported():
     assert result[0]["incident_count"] == 1
     assert result[0]["incident_penalty_sec"] == 300
     assert result[0]["incidents"][0]["incident_id"] == "INC-1"
+
+
+def test_incident_coordinates_filter_same_named_roads():
+    routes = [
+        SimpleNamespace(
+            id="A", duration_sec=600,
+            steps=[SimpleNamespace(name="강남대로", duration_sec=600)],
+            coordinates=[(127.0, 37.5), (127.01, 37.5)],
+        ),
+        SimpleNamespace(
+            id="B", duration_sec=600,
+            steps=[SimpleNamespace(name="강남대로", duration_sec=600)],
+            coordinates=[(127.0, 37.51), (127.01, 37.51)],
+        ),
+    ]
+    meta = [{"spot_name": "강남대로", "baseline": 100},
+            {"spot_name": "강남대로", "baseline": 100}]
+    incidents = {
+        "강남대로": [{
+            "incident_id": "INC-2",
+            "incident_type": "사고",
+            "incident_detail_type": "추돌",
+            "description": "경로 A 인접 사고",
+            "longitude": 127.005,
+            "latitude": 37.5,
+        }],
+    }
+
+    result, _ = rank_candidates(routes, [100, 100], meta, incidents)
+
+    assert point_to_polyline_distance_m(127.005, 37.5, routes[0].coordinates) < 1
+    assert result[0]["incident_count"] == 1
+    assert result[1]["incident_count"] == 0
 
 
 def test_features_use_exact_lags_and_do_not_mix_directions():

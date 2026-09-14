@@ -113,6 +113,7 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       body: JSON.stringify({ departure_at: departureAt, candidates: candidates.map((r, i) => ({
         id: String.fromCharCode(65 + i), duration_sec: r.duration,
         distance_m: r.distance,
+        coordinates: r.geometry.coordinates,
         steps: steps[i].map(step => ({ name: step.name || "", duration_sec: step.duration })),
       })) }),
     })

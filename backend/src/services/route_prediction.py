@@ -13,11 +13,14 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+from pyproj import Transformer
 from sqlalchemy import bindparam, text
 
 ROOT = Path(__file__).resolve().parents[3]
 ARTIFACTS = ROOT / "ml" / "artifacts"
 WEATHER = ["temperature_c", "rainfall_mm", "humidity_pct", "wind_speed_ms", "pressure_hpa"]
+INCIDENT_MATCH_DISTANCE_M = 150.0
+TM_TO_WGS84 = Transformer.from_crs("EPSG:5186", "EPSG:4326", always_xy=True)
 
 
 def best_saved_model(root=ARTIFACTS):
@@ -130,8 +133,9 @@ def road_key(name):
 
 def load_active_incidents(db, departure_at):
     rows = db.execute(text("""
-        SELECT i.incident_id, i.link_id, i.incident_type, i.incident_detail_type,
-               i.occurred_at, i.expected_clear_at, i.description, r.road_name
+         SELECT i.incident_id, i.link_id, i.incident_type, i.incident_detail_type,
+             i.occurred_at, i.expected_clear_at, i.description, i.tm_x, i.tm_y,
+             r.road_name
         FROM incidents i
         LEFT JOIN road_segments r ON r.link_id = i.link_id
         WHERE i.occurred_at <= :departure_at
@@ -140,9 +144,43 @@ def load_active_incidents(db, departure_at):
     by_road = {}
     for incident in rows:
         road_name = incident.get("road_name")
+        item = dict(incident)
+        if item.get("tm_x") is not None and item.get("tm_y") is not None:
+            item["longitude"], item["latitude"] = TM_TO_WGS84.transform(
+                float(item["tm_x"]), float(item["tm_y"])
+            )
         if road_name:
-            by_road.setdefault(road_key(road_name), []).append(dict(incident))
+            by_road.setdefault(road_key(road_name), []).append(item)
     return by_road
+
+
+def point_to_polyline_distance_m(longitude, latitude, coordinates):
+    """Approximate WGS84 point-to-polyline distance for Seoul-scale routes."""
+    if longitude is None or latitude is None or len(coordinates) < 2:
+        return None
+    latitude_scale = 111_320.0
+    longitude_scale = latitude_scale * math.cos(math.radians(latitude))
+    minimum = math.inf
+    for start, end in zip(coordinates, coordinates[1:]):
+        start_x = (start[0] - longitude) * longitude_scale
+        start_y = (start[1] - latitude) * latitude_scale
+        end_x = (end[0] - longitude) * longitude_scale
+        end_y = (end[1] - latitude) * latitude_scale
+        dx, dy = end_x - start_x, end_y - start_y
+        length_squared = dx * dx + dy * dy
+        projection = 0.0 if length_squared == 0 else max(
+            0.0, min(1.0, -(start_x * dx + start_y * dy) / length_squared)
+        )
+        distance = math.hypot(start_x + projection * dx, start_y + projection * dy)
+        minimum = min(minimum, distance)
+    return minimum
+
+
+def incident_matches_route(incident, coordinates):
+    distance = point_to_polyline_distance_m(
+        incident.get("longitude"), incident.get("latitude"), coordinates
+    )
+    return distance is not None and distance <= INCIDENT_MATCH_DISTANCE_M
 
 
 def incident_penalty_multiplier(incident):
@@ -182,12 +220,18 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None):
         matched_road_names = []
         unmatched_road_names = []
         route_incidents = {}
+        coordinates = getattr(candidate, "coordinates", [])
         for step in candidate.steps:
-            for incident in incidents_by_road.get(road_key(step.name), []):
+            candidates_for_step = incidents_by_road.get(road_key(step.name), [])
+            for incident in candidates_for_step:
+                if coordinates and incident.get("longitude") is not None:
+                    if not incident_matches_route(incident, coordinates):
+                        continue
                 route_incidents[incident["incident_id"]] = incident
             incident_penalty += step.duration_sec * sum(
                 incident_penalty_multiplier(incident)
-                for incident in incidents_by_road.get(road_key(step.name), [])
+                for incident in candidates_for_step
+                if not coordinates or incident_matches_route(incident, coordinates)
             )
             observations = roads.get(road_key(step.name)) if step.name else None
             if not observations:
