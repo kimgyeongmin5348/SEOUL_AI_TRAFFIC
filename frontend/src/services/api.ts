@@ -1,12 +1,4 @@
-import {
-  kpiData as defaultKpiData,
-  incidents as defaultIncidents,
-  roadSpeedData as defaultRoadSpeedData,
-  trafficTimeData as defaultTrafficTimeData,
-  weatherData as defaultWeatherData,
-  predictionData as defaultPredictionData,
-  congestionPrediction as defaultCongestionPrediction,
-} from "../data/mock"
+// Pure DB API Client without mock data fallbacks
 
 export interface DbSnapshot<T> {
   source: string
@@ -122,7 +114,12 @@ export async function fetchDashboardData() {
     fetchDbDataset<IncidentRow>("incidents"),
   ])
 
-  let kpi = { ...defaultKpiData }
+  let kpi = {
+    avgSpeed: 0,
+    avgSpeedDelta: 0,
+    congested: 0,
+    incidents: 0,
+  }
   let dbLatestTime: string | null = null
 
   if (speedRes && speedRes.rows.length > 0) {
@@ -140,10 +137,23 @@ export async function fetchDashboardData() {
     }
 
     const congestedCount = validSpeeds.filter((s) => s < 25).length
-    kpi.congested = congestedCount > 0 ? congestedCount : 8
+    kpi.congested = congestedCount
   }
 
-  let mappedIncidents = [...defaultIncidents]
+  let mappedIncidents: Array<{
+    id: number
+    type: string
+    road: string
+    location: string
+    startTime: string
+    estEnd: string
+    description: string
+    impact: "high" | "medium" | "low"
+    severity: number
+    tmX: number | null
+    tmY: number | null
+  }> = []
+
   if (incRes && incRes.rows.length > 0) {
     const now = Date.now()
     const activeRows = incRes.rows.filter((row) => {
@@ -222,13 +232,19 @@ export async function fetchDashboardData() {
     })
   }
 
-  // 도로별 속도 가공
-  let roadSpeeds = [...defaultRoadSpeedData]
+  // 도로별 속도 가공 (DB 실측치만 사용)
+  let roadSpeeds: Array<{
+    road: string
+    speed: number
+    avg: number
+    level: "red" | "yellow" | "green"
+  }> = []
+
   if (speedRes && speedRes.rows.length > 0) {
     const roadMap = new Map<string, { total: number; count: number }>()
     for (const r of speedRes.rows) {
-      const name = r.road_name || "기타구간"
-      if (r.speed_kmh !== null) {
+      const name = r.road_name?.trim() || ""
+      if (name && r.speed_kmh !== null) {
         const cur = roadMap.get(name) || { total: 0, count: 0 }
         cur.total += r.speed_kmh
         cur.count += 1
@@ -237,7 +253,7 @@ export async function fetchDashboardData() {
     }
 
     if (roadMap.size > 0) {
-      const dbRoads = Array.from(roadMap.entries()).map(([road, stat]) => {
+      roadSpeeds = Array.from(roadMap.entries()).map(([road, stat]) => {
         const avgSpeed = Math.round(stat.total / stat.count)
         return {
           road,
@@ -248,19 +264,20 @@ export async function fetchDashboardData() {
             | "yellow"
             | "green",
         }
-      })
-      if (dbRoads.length >= 3) {
-        roadSpeeds = dbRoads.slice(0, 8)
-      }
+      }).slice(0, 8)
     }
   }
+
+  const hasDb = Boolean(
+    (speedRes && speedRes.rows.length > 0) || (incRes && incRes.rows.length > 0)
+  )
 
   return {
     kpi,
     incidents: mappedIncidents,
     roadSpeeds,
     latestAt: dbLatestTime,
-    isFromDb: Boolean(speedRes || incRes),
+    isFromDb: hasDb,
   }
 }
 
@@ -272,8 +289,13 @@ export async function fetchTrafficData() {
     fetchDbDataset<TrafficHourlyRow>("traffic_hourly"),
   ])
 
-  let timeData = [...defaultTrafficTimeData]
-  let roadSpeeds = [...defaultRoadSpeedData]
+  let timeData: Array<{ time: string; volume: number; speed: number }> = []
+  let roadSpeeds: Array<{
+    road: string
+    speed: number
+    avg: number
+    level: "red" | "yellow" | "green"
+  }> = []
   let latestAt: string | null = null
 
   if (hourlyRes && hourlyRes.rows.length > 0) {
@@ -291,8 +313,8 @@ export async function fetchTrafficData() {
     }
     const roadMap = new Map<string, { total: number; count: number }>()
     for (const r of speedRes.rows) {
-      const name = r.road_name || "기타구간"
-      if (r.speed_kmh !== null) {
+      const name = r.road_name?.trim() || ""
+      if (name && r.speed_kmh !== null) {
         const cur = roadMap.get(name) || { total: 0, count: 0 }
         cur.total += r.speed_kmh
         cur.count += 1
@@ -312,17 +334,21 @@ export async function fetchTrafficData() {
             | "green",
         }
       })
-      if (dbRoads.length >= 3) {
-        roadSpeeds = dbRoads.slice(0, 10)
-      }
+      roadSpeeds = dbRoads.slice(0, 15)
     }
   }
+
+  const hasDb = Boolean(
+    (speedRes && speedRes.rows.length > 0) ||
+    (hourlyRes && hourlyRes.rows.length > 0) ||
+    (trafficRes && trafficRes.rows.length > 0)
+  )
 
   return {
     timeData,
     roadSpeeds,
     latestAt,
-    isFromDb: Boolean(trafficRes || speedRes || hourlyRes),
+    isFromDb: hasDb,
   }
 }
 
@@ -331,7 +357,7 @@ export async function fetchIncidentsData() {
   const incRes = await fetchDbDataset<IncidentRow>("incidents")
   if (!incRes || incRes.rows.length === 0) {
     return {
-      incidents: defaultIncidents,
+      incidents: [],
       latestAt: null,
       isFromDb: false,
     }
@@ -423,7 +449,7 @@ export async function fetchWeatherData() {
   const weatherRes = await fetchDbDataset<WeatherRow>("weather")
   if (!weatherRes || weatherRes.rows.length === 0) {
     return {
-      weather: defaultWeatherData,
+      weather: null,
       history: [],
       latestAt: null,
       isFromDb: false,
@@ -472,7 +498,6 @@ export async function fetchWeatherData() {
   }).reverse()
 
   const weather = {
-    ...defaultWeatherData,
     station: latest.station_name || "서울 (송월동)",
     temp,
     feelsLike: temp + (humidity > 70 ? 2 : 0),
@@ -499,12 +524,9 @@ export async function fetchPredictionData() {
   const predRes = await fetchDbDataset<PredictionRow>("prediction")
   if (!predRes || predRes.rows.length === 0) {
     return {
-      predictions: defaultPredictionData,
-      congestion: defaultCongestionPrediction,
-      roads: defaultCongestionPrediction.map((road) => ({
-        ...road,
-        predictions: defaultPredictionData,
-      })) as RoadPredictionView[],
+      predictions: [],
+      congestion: [],
+      roads: [] as RoadPredictionView[],
       latestAt: null,
       isFromDb: false,
     }
@@ -562,8 +584,8 @@ export async function fetchPredictionData() {
   const mapped = roads[0]?.predictions || []
 
   return {
-    predictions: mapped.length > 0 ? mapped : defaultPredictionData,
-    congestion: defaultCongestionPrediction,
+    predictions: mapped,
+    congestion: [],
     roads,
     latestAt: predRes.latest_at,
     isFromDb: true,

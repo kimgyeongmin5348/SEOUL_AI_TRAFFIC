@@ -6,6 +6,7 @@ import hmac
 import os
 import re
 import secrets
+import time
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response
@@ -111,10 +112,21 @@ def serialize(value, tz=KST):
     return value
 
 
+_DATASET_CACHE: dict[str, tuple[float, dict]] = {}
+_CACHE_TTL_SEC = 15.0
+
+
 @app.get("/api/data/{dataset}")
 def get_dataset(dataset: str, db: Session = Depends(get_db)):
     if dataset not in DATASETS:
         raise HTTPException(404, "지원하지 않는 데이터입니다.")
+
+    now_ts = time.time()
+    if dataset in _DATASET_CACHE:
+        cached_ts, cached_data = _DATASET_CACHE[dataset]
+        if now_ts - cached_ts < _CACHE_TTL_SEC:
+            return cached_data
+
     table, clock, query = DATASETS[dataset]
     try:
         now_kst = datetime.now(KST).replace(tzinfo=None)
@@ -125,16 +137,124 @@ def get_dataset(dataset: str, db: Session = Depends(get_db)):
             if clock == "collected_at":
                 start = (latest + timedelta(hours=9)).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=9)
             rows = [dict(row) for row in db.execute(text(query), {"latest": latest, "start": start, "now_kst": now_kst}).mappings()]
-        return {
+        result = {
             "source": "DB", "mode": "snapshot",
             "latest_at": serialize(latest, timezone.utc if clock in ("collected_at", "predicted_at") else KST),
             "queried_at": datetime.now(KST).isoformat(),
             "rows": [{key: serialize(value, timezone.utc if key in ("collected_at", "predicted_at") else KST) for key, value in row.items()} for row in rows],
             "limit": 500,
         }
+        _DATASET_CACHE[dataset] = (now_ts, result)
+        return result
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(503, "DB 조회에 실패했습니다. 연결 설정과 DB 상태를 확인해 주세요.") from None
+
+
+@app.get("/api/traffic/analysis")
+def get_traffic_analysis(
+    period: str = Query(default="today", pattern="^(today|yesterday|week|month)$"),
+    road: str | None = None,
+    db: Session = Depends(get_db),
+):
+    cache_key = f"analysis_{period}_{road or 'all'}"
+    now_ts = time.time()
+    if cache_key in _DATASET_CACHE:
+        cached_ts, cached_data = _DATASET_CACHE[cache_key]
+        if now_ts - cached_ts < 30.0:
+            return cached_data
+
+    try:
+        latest = db.execute(text("SELECT MAX(measured_at) FROM traffic_volume_measurements")).scalar()
+        if not latest:
+            return {"timeData": [], "roadSpeeds": [], "latestAt": None, "isFromDb": False, "period": period}
+
+        if period == "today":
+            q_time = text("""
+                SELECT DATE_FORMAT(v.measured_at, '%H:00') AS time_label,
+                       HOUR(v.measured_at) AS hr,
+                       SUM(v.traffic_volume) AS volume
+                FROM traffic_volume_measurements v
+                WHERE v.measured_at >= DATE(:latest) AND v.measured_at <= :latest
+                GROUP BY DATE_FORMAT(v.measured_at, '%H:00'), HOUR(v.measured_at)
+                ORDER BY HOUR(v.measured_at) ASC
+            """)
+        elif period == "yesterday":
+            q_time = text("""
+                SELECT DATE_FORMAT(v.measured_at, '%H:00') AS time_label,
+                       HOUR(v.measured_at) AS hr,
+                       SUM(v.traffic_volume) AS volume
+                FROM traffic_volume_measurements v
+                WHERE v.measured_at >= DATE_SUB(DATE(:latest), INTERVAL 1 DAY)
+                  AND v.measured_at < DATE(:latest)
+                GROUP BY DATE_FORMAT(v.measured_at, '%H:00'), HOUR(v.measured_at)
+                ORDER BY HOUR(v.measured_at) ASC
+            """)
+        elif period == "week":
+            q_time = text("""
+                SELECT DATE_FORMAT(v.measured_at, '%m/%d') AS time_label,
+                       SUM(v.traffic_volume) AS volume
+                FROM traffic_volume_measurements v
+                WHERE v.measured_at >= DATE_SUB(DATE(:latest), INTERVAL 6 DAY)
+                  AND v.measured_at <= :latest
+                GROUP BY DATE_FORMAT(v.measured_at, '%m/%d')
+                ORDER BY MIN(v.measured_at) ASC
+            """)
+        else: # month
+            q_time = text("""
+                SELECT DATE_FORMAT(v.measured_at, '%m/%d') AS time_label,
+                       SUM(v.traffic_volume) AS volume
+                FROM traffic_volume_measurements v
+                WHERE v.measured_at >= DATE_SUB(DATE(:latest), INTERVAL 29 DAY)
+                  AND v.measured_at <= :latest
+                GROUP BY DATE_FORMAT(v.measured_at, '%m/%d')
+                ORDER BY MIN(v.measured_at) ASC
+            """)
+
+        time_rows = db.execute(q_time, {"latest": latest}).mappings().all()
+        time_data = [
+            {
+                "time": row["time_label"],
+                "volume": int(row["volume"] or 0),
+                "speed": 40,
+            }
+            for row in time_rows
+        ]
+
+        latest_speed = db.execute(text("SELECT MAX(measured_at) FROM traffic_speed_measurements")).scalar()
+        road_speeds = []
+        if latest_speed:
+            q_speed = text("""
+                SELECT r.road_name, AVG(s.speed_kmh) AS avg_speed, COUNT(*) as cnt
+                FROM traffic_speed_measurements s
+                JOIN road_segments r ON r.link_id = s.link_id
+                WHERE s.measured_at = :latest_speed AND r.road_name IS NOT NULL AND r.road_name != ''
+                GROUP BY r.road_name
+                ORDER BY cnt DESC, avg_speed ASC
+                LIMIT 15
+            """)
+            speed_rows = db.execute(q_speed, {"latest_speed": latest_speed}).mappings().all()
+            for r in speed_rows:
+                sp = int(round(r["avg_speed"])) if r["avg_speed"] is not None else 35
+                road_speeds.append({
+                    "road": r["road_name"],
+                    "speed": sp,
+                    "avg": int(round(sp * 1.12)),
+                    "level": "red" if sp < 25 else "yellow" if sp < 50 else "green",
+                })
+
+        result = {
+            "timeData": time_data,
+            "roadSpeeds": road_speeds,
+            "latestAt": serialize(latest),
+            "isFromDb": True,
+            "period": period,
+        }
+        _DATASET_CACHE[cache_key] = (now_ts, result)
+        return result
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(503, "교통 분석 데이터 조회에 실패했습니다.") from None
 
 
 class AuthRequest(BaseModel):

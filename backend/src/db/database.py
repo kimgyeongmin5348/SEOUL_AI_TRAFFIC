@@ -9,7 +9,12 @@ engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
     pool_recycle=1800,
-    connect_args={"connect_timeout": 10, "read_timeout": 30, "write_timeout": 30},
+    connect_args={
+        "connect_timeout": 10,
+        "read_timeout": 30,
+        "write_timeout": 30,
+        "charset": "utf8mb4",
+    },
 )
 
 SessionLocal = sessionmaker(

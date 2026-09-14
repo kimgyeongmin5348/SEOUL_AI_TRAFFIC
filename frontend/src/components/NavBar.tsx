@@ -196,10 +196,10 @@ export default function NavBar() {
     >
       <div className="py-2 px-1 sm:px-4 max-w-6xl mx-auto">
         <div
-          className="glass flex items-center justify-between px-3.5 sm:px-5 py-2.5 sm:py-3 transition-all duration-300"
+          className="liquid-glass-nav flex items-center justify-between px-3.5 sm:px-5 py-2 sm:py-2.5 transition-all duration-300"
           style={{
-            borderRadius: 20,
-            boxShadow: "0 10px 30px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.03)",
+            borderRadius: 24,
+            boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.25) inset",
           }}
         >
           {/* Logo */}
@@ -236,28 +236,32 @@ export default function NavBar() {
                 fontFamily: "var(--font-display)",
                 fontWeight: 700,
                 letterSpacing: "-0.02em",
+                textShadow: "0 2px 8px rgba(0,0,0,0.5)",
               }}
-              className="text-[#1a1a2e] text-[16px] sm:text-[17px]"
+              className="text-white text-[16px] sm:text-[17px]"
             >
               RoadPulse
             </span>
           </Link>
 
           {/* Desktop Navigation Links */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden md:flex items-center gap-1 sm:gap-2">
             {desktopLinks.map((l) => {
               const active = pathname === l.href
               return (
                 <Link
                   key={l.href}
                   to={l.href}
-                  className="px-3.5 py-1.5 text-sm font-medium transition-all duration-200"
+                  className={`px-3.5 py-1.5 text-xs sm:text-sm font-medium transition-all duration-200 rounded-xl ${
+                    active
+                      ? "text-white bg-white/[0.16] border border-white/[0.25]"
+                      : "text-white/70 hover:text-white hover:bg-white/[0.08]"
+                  }`}
                   style={{
-                    borderRadius: 12,
-                    color: active ? "#007aff" : "#4a4a68",
-                    background: active ? "rgba(0,122,255,0.1)" : "transparent",
                     fontFamily: "var(--font-body)",
-                    fontWeight: active ? 600 : 500,
+                    textShadow: active
+                      ? "0 0 10px rgba(0, 122, 255, 0.7), 0 1px 2px rgba(0, 0, 0, 0.5)"
+                      : "0 1px 2px rgba(0, 0, 0, 0.4)",
                   }}
                 >
                   {l.label}
@@ -275,12 +279,12 @@ export default function NavBar() {
                   type="button"
                   onClick={() => void logout()}
                   title={user.email}
-                  className="px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 active:scale-95 flex items-center gap-1.5"
+                  className="button-glide px-4 py-2 text-xs sm:text-sm font-semibold text-white transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
                   style={{
-                    borderRadius: 12,
+                    borderRadius: 14,
                     background: "linear-gradient(135deg, #007aff, #5e5ce6)",
                     fontFamily: "var(--font-body)",
-                    boxShadow: "0 2px 8px rgba(0,122,255,0.25)",
+                    boxShadow: "0 4px 14px rgba(0, 122, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
                   }}
                 >
                   <span>로그아웃</span>
@@ -288,12 +292,12 @@ export default function NavBar() {
               ) : (
                 <Link
                   to="/login"
-                  className="px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 active:scale-95 inline-block"
+                  className="button-glide px-4 py-2 text-xs sm:text-sm font-semibold text-white transition-all duration-200 inline-block cursor-pointer"
                   style={{
-                    borderRadius: 12,
+                    borderRadius: 14,
                     background: "linear-gradient(135deg, #007aff, #5e5ce6)",
                     fontFamily: "var(--font-body)",
-                    boxShadow: "0 2px 8px rgba(0,122,255,0.25)",
+                    boxShadow: "0 4px 14px rgba(0, 122, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
                   }}
                 >
                   로그인
@@ -309,9 +313,9 @@ export default function NavBar() {
               aria-expanded={mobileMenuOpen}
               className="md:hidden flex items-center justify-center w-9 h-9 rounded-xl transition-all duration-200 active:scale-90"
               style={{
-                background: mobileMenuOpen ? "rgba(0,122,255,0.12)" : "rgba(255,255,255,0.6)",
-                border: "1px solid rgba(255,255,255,0.8)",
-                color: mobileMenuOpen ? "#007aff" : "#1a1a2e",
+                background: mobileMenuOpen ? "rgba(0,122,255,0.25)" : "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.25)",
+                color: "#ffffff",
               }}
             >
               {mobileMenuOpen ? (
@@ -343,28 +347,29 @@ export default function NavBar() {
         {/* Mobile Dropdown Panel */}
         {mobileMenuOpen && (
           <div
-            className="md:hidden mt-2 glass p-3 rounded-3xl mobile-menu-animate overflow-hidden border border-white/80 shadow-2xl"
+            className="md:hidden mt-2 p-3 rounded-3xl mobile-menu-animate overflow-hidden border border-white/25 shadow-2xl"
             style={{
               maxHeight: "calc(100dvh - 5.5rem)",
-              background: "rgba(255, 255, 255, 0.88)",
+              background: "rgba(15, 23, 42, 0.92)",
               backdropFilter: "blur(28px) saturate(1.8)",
               WebkitBackdropFilter: "blur(28px) saturate(1.8)",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2)",
             }}
           >
             {/* User status bar on mobile */}
-            <div className="flex items-center justify-between px-3 py-2 mb-2 rounded-2xl bg-white/50 border border-white/60">
+            <div className="flex items-center justify-between px-3 py-2 mb-2 rounded-2xl bg-white/10 border border-white/15">
               <div className="flex items-center gap-2 min-w-0">
                 <div
                   className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
-                  style={{ background: user ? "#34c759" : "#8e8e93" }}
+                  style={{ background: user ? "#34c759" : "#64748b" }}
                 >
                   {user ? "✓" : "?"}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-[#1a1a2e] truncate">
+                  <p className="text-xs font-semibold text-white truncate">
                     {user ? user.email : "게스트 모드"}
                   </p>
-                  <p className="text-[10px] text-[#6b6b8a]">
+                  <p className="text-[10px] text-white/60">
                     {user ? "즐겨찾기 자동 동기화 중" : "로그인 후 개인화 즐겨찾기 지원"}
                   </p>
                 </div>
@@ -377,7 +382,7 @@ export default function NavBar() {
                     void logout()
                     setMobileMenuOpen(false)
                   }}
-                  className="px-2.5 py-1 text-xs font-medium text-red-600 rounded-lg hover:bg-red-50 transition-colors flex-shrink-0"
+                  className="px-2.5 py-1 text-xs font-medium text-red-400 rounded-lg hover:bg-red-500/20 transition-colors flex-shrink-0"
                 >
                   로그아웃
                 </button>
@@ -403,28 +408,28 @@ export default function NavBar() {
                     to={item.href}
                     onClick={() => setMobileMenuOpen(false)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all duration-150 active:scale-[0.99] ${
-                      active ? "bg-[#007aff]/10 text-[#007aff]" : "text-[#2c2c44] hover:bg-white/60"
+                      active ? "bg-white/15 text-white" : "text-white/80 hover:bg-white/10"
                     }`}
                   >
                     <div
                       className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform"
                       style={{
-                        background: active ? "#007aff" : "rgba(0, 0, 0, 0.04)",
-                        color: active ? "#ffffff" : "#4a4a68",
+                        background: active ? "rgba(0, 122, 255, 0.35)" : "rgba(255, 255, 255, 0.08)",
+                        color: active ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
                       }}
                     >
                       {item.icon}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className={`text-sm font-semibold truncate ${active ? "text-[#007aff]" : "text-[#1a1a2e]"}`}>
+                        <span className="text-sm font-semibold truncate text-white">
                           {item.label}
                         </span>
                         {active && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#007aff]" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#38bdf8] shadow-[0_0_6px_#38bdf8]" />
                         )}
                       </div>
-                      <p className="text-[11px] text-[#7a7a98] truncate">
+                      <p className="text-[11px] text-white/60 truncate">
                         {item.desc}
                       </p>
                     </div>
@@ -433,7 +438,7 @@ export default function NavBar() {
                       height="14"
                       viewBox="0 0 16 16"
                       fill="none"
-                      className={`flex-shrink-0 ${active ? "text-[#007aff]" : "text-[#a0a0b8]"}`}
+                      className={`flex-shrink-0 ${active ? "text-white" : "text-white/40"}`}
                     >
                       <path
                         d="M6 3l5 5-5 5"
@@ -449,7 +454,7 @@ export default function NavBar() {
             </div>
 
             {/* Bottom info banner */}
-            <div className="mt-2 pt-2 border-t border-black/5 flex items-center justify-between px-2 text-[10px] text-[#8e8e93]">
+            <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between px-2 text-[10px] text-white/50">
               <span>RoadPulse AI 교통망 서울 전역 지원</span>
               <span className="font-mono">v1.0 Mobile Ready</span>
             </div>

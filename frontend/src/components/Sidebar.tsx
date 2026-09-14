@@ -440,7 +440,7 @@ export default function Sidebar() {
       {/* 2. Desktop Sidebar (Screens >= 768px)                     */}
       {/* ======================================================== */}
       <aside
-        className="liquid-glass-nav hidden md:flex flex-col w-[78px] fixed left-3 top-1/2 -translate-y-1/2 z-40 py-3 gap-1"
+        className="liquid-glass-nav sidebar-floating hidden md:flex flex-col w-[78px] fixed left-3 top-1/2 z-40 py-3 gap-1"
         style={{ borderRadius: 28 }}
       >
         <Link to="/" className="flex justify-center mb-3">
@@ -462,77 +462,184 @@ export default function Sidebar() {
           </div>
         </Link>
 
-        {navItems.map((item) => {
-          const active = pathname === item.href
-          return (
-            <Link
-              key={item.href}
-              to={item.href}
-              className={`sidebar-liquid-link flex flex-col items-center gap-1 py-2.5 px-1 mx-1 ${active ? "is-active" : ""}`}
-              style={{
-                borderRadius: 14,
-                color: active ? "#007aff" : "#6b6b8a",
-                background: active ? "rgba(255,255,255,0.52)" : "transparent",
-              }}
-            >
-              {item.icon}
-              <span
-                style={{
-                  fontSize: 9,
-                  fontFamily: "var(--font-body)",
-                  fontWeight: active ? 600 : 400,
-                  lineHeight: 1,
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {item.label}
-              </span>
-            </Link>
-          )
-        })}
+        {/* Nav items container with sliding indicator */}
+        <div className="relative flex flex-col gap-1 w-full px-1">
+          {(() => {
+            const activeIndex = navItems.findIndex((item) => item.href === pathname)
+            return (
+              <>
+                {/* Fluid Sliding Active Indicator Pill */}
+                {activeIndex !== -1 && (
+                  <div
+                    className="sidebar-desktop-active-indicator"
+                    style={{
+                      transform: `translateY(${activeIndex * 56}px)`,
+                    }}
+                  />
+                )}
+
+                {navItems.map((item, idx) => {
+                  const active = activeIndex === idx
+                  return (
+                    <Link
+                      key={item.href}
+                      to={item.href}
+                      className={`sidebar-liquid-link relative z-10 flex flex-col items-center justify-center h-[52px] w-full ${
+                        active ? "is-active" : ""
+                      }`}
+                      style={{ borderRadius: 16 }}
+                    >
+                      <div
+                        className="transition-all duration-300"
+                        style={{
+                          color: active ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
+                          filter: active
+                            ? "drop-shadow(0 0 8px rgba(0, 122, 255, 0.8)) drop-shadow(0 0 14px rgba(94, 92, 230, 0.5))"
+                            : "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
+                          transform: active ? "scale(1.1)" : "scale(1)",
+                        }}
+                      >
+                        {item.icon}
+                      </div>
+                      <span
+                        className="transition-all duration-300"
+                        style={{
+                          fontSize: 10,
+                          fontFamily: "var(--font-body)",
+                          fontWeight: active ? 700 : 500,
+                          lineHeight: 1,
+                          letterSpacing: "-0.01em",
+                          color: active ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
+                          textShadow: active
+                            ? "0 0 10px rgba(0, 122, 255, 0.9), 0 1px 3px rgba(0, 0, 0, 0.6)"
+                            : "0 1px 3px rgba(0, 0, 0, 0.6)",
+                        }}
+                      >
+                        {item.label}
+                      </span>
+                    </Link>
+                  )
+                })}
+              </>
+            )
+          })()}
+        </div>
       </aside>
 
       {/* ======================================================== */}
       {/* 3. Mobile Bottom Nav Bar (Screens < 768px)               */}
       {/* ======================================================== */}
       <nav
-        className="md:hidden fixed bottom-2 left-2.5 right-2.5 z-50 liquid-glass-nav flex justify-around items-center px-1"
+        className="md:hidden fixed bottom-2 left-2.5 right-2.5 z-50 liquid-glass-nav flex items-center px-1"
         style={{
           borderRadius: 22,
-          paddingTop: 8,
-          paddingBottom: "max(10px, env(safe-area-inset-bottom))",
-          boxShadow: "0 12px 36px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)",
+          paddingTop: 6,
+          paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+          boxShadow: "0 12px 36px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.15)",
         }}
       >
-        {mobileBottomNavItems.map((item) => {
-          const active = pathname === item.href
-          return (
-            <Link
-              key={item.href}
-              to={item.href}
-              className={`sidebar-liquid-link flex flex-col items-center gap-0.5 px-2 py-1 ${active ? "is-active" : ""}`}
-              style={{ color: active ? "#007aff" : "#6b6b8a" }}
-            >
-              {item.icon}
-              <span style={{ fontSize: 10, fontWeight: active ? 600 : 400 }}>
-                {item.label}
-              </span>
-            </Link>
-          )
-        })}
+        {(() => {
+          const mobileIndex = mobileMenuOpen
+            ? 5
+            : mobileBottomNavItems.findIndex((item) => item.href === pathname)
 
-        {/* '전체' (전체 메뉴 토글 버튼) */}
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen((prev) => !prev)}
-          className={`sidebar-liquid-link flex flex-col items-center gap-0.5 px-2 py-1 ${mobileMenuOpen ? "is-active" : ""}`}
-          style={{ color: mobileMenuOpen ? "#007aff" : "#6b6b8a" }}
-        >
-          {menuGridIcon}
-          <span style={{ fontSize: 10, fontWeight: mobileMenuOpen ? 600 : 400 }}>
-            전체
-          </span>
-        </button>
+          return (
+            <div className="relative grid grid-cols-6 items-center w-full">
+              {/* Fluid Mobile Horizontal Sliding Active Indicator */}
+              {mobileIndex !== -1 && (
+                <div
+                  className="sidebar-mobile-active-indicator"
+                  style={{
+                    width: "16.666%",
+                    transform: `translateX(${mobileIndex * 100}%)`,
+                  }}
+                >
+                  <div
+                    className="mx-1 h-[46px] rounded-xl"
+                    style={{
+                      background: "rgba(255, 255, 255, 0.18)",
+                      border: "1px solid rgba(255, 255, 255, 0.38)",
+                      boxShadow:
+                        "0 4px 14px rgba(0,0,0,0.15), 0 0 12px rgba(0,122,255,0.28), inset 0 1px 0 rgba(255,255,255,0.4)",
+                      backdropFilter: "blur(10px)",
+                      WebkitBackdropFilter: "blur(10px)",
+                    }}
+                  />
+                </div>
+              )}
+
+              {mobileBottomNavItems.map((item, idx) => {
+                const active = mobileIndex === idx
+                return (
+                  <Link
+                    key={item.href}
+                    to={item.href}
+                    className="sidebar-liquid-link relative z-10 flex flex-col items-center justify-center h-[46px] px-1"
+                  >
+                    <div
+                      className="transition-all duration-300"
+                      style={{
+                        color: active ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
+                        filter: active
+                          ? "drop-shadow(0 0 6px rgba(0, 122, 255, 0.8))"
+                          : "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
+                        transform: active ? "scale(1.08)" : "scale(1)",
+                      }}
+                    >
+                      {item.icon}
+                    </div>
+                    <span
+                      className="transition-all duration-300"
+                      style={{
+                        fontSize: 10,
+                        fontWeight: active ? 700 : 500,
+                        color: active ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
+                        textShadow: active
+                          ? "0 0 8px rgba(0, 122, 255, 0.9), 0 1px 2px rgba(0, 0, 0, 0.6)"
+                          : "0 1px 2px rgba(0, 0, 0, 0.6)",
+                      }}
+                    >
+                      {item.label}
+                    </span>
+                  </Link>
+                )
+              })}
+
+              {/* '전체' (전체 메뉴 토글 버튼) */}
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((prev) => !prev)}
+                className="sidebar-liquid-link relative z-10 flex flex-col items-center justify-center h-[46px] px-1"
+              >
+                <div
+                  className="transition-all duration-300"
+                  style={{
+                    color: mobileMenuOpen ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
+                    filter: mobileMenuOpen
+                      ? "drop-shadow(0 0 6px rgba(0, 122, 255, 0.8))"
+                      : "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
+                    transform: mobileMenuOpen ? "scale(1.08)" : "scale(1)",
+                  }}
+                >
+                  {menuGridIcon}
+                </div>
+                <span
+                  className="transition-all duration-300"
+                  style={{
+                    fontSize: 10,
+                    fontWeight: mobileMenuOpen ? 700 : 500,
+                    color: mobileMenuOpen ? "#ffffff" : "rgba(255, 255, 255, 0.75)",
+                    textShadow: mobileMenuOpen
+                      ? "0 0 8px rgba(0, 122, 255, 0.9), 0 1px 2px rgba(0, 0, 0, 0.6)"
+                      : "0 1px 2px rgba(0, 0, 0, 0.6)",
+                  }}
+                >
+                  전체
+                </span>
+              </button>
+            </div>
+          )
+        })()}
       </nav>
     </>
   )

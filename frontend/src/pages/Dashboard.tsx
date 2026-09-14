@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
+import SubpageBackground from "../components/SubpageBackground"
 import MapPlaceholder from "../components/MapPlaceholder"
-import { kpiData as defaultKpiData, incidents as defaultIncidents } from "../data/mock"
 import { fetchDashboardData, fetchFavoriteRoutes, FavoriteRouteItem } from "../services/api"
 
 export default function Dashboard() {
@@ -11,8 +11,8 @@ export default function Dashboard() {
   const [selectedIncidentId, setSelectedIncidentId] = useState<number | string | null>(null)
   const [favoriteRoutes, setFavoriteRoutes] = useState<FavoriteRouteItem[]>([])
   const [data, setData] = useState({
-    kpi: defaultKpiData,
-    incidents: defaultIncidents,
+    kpi: { avgSpeed: 0, avgSpeedDelta: 0, congested: 0, incidents: 0 },
+    incidents: [] as Array<any>,
     roadSpeeds: [] as Array<{ road: string; speed: number; avg: number; level: string }>,
     latestAt: null as string | null,
     isFromDb: false,
@@ -64,7 +64,7 @@ export default function Dashboard() {
       label: "현재 돌발상황",
       value: `${data.kpi.incidents}`,
       unit: "건",
-      delta: data.isFromDb ? "실측" : "+2",
+      delta: "실측",
       color: "#ff3b30",
       icon: (
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -88,7 +88,7 @@ export default function Dashboard() {
       label: "혼잡 도로 구간",
       value: `${data.kpi.congested}`,
       unit: "구간",
-      delta: data.isFromDb ? "실측" : "+3",
+      delta: "실측",
       color: "#ff3b30",
       icon: (
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -101,66 +101,48 @@ export default function Dashboard() {
         </svg>
       ),
     },
-    {
-      label: "AI 예측 혼잡",
-      value: `${data.kpi.aiPredicted}`,
-      unit: "구간",
-      delta: "+1시간",
-      color: "#5e5ce6",
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
-          <path
-            d="M6 13l2-4 3 3 3-6"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      ),
-    },
   ]
 
   return (
-    <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
+    <div className="min-h-full flex relative" style={{ minHeight: "100vh" }}>
+      <SubpageBackground />
       <Sidebar />
 
-      <main className="flex-1 md:pl-20 pb-24 md:pb-0 pt-[max(62px,calc(env(safe-area-inset-top)+54px))] md:pt-0">
+      <main className="relative z-10 flex-1 md:pl-24 pb-24 md:pb-0 pt-[max(62px,calc(env(safe-area-inset-top)+54px))] md:pt-0">
         {/* Header */}
-        <div className="px-4 md:px-8 pt-4 md:pt-6 pb-4">
-          <div className="flex items-center justify-between mb-4">
+        <div className="px-4 md:px-8 pt-4 md:pt-6 pb-2 animate-slide-up">
+          <div className="flex items-center justify-between mb-2">
             <div>
               <h1
-                className="text-[#1a1a2e] leading-tight"
+                className="text-white leading-tight"
                 style={{
                   fontFamily: "var(--font-display)",
                   fontWeight: 700,
                   fontSize: 26,
                   letterSpacing: "-0.02em",
+                  textShadow: "0 2px 12px rgba(0,0,0,0.35)",
                 }}
               >
                 교통 대시보드
               </h1>
               <div className="flex items-center gap-2 mt-1">
-                <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                  style={{
-                    background: data.isFromDb
-                      ? "rgba(52,199,89,0.12)"
-                      : "rgba(94,92,230,0.12)",
-                    color: data.isFromDb ? "#248a3d" : "#5e5ce6",
-                    fontFamily: "var(--font-body)",
-                  }}
-                >
+                {data.isFromDb && (
                   <span
-                    className={`w-1.5 h-1.5 rounded-full ${data.isFromDb ? "bg-[#34c759]" : "bg-[#5e5ce6]"}`}
-                  />
-                  {data.isFromDb ? "DB 실시간 연동" : "예시 데이터"}
-                </span>
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium"
+                    style={{
+                      background: "rgba(52,199,89,0.2)",
+                      color: "#34c759",
+                      fontFamily: "var(--font-body)",
+                      border: "1px solid rgba(52,199,89,0.3)",
+                    }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#34c759] animate-pulse" />
+                    DB 실시간 연동
+                  </span>
+                )}
                 {data.latestAt && (
                   <span
-                    className="text-xs text-[#6b6b8a]"
+                    className="text-xs text-white/70"
                     style={{ fontFamily: "var(--font-mono)" }}
                   >
                     수집: {new Date(data.latestAt).toLocaleTimeString("ko-KR", {
@@ -173,7 +155,7 @@ export default function Dashboard() {
             </div>
             <div className="text-right hidden sm:block">
               <p
-                className="text-xs text-[#6b6b8a]"
+                className="text-xs text-white/70"
                 style={{ fontFamily: "var(--font-mono)" }}
               >
                 {new Date().toLocaleDateString("ko-KR", {
@@ -183,7 +165,7 @@ export default function Dashboard() {
                 })}
               </p>
               <p
-                className="text-sm font-semibold text-[#1a1a2e]"
+                className="text-sm font-semibold text-white"
                 style={{ fontFamily: "var(--font-mono)" }}
               >
                 {new Date().toLocaleTimeString("ko-KR", {
@@ -193,64 +175,10 @@ export default function Dashboard() {
               </p>
             </div>
           </div>
-
-          {/* KPIs */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            {kpis.map((k) => (
-              <div
-                key={k.label}
-                className="glass p-4"
-                style={{ borderRadius: 20 }}
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div
-                    className="w-8 h-8 flex items-center justify-center"
-                    style={{
-                      background: `${k.color}18`,
-                      borderRadius: 10,
-                      color: k.color,
-                    }}
-                  >
-                    {k.icon}
-                  </div>
-                  <span
-                    className="text-xs px-2 py-0.5 rounded-full"
-                    style={{
-                      background: `${k.color}15`,
-                      color: k.color,
-                      fontFamily: "var(--font-mono)",
-                    }}
-                  >
-                    {k.delta}
-                  </span>
-                </div>
-                <div
-                  className="text-[#1a1a2e]"
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 700,
-                    fontSize: 28,
-                    letterSpacing: "-0.02em",
-                  }}
-                >
-                  {k.value}
-                  <span className="text-sm font-normal text-[#6b6b8a] ml-1">
-                    {k.unit}
-                  </span>
-                </div>
-                <p
-                  className="text-xs text-[#6b6b8a] mt-0.5"
-                  style={{ fontFamily: "var(--font-body)" }}
-                >
-                  {k.label}
-                </p>
-              </div>
-            ))}
-          </div>
         </div>
 
         {/* Map + Side panel */}
-        <div className="px-4 md:px-8 flex flex-col lg:flex-row gap-4">
+        <div className="px-4 md:px-8 flex flex-col lg:flex-row gap-4 mb-4 animate-slide-up-delay-1">
           {/* Map */}
           <div
             className="glass flex-1 min-w-0 flex flex-col"
@@ -315,7 +243,14 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
-            <MapPlaceholder height={420} searchQuery={search} incidents={data.incidents} roadSpeeds={data.roadSpeeds} selectedIncidentId={selectedIncidentId} onSelectIncident={(inc) => setSelectedIncidentId(inc.id)} />
+            <MapPlaceholder
+              height={420}
+              searchQuery={search}
+              incidents={data.incidents}
+              roadSpeeds={data.roadSpeeds}
+              selectedIncidentId={selectedIncidentId}
+              onSelectIncident={(inc) => setSelectedIncidentId(inc.id)}
+            />
           </div>
 
           {/* Right panel */}
@@ -352,7 +287,7 @@ export default function Dashboard() {
                   return (
                     <div
                       key={r.id}
-                      className="flex items-center justify-between py-2.5 cursor-pointer hover:bg-white/40 px-2 -mx-2 rounded-xl transition-colors"
+                      className="item-glide flex items-center justify-between py-2.5 cursor-pointer hover:bg-white/40 px-2 -mx-2 rounded-xl transition-colors"
                       onClick={() =>
                         navigate(
                           `/route?origin=${encodeURIComponent(r.origin)}&dest=${encodeURIComponent(r.destination)}`
@@ -445,47 +380,53 @@ export default function Dashboard() {
                 </button>
               </div>
               <div className="flex flex-col gap-1.5">
-                {data.incidents.slice(0, 4).map((inc) => {
-                  const colors: Record<string, string> = {
-                    high: "#ff3b30",
-                    medium: "#ff9500",
-                    low: "#34c759",
-                  }
-                  const isSelected = selectedIncidentId != null && String(selectedIncidentId) === String(inc.id)
-                  return (
-                    <div
-                      key={inc.id}
-                      onClick={() => setSelectedIncidentId(isSelected ? null : inc.id)}
-                      className={`flex items-start justify-between p-2 rounded-xl cursor-pointer transition-all ${isSelected ? "bg-white shadow-sm border border-[#007aff]/40" : "hover:bg-white/50 border border-transparent"}`}
-                      title="클릭 시 지도에서 해당 위치로 이동합니다"
-                    >
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <div
-                          className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                          style={{ background: colors[inc.impact] }}
-                        />
-                        <div className="min-w-0">
-                          <p
-                            className="text-xs font-semibold text-[#1a1a2e] truncate"
-                            style={{ fontFamily: "var(--font-body)" }}
-                          >
-                            {inc.type === "공사" ? "🚧 " : inc.type === "사고" ? "🚨 " : "⚠️ "}
-                            {inc.type} · {inc.road}
-                          </p>
-                          <p
-                            className="text-[11px] text-[#6b6b8a] truncate"
-                            style={{ fontFamily: "var(--font-body)" }}
-                          >
-                            {inc.startTime} 발생 · {inc.location}
-                          </p>
+                {data.incidents.length === 0 ? (
+                  <div className="text-xs text-[#6b6b8a] py-3 text-center">
+                    현재 등록된 돌발 상황이 없습니다.
+                  </div>
+                ) : (
+                  data.incidents.slice(0, 4).map((inc) => {
+                    const colors: Record<string, string> = {
+                      high: "#ff3b30",
+                      medium: "#ff9500",
+                      low: "#34c759",
+                    }
+                    const isSelected = selectedIncidentId != null && String(selectedIncidentId) === String(inc.id)
+                    return (
+                      <div
+                        key={inc.id}
+                        onClick={() => setSelectedIncidentId(isSelected ? null : inc.id)}
+                        className={`item-glide flex items-start justify-between p-2 rounded-xl cursor-pointer transition-all ${isSelected ? "bg-white shadow-sm border border-[#007aff]/40" : "hover:bg-white/50 border border-transparent"}`}
+                        title="클릭 시 지도에서 해당 위치로 이동합니다"
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <div
+                            className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                            style={{ background: colors[inc.impact] || "#ff9500" }}
+                          />
+                          <div className="min-w-0">
+                            <p
+                              className="text-xs font-semibold text-[#1a1a2e] truncate"
+                              style={{ fontFamily: "var(--font-body)" }}
+                            >
+                              {inc.type === "공사" ? "🚧 " : inc.type === "사고" ? "🚨 " : "⚠️ "}
+                              {inc.type} · {inc.road}
+                            </p>
+                            <p
+                              className="text-[11px] text-[#6b6b8a] truncate"
+                              style={{ fontFamily: "var(--font-body)" }}
+                            >
+                              {inc.startTime} 발생 · {inc.location}
+                            </p>
+                          </div>
                         </div>
+                        <span className="text-[10px] text-[#007aff] whitespace-nowrap ml-1 font-medium self-center opacity-80">
+                          {isSelected ? "위치표시 중" : "지도 이동 →"}
+                        </span>
                       </div>
-                      <span className="text-[10px] text-[#007aff] whitespace-nowrap ml-1 font-medium self-center opacity-80">
-                        {isSelected ? "위치표시 중" : "지도 이동 →"}
-                      </span>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                )}
               </div>
             </div>
 
@@ -537,7 +478,7 @@ export default function Dashboard() {
                   lineHeight: 1.5,
                 }}
               >
-                +1시간 후 강변북로 혼잡 심화 예측. 올림픽대로 우회 권장.
+                수집된 실시간 속도와 돌발상황을 토대로 혼잡도를 예측합니다.
               </p>
               <button
                 onClick={() => navigate("/prediction")}
@@ -547,6 +488,64 @@ export default function Dashboard() {
                 자세히 보기 →
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Compact Real-Time KPI Cards (Moved to bottom, 3 items) */}
+        <div className="px-4 md:px-8 pb-8 animate-slide-up-delay-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {kpis.map((k) => (
+              <div
+                key={k.label}
+                className="glass px-4 py-3 cursor-default"
+                style={{ borderRadius: 18 }}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-7 h-7 flex items-center justify-center rounded-lg"
+                      style={{
+                        background: `${k.color}18`,
+                        color: k.color,
+                      }}
+                    >
+                      {k.icon}
+                    </div>
+                    <span
+                      className="text-xs text-[#6b6b8a]"
+                      style={{ fontFamily: "var(--font-body)" }}
+                    >
+                      {k.label}
+                    </span>
+                  </div>
+                  <span
+                    className="text-[11px] px-2 py-0.5 rounded-full font-medium"
+                    style={{
+                      background: `${k.color}15`,
+                      color: k.color,
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
+                    {k.delta}
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1 pl-1">
+                  <span
+                    className="text-[#1a1a2e] font-bold"
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontSize: 22,
+                      letterSpacing: "-0.02em",
+                    }}
+                  >
+                    {k.value}
+                  </span>
+                  <span className="text-xs text-[#6b6b8a] font-normal">
+                    {k.unit}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </main>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
+import SubpageBackground from "../components/SubpageBackground"
 import MapPlaceholder from "../components/MapPlaceholder"
 import PlaceSearchInput from "../components/PlaceSearchInput"
 import { getLiveSeoulRoutes, RouteResult } from "../services/routing"
@@ -201,44 +202,49 @@ export default function Route() {
   const selectedRoute = routeList.find((r) => r.id === selected) || routeList[0]
 
   return (
-    <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
+    <div className="min-h-full flex relative" style={{ minHeight: "100vh" }}>
+      <SubpageBackground />
       <Sidebar />
-      <main className="flex-1 md:pl-20 pb-24 md:pb-0 pt-[max(62px,calc(env(safe-area-inset-top)+54px))] md:pt-0">
+      <main className="relative z-10 flex-1 md:pl-24 pb-24 md:pb-0 pt-[max(62px,calc(env(safe-area-inset-top)+54px))] md:pt-0">
         <div className="px-4 md:px-8 pt-4 md:pt-6 pb-4">
-          <div className="flex items-center justify-between mb-1">
-            <h1
-              className="text-[#1a1a2e]"
-              style={{
-                fontFamily: "var(--font-display)",
-                fontWeight: 700,
-                fontSize: 26,
-                letterSpacing: "-0.02em",
-              }}
+          <div className="animate-slide-up">
+            <div className="flex items-center justify-between mb-1">
+              <h1
+                className="text-white"
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 700,
+                  fontSize: 26,
+                  letterSpacing: "-0.02em",
+                  textShadow: "0 2px 12px rgba(0,0,0,0.35)",
+                }}
+              >
+                서울 전역 도로망 경로 분석
+              </h1>
+              <span
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+                style={{
+                  background: "rgba(0,122,255,0.2)",
+                  color: "#60a5fa",
+                  border: "1px solid rgba(96,165,250,0.3)",
+                  fontFamily: "var(--font-body)",
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#60a5fa] pulse-dot" />
+                베스트 학습 모델 경로 추천
+              </span>
+            </div>
+            <p
+              className="text-white/70 text-sm mb-4"
+              style={{ fontFamily: "var(--font-body)" }}
             >
-              서울 전역 도로망 경로 분석
-            </h1>
-            <span
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-              style={{
-                background: "rgba(0,122,255,0.1)",
-                color: "#007aff",
-                fontFamily: "var(--font-body)",
-              }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-[#007aff] pulse-dot" />
-              베스트 학습 모델 경로 추천
-            </span>
+              실제 도로 경로 · 베스트 모델 교통량 예측으로 추천 · 소요시간은 OSRM 추정
+              {departureAt && ` · 출발 ${new Date(departureAt).toLocaleString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`}
+            </p>
           </div>
-          <p
-            className="text-[#6b6b8a] text-sm mb-4"
-            style={{ fontFamily: "var(--font-body)" }}
-          >
-            실제 도로 경로 · 베스트 모델 교통량 예측으로 추천 · 소요시간은 OSRM 추정
-            {departureAt && ` · 출발 ${new Date(departureAt).toLocaleString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`}
-          </p>
 
           {/* Search Box */}
-          <div className="glass p-4 mb-4" style={{ borderRadius: 20 }}>
+          <div className="glass p-4 mb-4 animate-slide-up-delay-1" style={{ borderRadius: 20 }}>
             <div className="flex flex-col sm:flex-row gap-2 items-center">
               <PlaceSearchInput
                 label="출발지"
@@ -372,7 +378,7 @@ export default function Route() {
           </div>
         </div>
 
-        <div className="px-4 md:px-8 flex flex-col lg:flex-row gap-4">
+        <div className="px-4 md:px-8 flex flex-col lg:flex-row gap-4 animate-slide-up-delay-2">
           {/* Route list */}
           <div className="lg:w-84 flex flex-col gap-3">
             {routeList.map((r) => {
@@ -382,7 +388,7 @@ export default function Route() {
                 <div
                   key={r.id}
                   onClick={() => setSelected(r.id)}
-                  className="glass cursor-pointer transition-all hover:scale-[1.01]"
+                  className="glass item-glide cursor-pointer"
                   style={{
                     borderRadius: 20,
                     border: isSelected
@@ -511,7 +517,7 @@ export default function Route() {
             </div>
 
             {(parkingLots.length > 0 || parkingMessage) && (
-              <section className="glass p-5 transition-all" style={{ borderRadius: 20 }} aria-label="도착지 주변 주차장">
+              <section className="glass p-5" style={{ borderRadius: 20 }} aria-label="도착지 주변 주차장">
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div className="flex items-center gap-2">
                     <span className="text-base">🅿️</span>

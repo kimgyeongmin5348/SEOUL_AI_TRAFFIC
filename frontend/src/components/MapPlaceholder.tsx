@@ -3,7 +3,7 @@ import precisionRoadsData from "../data/seoul_roads.json"
 import seoulBoundaryData from "../data/seoulBoundary.json"
 import { loadKakaoMaps } from "../services/kakaoMaps"
 import { resolvePlace } from "../services/placeSearch"
-import type { ParkingLotItem } from "../services/api"
+import { fetchNearbyParking, type ParkingLotItem } from "../services/api"
 
 export interface IncidentItem {
   id: number | string
@@ -87,7 +87,9 @@ export default function MapPlaceholder({
   const [showTrafficLines, setShowTrafficLines] = useState(true)
   const [showIncidents, setShowIncidents] = useState(true)
   const [showParking, setShowParking] = useState(true)
+  const [internalParkingLots, setInternalParkingLots] = useState<ParkingLotItem[]>([])
   const [locationStatus, setLocationStatus] = useState("현재 위치 확인 중…")
+  const effectiveParkingLots = parkingLots && parkingLots.length > 0 ? parkingLots : internalParkingLots
   const viewHasContext = Boolean(searchQuery || routeCoordinates?.length || selectedIncidentId != null)
 
   useEffect(() => {
@@ -357,15 +359,27 @@ export default function MapPlaceholder({
     }
   }, [mapReady, selectedIncidentId, incidents])
 
+  // 주차장 토글 시 데이터가 없으면 현재 중심 좌표 기준 주차장 조회
+  useEffect(() => {
+    if (showParking && (!parkingLots || parkingLots.length === 0) && internalParkingLots.length === 0 && mapReady) {
+      const center = mapRef.current?.getCenter()
+      const lat = center ? center.getLat() : 37.5665
+      const lng = center ? center.getLng() : 126.9780
+      fetchNearbyParking(lat, lng, 3500, 15)
+        .then((lots) => setInternalParkingLots(lots))
+        .catch((err) => console.warn("Failed to fetch nearby parking:", err))
+    }
+  }, [showParking, parkingLots, internalParkingLots.length, mapReady])
+
   // 주차장 마커 렌더링
   useEffect(() => {
     const map = mapRef.current
     parkingOverlaysRef.current.forEach((o) => o.setMap(null))
     parkingOverlaysRef.current = []
 
-    if (!mapReady || !map || !showParking || !parkingLots.length) return
+    if (!mapReady || !map || !showParking || !effectiveParkingLots.length) return
 
-    parkingLots.forEach((lot) => {
+    effectiveParkingLots.forEach((lot) => {
       const position = new kakao.maps.LatLng(lot.latitude, lot.longitude)
       const hasLive = lot.realtime_status === "AVAILABLE" && lot.available_spaces !== null
       const isSelected = selectedParkingLotId === lot.parking_code
@@ -401,17 +415,17 @@ export default function MapPlaceholder({
       })
       parkingOverlaysRef.current.push(overlay)
     })
-  }, [mapReady, showParking, parkingLots, selectedParkingLotId, onSelectParkingLot])
+  }, [mapReady, showParking, effectiveParkingLots, selectedParkingLotId, onSelectParkingLot])
 
   // 선택된 주차장으로 부드럽게 이동
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map || !selectedParkingLotId) return
-    const target = parkingLots.find((p) => p.parking_code === selectedParkingLotId)
+    const target = effectiveParkingLots.find((p) => p.parking_code === selectedParkingLotId)
     if (!target) return
     map.panTo(new kakao.maps.LatLng(target.latitude, target.longitude))
     map.setLevel(4)
-  }, [mapReady, selectedParkingLotId, parkingLots])
+  }, [mapReady, selectedParkingLotId, effectiveParkingLots])
 
   useEffect(() => {
     const map = mapRef.current
@@ -457,56 +471,140 @@ export default function MapPlaceholder({
   }
 
   return (
-    <div className="relative overflow-hidden w-full min-w-0 flex-1" style={{ minHeight: height, isolation: "isolate" }}>
-      <div ref={containerRef} className="absolute inset-0" style={{ zIndex: 1 }} />
-      {mapError && (
-        <div role="alert" className="absolute inset-0 z-20 flex items-center justify-center bg-white/90 px-6 text-center text-sm text-red-600">
-          {mapError}<br />카카오 JavaScript 키와 등록 도메인을 확인해 주세요.
-        </div>
-      )}
-      <button type="button" className="glass absolute top-3 left-3 z-10 px-3 py-1.5 text-xs font-semibold text-[#007aff] shadow-sm" style={{ borderRadius: 12 }} onClick={handleReset}>
-        ◎ 서울 전체 보기
-      </button>
-      <div className="absolute left-3 right-14 top-14 z-10 flex items-start gap-2 pointer-events-none">
-        <button type="button" onClick={focusCurrentLocation} className="glass shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-[#007aff] pointer-events-auto">◎ 내 위치</button>
-        <span role="status" className="glass px-2 py-1.5 rounded-lg text-[11px] text-[#4a4a68] max-w-72">{locationStatus}</span>
-      </div>
-      <div className="absolute top-3 right-24 z-10 flex flex-col items-end gap-2">
-        <button type="button" aria-pressed={showTrafficLines} onClick={() => setShowTrafficLines((value) => !value)} className="glass interactive-control px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showTrafficLines ? "#007aff" : "#6b6b8a" }}>
-          <span className={`switch-track ${showTrafficLines ? "is-on" : ""}`}><span className="switch-thumb" /></span>
-          <span className="hidden sm:inline">실시간 </span>혼잡도 {showTrafficLines ? "ON" : "OFF"}
-        </button>
-        <button type="button" aria-pressed={showIncidents} onClick={() => setShowIncidents((value) => !value)} className="glass interactive-control px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showIncidents ? "#ff3b30" : "#6b6b8a" }}>
-          <span className={`switch-track incident-switch ${showIncidents ? "is-on" : ""}`}><span className="switch-thumb" /></span>
-          돌발상황 {showIncidents ? "ON" : "OFF"}
-        </button>
-        {parkingLots.length > 0 && (
-          <button type="button" aria-pressed={showParking} onClick={() => setShowParking((value) => !value)} className="glass interactive-control px-3 py-1.5 text-xs font-semibold rounded-xl shadow-sm flex items-center gap-1.5" style={{ color: showParking ? "#007aff" : "#6b6b8a" }}>
-            <span className={`switch-track ${showParking ? "is-on" : ""}`}><span className="switch-thumb" /></span>
-            🅿️ 주차장 {showParking ? "ON" : "OFF"}
+    <div className="flex flex-col w-full min-w-0 flex-1">
+      {/* 지도 상단 컨트롤 바 (지도 밖 상단에 일렬 배치) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-white/60 border-b border-black/[0.06] backdrop-blur-md">
+        {/* 좌측: 서울 전체 / 내 위치 */}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={handleReset}
+            className="px-2.5 py-1 text-xs font-semibold rounded-xl bg-white/80 hover:bg-white text-[#007aff] border border-black/[0.08] shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+            title="서울 전체 보기"
+          >
+            <span>◎</span>
+            <span>서울 전체</span>
           </button>
-        )}
+          <button
+            type="button"
+            onClick={focusCurrentLocation}
+            className="px-2.5 py-1 text-xs font-semibold rounded-xl bg-white/80 hover:bg-white text-[#007aff] border border-black/[0.08] shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+            title="내 위치로 이동"
+          >
+            <span>📍</span>
+            <span>내 위치</span>
+          </button>
+          {locationStatus && (
+            <span className="hidden xl:inline-block text-[11px] text-[#6b6b8a] truncate max-w-[160px] pl-1">
+              {locationStatus}
+            </span>
+          )}
+        </div>
+
+        {/* 우측: 돌발상황, 실시간혼잡도, 주차장표시 토글 일렬 나열 */}
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          {/* 1. 돌발상황 토글 */}
+          <button
+            type="button"
+            aria-pressed={showIncidents}
+            onClick={() => setShowIncidents((value) => !value)}
+            className={`interactive-control px-2.5 sm:px-3 py-1 text-xs font-semibold rounded-xl border shadow-xs flex items-center gap-1.5 cursor-pointer transition-all ${
+              showIncidents
+                ? "bg-[#ff3b30]/10 border-[#ff3b30]/30 text-[#ff3b30]"
+                : "bg-white/70 border-black/[0.08] text-[#6b6b8a]"
+            }`}
+          >
+            <span className={`switch-track incident-switch ${showIncidents ? "is-on" : ""}`}>
+              <span className="switch-thumb" />
+            </span>
+            <span>🚨 돌발상황 {showIncidents ? "ON" : "OFF"}</span>
+          </button>
+
+          {/* 2. 실시간혼잡도 토글 */}
+          <button
+            type="button"
+            aria-pressed={showTrafficLines}
+            onClick={() => setShowTrafficLines((value) => !value)}
+            className={`interactive-control px-2.5 sm:px-3 py-1 text-xs font-semibold rounded-xl border shadow-xs flex items-center gap-1.5 cursor-pointer transition-all ${
+              showTrafficLines
+                ? "bg-[#007aff]/10 border-[#007aff]/30 text-[#007aff]"
+                : "bg-white/70 border-black/[0.08] text-[#6b6b8a]"
+            }`}
+          >
+            <span className={`switch-track ${showTrafficLines ? "is-on" : ""}`}>
+              <span className="switch-thumb" />
+            </span>
+            <span>🚦 실시간혼잡도 {showTrafficLines ? "ON" : "OFF"}</span>
+          </button>
+
+          {/* 3. 주차장표시 토글 */}
+          <button
+            type="button"
+            aria-pressed={showParking}
+            onClick={() => setShowParking((value) => !value)}
+            className={`interactive-control px-2.5 sm:px-3 py-1 text-xs font-semibold rounded-xl border shadow-xs flex items-center gap-1.5 cursor-pointer transition-all ${
+              showParking
+                ? "bg-[#007aff]/10 border-[#007aff]/30 text-[#007aff]"
+                : "bg-white/70 border-black/[0.08] text-[#6b6b8a]"
+            }`}
+          >
+            <span className={`switch-track ${showParking ? "is-on" : ""}`}>
+              <span className="switch-thumb" />
+            </span>
+            <span>🅿️ 주차장표시 {showParking ? "ON" : "OFF"}</span>
+          </button>
+        </div>
       </div>
-      <div className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm" style={{ borderRadius: 12 }}>
-        {[
-          { color: "#34c759", label: "원활 (≥50km/h)" },
-          { color: "#ff9500", label: "서행 (25~49km/h)" },
-          { color: "#ff3b30", label: "혼잡 (<25km/h)" },
-        ].map((item) => (
-          <div key={item.label} className="flex items-center gap-1.5">
-            <div className="w-3 h-1.5 rounded-full" style={{ background: item.color }} />
-            <span className="text-[11px] font-semibold text-[#4a4a68]">{item.label}</span>
+
+      {/* 지도 캔버스 영역 (토글 겹침 없음) */}
+      <div
+        className="relative overflow-hidden w-full min-w-0 flex-1"
+        style={{ minHeight: height, isolation: "isolate" }}
+      >
+        <div ref={containerRef} className="absolute inset-0" style={{ zIndex: 1 }} />
+        {mapError && (
+          <div
+            role="alert"
+            className="absolute inset-0 z-20 flex items-center justify-center bg-white/90 px-6 text-center text-sm text-red-600"
+          >
+            {mapError}
+            <br />
+            카카오 JavaScript 키와 등록 도메인을 확인해 주세요.
           </div>
-        ))}
-        <div className="w-px h-3 bg-black/10 mx-1" />
-        <span className="text-[11px] text-[#ff3b30] font-semibold">🚨 사고</span>
-        <span className="text-[11px] text-[#ff9500] font-semibold">🚧 공사</span>
-        {parkingLots.length > 0 && (
-          <>
-            <div className="w-px h-3 bg-black/10 mx-1" />
-            <span className="text-[11px] text-[#007aff] font-semibold">🅿️ 주차장 ({parkingLots.length}곳)</span>
-          </>
         )}
+
+        {/* 하단 범례 캡슐 */}
+        <div
+          className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm"
+          style={{ borderRadius: 12 }}
+        >
+          {[
+            { color: "#34c759", label: "원활 (≥50km/h)" },
+            { color: "#ff9500", label: "서행 (25~49km/h)" },
+            { color: "#ff3b30", label: "혼잡 (<25km/h)" },
+          ].map((item) => (
+            <div key={item.label} className="flex items-center gap-1.5">
+              <div
+                className="w-3 h-1.5 rounded-full"
+                style={{ background: item.color }}
+              />
+              <span className="text-[11px] font-semibold text-[#4a4a68]">
+                {item.label}
+              </span>
+            </div>
+          ))}
+          <div className="w-px h-3 bg-black/10 mx-1" />
+          <span className="text-[11px] text-[#ff3b30] font-semibold">🚨 사고</span>
+          <span className="text-[11px] text-[#ff9500] font-semibold">🚧 공사</span>
+          {showParking && effectiveParkingLots.length > 0 && (
+            <>
+              <div className="w-px h-3 bg-black/10 mx-1" />
+              <span className="text-[11px] text-[#007aff] font-semibold">
+                🅿️ 주차장 ({effectiveParkingLots.length}곳)
+              </span>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
