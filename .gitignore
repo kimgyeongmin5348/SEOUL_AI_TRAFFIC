@@ -221,6 +221,7 @@ ml/artifacts/*
 # Generated database exports and training datasets
 data/raw/*.csv
 data/processed/*.csv
+data/external/raw_road_segments.csv
 
 # PyPI configuration file
 .pypirc

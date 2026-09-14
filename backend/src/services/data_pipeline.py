@@ -127,6 +127,23 @@ class DataPipelineService:
             exported_files["traffic_spots"] = spots_path
             logger.info(f"    Exported {len(df_spots)} rows -> {spots_path.name}")
 
+            road_sql = text("""
+                SELECT link_id, road_name, start_node_name, end_node_name, length_m, region_code
+                FROM road_segments
+            """)
+            road_path = self.external_dir / "raw_road_segments.csv"
+            pd.read_sql(road_sql, conn).to_csv(road_path, index=False, encoding="utf-8-sig")
+            exported_files["road_segments"] = road_path
+
+            incident_sql = text("""
+                SELECT incident_id, link_id, occurred_at, expected_clear_at,
+                       incident_type, incident_detail_type, description
+                FROM incidents
+            """)
+            incident_path = self.raw_dir / "raw_incidents.csv"
+            pd.read_sql(incident_sql, conn).to_csv(incident_path, index=False, encoding="utf-8-sig")
+            exported_files["incidents"] = incident_path
+
         logger.info(">>> Raw data export completed successfully.")
         return exported_files
 
@@ -323,3 +340,110 @@ class DataPipelineService:
         logger.info(f"  [Output] Saved feature metadata: {meta_json_path}")
 
         return out_csv
+
+    def build_link_training_dataset(self) -> Path:
+        """Build a link-level speed/travel-time dataset without future features."""
+        required = [
+            self.raw_dir / "raw_traffic_speed.csv",
+            self.raw_dir / "raw_weather.csv",
+            self.raw_dir / "raw_incidents.csv",
+            self.external_dir / "raw_road_segments.csv",
+        ]
+        if not all(path.exists() for path in required):
+            self.export_raw_data()
+
+        speed = pd.read_csv(required[0])
+        weather = pd.read_csv(required[1])
+        incidents = pd.read_csv(required[2])
+        roads = pd.read_csv(required[3])
+        speed["datetime"] = pd.to_datetime(speed["measured_at"]).dt.floor("h")
+        speed = speed.groupby(["link_id", "datetime"], as_index=False).agg(
+            speed_kmh=("speed_kmh", "mean"), travel_time_sec=("travel_time_sec", "mean")
+        )
+        speed = speed.merge(roads, on="link_id", how="left")
+        speed = speed.sort_values(["link_id", "datetime"])
+        grouped = speed.groupby("link_id", sort=False)
+        speed["speed_lag_1h"] = grouped["speed_kmh"].shift(1)
+        speed["travel_time_lag_1h"] = grouped["travel_time_sec"].shift(1)
+        speed["target_speed_kmh"] = grouped["speed_kmh"].shift(-1)
+        speed["target_travel_time_sec"] = grouped["travel_time_sec"].shift(-1)
+        speed["target_datetime"] = grouped["datetime"].shift(-1)
+        speed["consecutive_next_hour"] = (
+            speed["target_datetime"] - speed["datetime"] == pd.Timedelta(hours=1)
+        ).astype(int)
+
+        weather["datetime"] = pd.to_datetime(weather["observed_at"]).dt.floor("h")
+        weather = weather[weather["weather_station_id"].astype(str) == "108"]
+        weather = weather.groupby("datetime", as_index=False).agg(
+            temperature_c=("temperature_c", "mean"), rainfall_mm=("rainfall_mm", "max"),
+            humidity_pct=("humidity_pct", "mean"), wind_speed_ms=("wind_speed_ms", "mean"),
+            pressure_hpa=("pressure_hpa", "mean"),
+        ).sort_values("datetime")
+        weather["rainfall_mm"] = weather["rainfall_mm"].fillna(0.0)
+        for column in ["temperature_c", "humidity_pct", "wind_speed_ms", "pressure_hpa"]:
+            weather[column] = weather[column].ffill()
+        weather["weather_source_datetime"] = weather["datetime"]
+        weather["weather_source_datetime"] = weather["weather_source_datetime"].ffill()
+        speed = speed.merge(weather, on="datetime", how="left")
+        speed["weather_available"] = speed["temperature_c"].notna().astype(int)
+        speed["weather_age_hours"] = (
+            (speed["datetime"] - speed["weather_source_datetime"]).dt.total_seconds() / 3600
+        )
+
+        incidents["occurred_at"] = pd.to_datetime(incidents["occurred_at"])
+        incidents["expected_clear_at"] = pd.to_datetime(incidents["expected_clear_at"])
+        incident_rows = []
+        for link_id, group in incidents.groupby("link_id", dropna=True):
+            for _, row in group.iterrows():
+                active = speed[(speed["link_id"] == link_id) & (speed["datetime"] >= row["occurred_at"])]
+                if pd.notna(row["expected_clear_at"]):
+                    active = active[active["datetime"] <= row["expected_clear_at"]]
+                if not active.empty:
+                    incident_rows.append(pd.DataFrame({
+                        "link_id": link_id, "datetime": active["datetime"],
+                        "active_incident_count": 1,
+                        "accident_count": int(row["incident_type"] == "A01"),
+                        "construction_count": int(row["incident_type"] == "A04"),
+                        "control_count": int(row["incident_type"] in {"A08", "A10"}),
+                        "breakdown_count": int(row["incident_type"] == "A02"),
+                    }))
+        if incident_rows:
+            incident_features = pd.concat(incident_rows).groupby(["link_id", "datetime"], as_index=False).sum()
+            speed = speed.merge(incident_features, on=["link_id", "datetime"], how="left")
+        for column in ["active_incident_count", "accident_count", "construction_count", "control_count", "breakdown_count"]:
+            if column not in speed:
+                speed[column] = 0
+            else:
+                speed[column] = speed[column].fillna(0).astype(int)
+
+        output = self.processed_dir / "link_training_dataset.csv"
+        speed = speed[
+            (speed["consecutive_next_hour"] == 1)
+            & (speed["weather_available"] == 1)
+        ].dropna(subset=["speed_lag_1h", "target_speed_kmh"])
+        speed.to_csv(output, index=False, encoding="utf-8-sig")
+        metadata = {
+            "dataset_name": "seoul_ai_traffic_link_training_dataset",
+            "generated_at": pd.Timestamp.now().isoformat(),
+            "total_rows": int(len(speed)),
+            "total_columns": int(len(speed.columns)),
+            "entity_key": "link_id",
+            "targets": ["target_speed_kmh", "target_travel_time_sec"],
+            "feature_columns": [
+                column for column in speed.columns
+                if column not in {"target_speed_kmh", "target_travel_time_sec", "target_datetime"}
+                and column not in {"link_id", "datetime", "road_name", "start_node_name", "end_node_name"}
+                and pd.api.types.is_numeric_dtype(speed[column])
+            ],
+            "date_range": {
+                "start": str(speed["datetime"].min()),
+                "end": str(speed["datetime"].max()),
+            },
+            "links": int(speed["link_id"].nunique()),
+            "incident_rows": int((speed["active_incident_count"] > 0).sum()),
+        }
+        (self.processed_dir / "link_feature_meta.json").write_text(
+            json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        logger.info("[Output] Saved link training dataset: %s (%s rows, %s columns)", output, len(speed), len(speed.columns))
+        return output

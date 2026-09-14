@@ -1,0 +1,38 @@
+{
+  "dataset_name": "seoul_ai_traffic_link_training_dataset",
+  "generated_at": "2026-09-14T17:44:21.507317",
+  "total_rows": 78036,
+  "total_columns": 28,
+  "entity_key": "link_id",
+  "targets": [
+    "target_speed_kmh",
+    "target_travel_time_sec"
+  ],
+  "feature_columns": [
+    "speed_kmh",
+    "travel_time_sec",
+    "length_m",
+    "region_code",
+    "speed_lag_1h",
+    "travel_time_lag_1h",
+    "consecutive_next_hour",
+    "temperature_c",
+    "rainfall_mm",
+    "humidity_pct",
+    "wind_speed_ms",
+    "pressure_hpa",
+    "weather_available",
+    "weather_age_hours",
+    "active_incident_count",
+    "accident_count",
+    "construction_count",
+    "control_count",
+    "breakdown_count"
+  ],
+  "date_range": {
+    "start": "2026-09-10 14:00:00",
+    "end": "2026-09-13 21:00:00"
+  },
+  "links": 5194,
+  "incident_rows": 489
+}
