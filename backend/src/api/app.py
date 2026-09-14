@@ -336,6 +336,7 @@ PositiveSeconds = Annotated[float, Field(gt=0, le=604800, allow_inf_nan=False)]
 class RouteStep(BaseModel):
     name: str = Field(max_length=200)
     duration_sec: float = Field(ge=0, le=604800, allow_inf_nan=False)
+    distance_m: float | None = Field(default=None, ge=0, le=5_000_000, allow_inf_nan=False)
 
 
 class RouteCandidate(BaseModel):

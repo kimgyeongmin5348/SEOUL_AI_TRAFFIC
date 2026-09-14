@@ -244,8 +244,9 @@ def incident_penalty_multiplier(incident):
     return 0.2
 
 
-def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, departure_at=None):
+def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, departure_at=None, speeds_by_road=None):
     incidents_by_road = incidents_by_road or {}
+    speeds_by_road = speeds_by_road or {}
     roads = {}
     for prediction, meta in zip(predictions, metadata, strict=True):
         if not math.isfinite(float(prediction)):
@@ -261,7 +262,7 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
     results = []
     for candidate in candidates:
         total = sum(s.duration_sec for s in candidate.steps)
-        matched, penalty, incident_penalty, predicted, typical, count = 0., 0., 0., 0., 0., 0
+        matched, penalty, incident_penalty, speed_penalty, predicted, typical, count = 0., 0., 0., 0., 0., 0., 0
         matched_road_names = []
         unmatched_road_names = []
         route_incidents = {}
@@ -278,6 +279,10 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
                 for incident in candidates_for_step
                 if not coordinates or incident_matches_route(incident, coordinates)
             )
+            speed = speeds_by_road.get(road_key(step.name))
+            if speed and getattr(step, "distance_m", None) and speed["speed_kmh"] > 0:
+                observed_duration = step.distance_m / (float(speed["speed_kmh"]) / 3.6)
+                speed_penalty += max(0.0, observed_duration - step.duration_sec)
             observations = roads.get(road_key(step.name)) if step.name else None
             if not observations:
                 if step.name:
@@ -299,11 +304,12 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
         traffic_penalty_ratio = penalty / total if total else 0.
         incident_rows = list(route_incidents.values())
         results.append({"id": candidate.id, "coverage": round(coverage, 3),
-                        "score": round(candidate.duration_sec + penalty + incident_penalty, 2) if total else candidate.duration_sec,
+                        "score": round(candidate.duration_sec + penalty + incident_penalty + speed_penalty, 2) if total else candidate.duration_sec,
                         "base_duration_sec": round(candidate.duration_sec, 2),
                         "traffic_penalty_sec": round(candidate.duration_sec * traffic_penalty_ratio, 2),
                         "traffic_penalty_percent": round(traffic_penalty_ratio * 100, 1),
                         "incident_penalty_sec": round(incident_penalty, 2),
+                        "speed_penalty_sec": round(speed_penalty, 2),
                         "incident_count": len(incident_rows),
                         "incidents": [{
                             "incident_id": incident["incident_id"],
@@ -337,6 +343,24 @@ def incident_time_weight(incident, departure_at, route_duration_sec):
         return 1.0
     remaining = (incident["expected_clear_at"] - departure_at).total_seconds()
     return max(0.0, min(1.0, remaining / max(1.0, route_duration_sec)))
+
+
+def load_latest_road_speeds(db, target):
+    rows = db.execute(text("""
+        SELECT r.road_name, v.measured_at, v.speed_kmh, v.travel_time_sec
+        FROM traffic_speed_measurements v
+        JOIN road_segments r ON r.link_id = v.link_id
+        WHERE v.measured_at <= :target
+          AND v.measured_at >= :start
+          AND v.speed_kmh > 0
+        ORDER BY v.measured_at DESC
+    """), {"target": target, "start": target - timedelta(hours=3)}).mappings()
+    latest = {}
+    for row in rows:
+        key = road_key(row["road_name"]) if row.get("road_name") else ""
+        if key and key not in latest:
+            latest[key] = dict(row)
+    return latest
 
 
 def predict_routes(db, candidates, now, departure_at=None):
@@ -399,7 +423,10 @@ def predict_routes(db, candidates, now, departure_at=None):
         forecast_target += timedelta(hours=1)
         forecast_steps += 1
     incidents_by_road = load_active_incidents(db, target)
-    results, available = rank_candidates(candidates, predictions, metadata, incidents_by_road, target_clock)
+    speeds_by_road = load_latest_road_speeds(db, target)
+    results, available = rank_candidates(
+        candidates, predictions, metadata, incidents_by_road, target_clock, speeds_by_road
+    )
     eligible_count = sum(route["coverage"] >= .5 for route in results)
     selected = next((route for route in results if route["ai"]), None)
     osrm_default = min(results, key=lambda route: route["base_duration_sec"])

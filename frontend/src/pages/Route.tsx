@@ -632,6 +632,11 @@ export default function Route() {
                     color: selectedRoute.incidents ? "#ff3b30" : "#34c759",
                   },
                   {
+                    label: "실시간 속도 반영 지연",
+                    value: selectedRoute.speedPenaltySec ? `${Math.round(selectedRoute.speedPenaltySec)}초` : "미적용",
+                    color: selectedRoute.speedPenaltySec ? "#ff9500" : "#6b6b8a",
+                  },
+                  {
                     label: "AI 최적 추천 여부",
                     value: selectedRoute?.ai ? "★ 추천 경로" : "일반 경로",
                     color: selectedRoute?.ai ? "#5e5ce6" : "#6b6b8a",

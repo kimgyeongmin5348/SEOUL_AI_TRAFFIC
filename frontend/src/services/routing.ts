@@ -18,6 +18,7 @@ export interface RouteResult {
   modelVersion?: string
   coverage?: number
   predictedVolume?: number | null
+  speedPenaltySec?: number
   incidentDetails?: RouteIncident[]
 }
 
@@ -34,7 +35,7 @@ interface OsrmRoute {
   distance: number
   duration: number
   geometry: { coordinates: [number, number][] }
-  legs: { steps: { name: string; duration: number }[] }[]
+  legs: { steps: { name: string; duration: number; distance: number }[] }[]
 }
 
 interface ModelRanking {
@@ -57,6 +58,7 @@ interface ModelRanking {
     distance_m: number | null
     incident_count: number
     incident_penalty_sec: number
+    speed_penalty_sec: number
     incidents: RouteIncident[]
   }[]
   explanation?: {
@@ -116,7 +118,11 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
         id: String.fromCharCode(65 + i), duration_sec: r.duration,
         distance_m: r.distance,
         coordinates: r.geometry.coordinates,
-        steps: steps[i].map(step => ({ name: step.name || "", duration_sec: step.duration })),
+        steps: steps[i].map(step => ({
+          name: step.name || "",
+          duration_sec: step.duration,
+          distance_m: step.distance,
+        })),
       })) }),
     })
     const body = await result.json()
@@ -145,6 +151,7 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       coordinates: r.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
       modelVersion: ranking?.model_version, coverage: prediction?.coverage,
       predictedVolume: prediction?.predicted_volume,
+      speedPenaltySec: prediction?.speed_penalty_sec,
       incidentDetails: prediction?.incidents,
     }
   })
