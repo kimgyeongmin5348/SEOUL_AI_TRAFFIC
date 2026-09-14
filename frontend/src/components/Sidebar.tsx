@@ -157,8 +157,8 @@ export default function Sidebar() {
     <>
       {/* Desktop sidebar */}
       <aside
-        className="glass hidden md:flex flex-col w-[72px] fixed left-3 top-1/2 -translate-y-1/2 z-40 py-3 gap-0.5"
-        style={{ borderRadius: 22 }}
+        className="liquid-glass-nav hidden md:flex flex-col w-[78px] fixed left-3 top-1/2 -translate-y-1/2 z-40 py-3 gap-1"
+        style={{ borderRadius: 28 }}
       >
         <Link to="/" className="flex justify-center mb-3">
           <div
@@ -185,11 +185,11 @@ export default function Sidebar() {
             <Link
               key={item.href}
               to={item.href}
-              className="flex flex-col items-center gap-1 py-2 px-1 mx-1 transition-all duration-200 hover:scale-105"
+              className={`sidebar-liquid-link flex flex-col items-center gap-1 py-2.5 px-1 mx-1 ${active ? "is-active" : ""}`}
               style={{
                 borderRadius: 14,
                 color: active ? "#007aff" : "#6b6b8a",
-                background: active ? "rgba(0,122,255,0.1)" : "transparent",
+                background: active ? "rgba(255,255,255,0.52)" : "transparent",
               }}
             >
               {item.icon}
@@ -211,9 +211,9 @@ export default function Sidebar() {
 
       {/* Mobile bottom nav */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass flex justify-around items-center px-2"
+        className="md:hidden fixed bottom-2 left-3 right-3 z-50 liquid-glass-nav flex justify-around items-center px-2"
         style={{
-          borderRadius: "24px 24px 0 0",
+          borderRadius: 24,
           paddingTop: 12,
           paddingBottom: "max(12px, env(safe-area-inset-bottom))",
         }}
@@ -224,7 +224,7 @@ export default function Sidebar() {
             <Link
               key={item.href}
               to={item.href}
-              className="flex flex-col items-center gap-1 px-2"
+              className={`sidebar-liquid-link flex flex-col items-center gap-1 px-3 py-1.5 ${active ? "is-active" : ""}`}
               style={{ color: active ? "#007aff" : "#6b6b8a" }}
             >
               {item.icon}

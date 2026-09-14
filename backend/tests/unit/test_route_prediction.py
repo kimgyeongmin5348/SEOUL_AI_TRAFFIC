@@ -37,6 +37,9 @@ def test_predictions_change_recommendation_and_incomplete_routes_are_excluded():
             {"spot_name": "테헤란로(역삼역)", "baseline": 100}]
     result, ok = rank_candidates(routes, [200, 100], meta)
     assert ok and result[1]["ai"] and not result[0]["ai"]
+    assert result[0]["base_duration_sec"] == 600
+    assert result[0]["traffic_penalty_sec"] == 600
+    assert result[0]["traffic_penalty_percent"] == 100
     result, ok = rank_candidates(routes, [100, 200], meta)
     assert ok and result[0]["ai"]
     result, ok = rank_candidates(routes, [200], meta[:1])
@@ -71,6 +74,23 @@ def test_features_treat_kma_no_rain_null_as_zero():
                    wind_speed_ms=2, pressure_hpa=1000)
     features, _ = build_features(history, weather, target)
     assert features.rainfall_mm.tolist() == [0.0]
+
+
+def test_features_fill_missing_recent_hour_from_30_day_hourly_profile():
+    target = datetime(2026, 9, 10, 9)
+    history = [dict(spot_id="A", spot_name="강남대로", tm_x=1, tm_y=2,
+                    direction_code=1, measured_at=target-timedelta(hours=h), volume=100+h)
+               for h in range(1, 25) if h != 2]
+    history.extend(
+        dict(spot_id="A", spot_name="강남대로", tm_x=1, tm_y=2,
+             direction_code=1, measured_at=target-timedelta(days=day, hours=2), volume=222)
+        for day in (1, 2, 3)
+    )
+    weather = dict(temperature_c=20, rainfall_mm=0, humidity_pct=50,
+                   wind_speed_ms=2, pressure_hpa=1000)
+    features, _ = build_features(history, weather, target)
+    assert features.vol_lag_2h.tolist() == [222]
+    assert features.vol_lag_1h.tolist() == [101]
 
 
 def test_api_validates_duplicate_ids_and_durations():
@@ -109,6 +129,9 @@ def test_real_model_with_delayed_observations_reaches_current_hour():
     assert result["target_at"] == "2026-09-10T09:00:00+09:00"
     assert result["routes"][0]["ai"]
     assert result["routes"][0]["predicted_volume"] >= 0
+    assert result["target_context"]["weekday"] == "목요일"
+    assert result["osrm_comparison"]["osrm_default_route_id"] == "A"
+    assert result["osrm_comparison"]["estimated_minutes_saved"] == 0
     db.execute.side_effect = [spots, traffic, climate]
     with pytest.raises(ValueError, match="지연"):
         predict_routes(db, [candidate("A", 600, "강남대로")], target+timedelta(days=1))

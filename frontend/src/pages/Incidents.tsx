@@ -1,4 +1,4 @@
-﻿import { useState } from "react"
+import { useState } from "react"
 import Sidebar from "../components/Sidebar"
 import MapPlaceholder from "../components/MapPlaceholder"
 import { incidents as defaultIncidents } from "../data/mock"
@@ -16,7 +16,7 @@ const typeIcon: Record<string, string> = {
 }
 
 export default function Incidents() {
-  const [selected, setSelected] = useState<number | null>(null)
+  const [selected, setSelected] = useState<number | string | null>(null)
   const [filter, setFilter] = useState("전체")
   const [incidentsState, setIncidentsState] = useState({
     incidents: defaultIncidents,
@@ -54,7 +54,7 @@ export default function Incidents() {
                   : true,
         )
 
-  const selInc = incidents.find((i) => i.id === selected)
+  const selInc = incidents.find((i) => selected != null && String(i.id) === String(selected))
 
   return (
     <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
@@ -151,7 +151,7 @@ export default function Incidents() {
             >
               {filtered.map((inc) => {
                 const color = impactColor[inc.impact]
-                const isSelected = inc.id === selected
+                const isSelected = selected != null && String(inc.id) === String(selected)
                 return (
                   <div
                     key={inc.id}
@@ -241,7 +241,7 @@ export default function Incidents() {
             className="relative flex-1 min-w-0 glass flex flex-col"
             style={{ borderRadius: 24, overflow: "hidden" }}
           >
-            <MapPlaceholder height={560} incidents={incidents} selectedIncidentId={selected} onSelectIncident={(inc) => setSelected(Number(inc.id))} />
+            <MapPlaceholder height={560} incidents={incidents} selectedIncidentId={selected} onSelectIncident={(inc) => setSelected(inc.id)} />
             {selInc && (
               <div
                 className="absolute bottom-6 right-6 glass p-4 w-64 fade-in"
