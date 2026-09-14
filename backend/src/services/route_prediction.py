@@ -19,7 +19,6 @@ from sqlalchemy import bindparam, text
 ROOT = Path(__file__).resolve().parents[3]
 ARTIFACTS = ROOT / "ml" / "artifacts"
 WEATHER = ["temperature_c", "rainfall_mm", "humidity_pct", "wind_speed_ms", "pressure_hpa"]
-INCIDENT_MATCH_DISTANCE_M = 150.0
 TM_TO_WGS84 = Transformer.from_crs("EPSG:5186", "EPSG:4326", always_xy=True)
 
 
@@ -180,26 +179,59 @@ def incident_matches_route(incident, coordinates):
     distance = point_to_polyline_distance_m(
         incident.get("longitude"), incident.get("latitude"), coordinates
     )
-    return distance is not None and distance <= INCIDENT_MATCH_DISTANCE_M
+    return distance is not None and distance <= incident_impact_radius_m(incident)
+
+
+def incident_category(incident):
+    incident_type = str(incident.get("incident_type") or "")
+    category = {
+        "A01": "accident",
+        "A02": "breakdown",
+        "A04": "construction",
+        "A08": "control",
+        "A10": "control",
+    }.get(incident_type)
+    if category:
+        return category
+    text_value = " ".join(
+        str(incident.get(key) or "")
+        for key in ("incident_type", "incident_detail_type", "description")
+    ).lower()
+    if any(word in text_value for word in ("사고", "추돌", "accident")):
+        return "accident"
+    if any(word in text_value for word in ("고장", "breakdown")):
+        return "breakdown"
+    if any(word in text_value for word in ("통제", "차단", "control", "closed")):
+        return "control"
+    if any(word in text_value for word in ("공사", "보수", "construction")):
+        return "construction"
+    return "other"
+
+
+def incident_impact_radius_m(incident):
+    return {
+        "accident": 180.0,
+        "breakdown": 120.0,
+        "construction": 150.0,
+        "control": 250.0,
+        "other": 100.0,
+    }[incident_category(incident)]
 
 
 def incident_penalty_multiplier(incident):
-    incident_type = " ".join(
-        str(incident.get(key) or "")
-        for key in ("incident_type", "incident_detail_type")
-    ).lower()
-    if any(word in incident_type for word in ("통제", "차단", "control", "closed")):
+    category = incident_category(incident)
+    if category == "control":
         return 5.0
-    if any(word in incident_type for word in ("사고", "accident", "충돌")):
+    if category == "accident":
         return 0.5
-    if any(word in incident_type for word in ("공사", "construction")):
+    if category == "construction":
         return 0.3
-    if any(word in incident_type for word in ("고장", "breakdown")):
+    if category == "breakdown":
         return 0.4
     return 0.2
 
 
-def rank_candidates(candidates, predictions, metadata, incidents_by_road=None):
+def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, departure_at=None):
     incidents_by_road = incidents_by_road or {}
     roads = {}
     for prediction, meta in zip(predictions, metadata, strict=True):
@@ -229,7 +261,7 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None):
                         continue
                 route_incidents[incident["incident_id"]] = incident
             incident_penalty += step.duration_sec * sum(
-                incident_penalty_multiplier(incident)
+                incident_penalty_multiplier(incident) * incident_time_weight(incident, departure_at, total)
                 for incident in candidates_for_step
                 if not coordinates or incident_matches_route(incident, coordinates)
             )
@@ -263,8 +295,10 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None):
                         "incidents": [{
                             "incident_id": incident["incident_id"],
                             "type": incident["incident_type"],
+                            "category": incident_category(incident),
                             "detail_type": incident["incident_detail_type"],
                             "description": incident["description"],
+                            "impact_radius_m": incident_impact_radius_m(incident),
                         } for incident in incident_rows],
                         "predicted_volume": round(predicted / matched, 1) if matched else None,
                         "typical_volume": round(typical / matched, 1) if matched else None,
@@ -283,6 +317,13 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None):
     if available:
         min(eligible, key=lambda r: r["score"])["ai"] = True
     return results, available
+
+
+def incident_time_weight(incident, departure_at, route_duration_sec):
+    if departure_at is None or not incident.get("expected_clear_at"):
+        return 1.0
+    remaining = (incident["expected_clear_at"] - departure_at).total_seconds()
+    return max(0.0, min(1.0, remaining / max(1.0, route_duration_sec)))
 
 
 def predict_routes(db, candidates, now, departure_at=None):
@@ -335,7 +376,7 @@ def predict_routes(db, candidates, now, departure_at=None):
         forecast_target += timedelta(hours=1)
         forecast_steps += 1
     incidents_by_road = load_active_incidents(db, target)
-    results, available = rank_candidates(candidates, predictions, metadata, incidents_by_road)
+    results, available = rank_candidates(candidates, predictions, metadata, incidents_by_road, target_clock)
     eligible_count = sum(route["coverage"] >= .5 for route in results)
     selected = next((route for route in results if route["ai"]), None)
     osrm_default = min(results, key=lambda route: route["base_duration_sec"])

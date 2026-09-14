@@ -669,7 +669,7 @@ export default function Route() {
                   <p className="font-semibold mb-1">돌발상황 반영</p>
                   {selectedRoute.incidentDetails.map((incident) => (
                     <p key={incident.incident_id}>
-                      {incident.type} · {incident.detail_type}
+                      {incident.category} · {incident.detail_type} · 영향 반경 {incident.impact_radius_m}m
                       {incident.description ? ` · ${incident.description}` : ""}
                     </p>
                   ))}

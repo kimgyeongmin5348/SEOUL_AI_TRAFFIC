@@ -24,8 +24,10 @@ export interface RouteResult {
 export interface RouteIncident {
   incident_id: string
   type: string
+  category: string
   detail_type: string
   description: string | null
+  impact_radius_m: number
 }
 
 interface OsrmRoute {

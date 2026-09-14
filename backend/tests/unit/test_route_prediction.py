@@ -12,6 +12,7 @@ from backend.src.api.app import app
 from backend.src.services.route_prediction import (
     best_saved_model,
     build_features,
+    incident_time_weight,
     point_to_polyline_distance_m,
     rank_candidates,
 )
@@ -77,6 +78,14 @@ def test_active_incident_changes_route_score_and_is_reported():
     assert result[0]["incident_count"] == 1
     assert result[0]["incident_penalty_sec"] == 300
     assert result[0]["incidents"][0]["incident_id"] == "INC-1"
+    assert result[0]["incidents"][0]["category"] == "accident"
+    assert result[0]["incidents"][0]["impact_radius_m"] == 180
+
+
+def test_incident_penalty_decreases_when_clear_time_is_during_route():
+    incident = {"incident_type": "A01", "expected_clear_at": datetime(2026, 9, 10, 9, 10)}
+    assert incident_time_weight(incident, datetime(2026, 9, 10, 9), 600) == 1
+    assert incident_time_weight(incident, datetime(2026, 9, 10, 9, 5), 600) == 0.5
 
 
 def test_incident_coordinates_filter_same_named_roads():
