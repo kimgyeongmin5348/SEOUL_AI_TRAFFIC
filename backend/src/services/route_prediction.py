@@ -54,7 +54,11 @@ def load_model(path, modified):
 
 
 def build_features(history, weather, target):
-    """Exact hourly lags; never substitute stale rows for missing hours."""
+    """Build lag features from fresh observations plus a 30-day hourly profile.
+
+    The trained artifact still receives the same columns it was trained with,
+    while a single missing collection hour no longer disables inference.
+    """
     if not weather:
         raise ValueError("예측에 필요한 기상 관측값이 부족합니다.")
     weather = dict(weather)
@@ -70,11 +74,21 @@ def build_features(history, weather, target):
     frame["measured_at"] = pd.to_datetime(frame["measured_at"])
     rows, metadata = [], []
     for (spot, direction), group in frame.groupby(["spot_id", "direction_code"]):
+        group = group.sort_values("measured_at")
         volumes = group.set_index("measured_at")["volume"].astype(float)
         hours = [target - timedelta(hours=h) for h in range(1, 25)]
-        if not all(h in volumes.index for h in hours):
-            continue
-        past = volumes.loc[hours]
+
+        def observed_or_profile(moment):
+            if moment in volumes.index:
+                value = volumes.loc[moment]
+                if np.isscalar(value):
+                    return float(value)
+                return float(value.iloc[-1])
+            same_hour = volumes[(volumes.index.hour == moment.hour) & (volumes.index < target)]
+            valid = same_hour[np.isfinite(same_hour) & (same_hour >= 0)]
+            return float(valid.median()) if not valid.empty else math.nan
+
+        past = pd.Series([observed_or_profile(hour) for hour in hours], index=hours)
         if not np.isfinite(past).all() or (past < 0).any():
             continue
         last = group.iloc[-1]
@@ -90,9 +104,23 @@ def build_features(history, weather, target):
                    vol_lag_1h=past.iloc[0], vol_lag_2h=past.iloc[1], vol_lag_24h=past.iloc[23],
                    vol_rolling_mean_3h=past.iloc[:3].mean(), vol_rolling_mean_24h=past.mean())
         rows.append(row)
-        metadata.append({"spot_id": spot, "spot_name": last["spot_name"], "baseline": float(past.iloc[23]), "direction_code": int(direction), "tm_x": float(last["tm_x"]), "tm_y": float(last["tm_y"])})
+        typical = volumes[
+            (volumes.index.weekday == target.weekday())
+            & (volumes.index.hour == target.hour)
+            & (volumes.index < target)
+        ]
+        typical = typical[np.isfinite(typical) & (typical >= 0)]
+        metadata.append({
+            "spot_id": spot,
+            "spot_name": last["spot_name"],
+            "baseline": float(past.iloc[23]),
+            "typical_volume": float(typical.median()) if not typical.empty else float(past.iloc[23]),
+            "direction_code": int(direction),
+            "tm_x": float(last["tm_x"]),
+            "tm_y": float(last["tm_y"]),
+        })
     if not rows:
-        raise ValueError("최근 24시간의 연속 교통량이 부족해 AI 추천을 계산할 수 없습니다.")
+        raise ValueError("실시간 교통량과 최근 시간대별 이력이 부족해 AI 추천을 계산할 수 없습니다.")
     return pd.DataFrame(rows), metadata
 
 
@@ -108,27 +136,40 @@ def rank_candidates(candidates, predictions, metadata):
         # A zero previous-day count cannot support a meaningful growth ratio.
         if meta["baseline"] <= 0:
             continue
-        roads.setdefault(road_key(meta["spot_name"]), []).append((max(0., float(prediction)), meta["baseline"]))
+        roads.setdefault(road_key(meta["spot_name"]), []).append((
+            max(0., float(prediction)),
+            meta["baseline"],
+            meta.get("typical_volume", meta["baseline"]),
+        ))
     results = []
     for candidate in candidates:
         total = sum(s.duration_sec for s in candidate.steps)
-        matched, penalty, predicted, count = 0., 0., 0., 0
+        matched, penalty, predicted, typical, count = 0., 0., 0., 0., 0
         for step in candidate.steps:
             observations = roads.get(road_key(step.name)) if step.name else None
             if not observations:
                 continue
             # Both measured directions are pooled: this is a road-level proxy.
-            forecast = sum(p for p, _ in observations)
-            baseline = sum(b for _, b in observations)
+            forecast = sum(p for p, _, _ in observations)
+            baseline = sum(b for _, b, _ in observations)
+            normal = sum(t for _, _, t in observations)
             growth = min(2., max(0., forecast / baseline - 1.))
             matched += step.duration_sec
             penalty += step.duration_sec * growth
             predicted += forecast * step.duration_sec
+            typical += normal * step.duration_sec
             count += 1
         coverage = matched / total if total else 0.
+        traffic_penalty_ratio = penalty / total if total else 0.
         results.append({"id": candidate.id, "coverage": round(coverage, 3),
-                        "score": round(candidate.duration_sec * (1 + penalty / total), 2) if total else candidate.duration_sec,
+                        "score": round(candidate.duration_sec * (1 + traffic_penalty_ratio), 2) if total else candidate.duration_sec,
+                        "base_duration_sec": round(candidate.duration_sec, 2),
+                        "traffic_penalty_sec": round(candidate.duration_sec * traffic_penalty_ratio, 2),
+                        "traffic_penalty_percent": round(traffic_penalty_ratio * 100, 1),
                         "predicted_volume": round(predicted / matched, 1) if matched else None,
+                        "typical_volume": round(typical / matched, 1) if matched else None,
+                        "predicted_vs_typical_percent": round((predicted / typical - 1) * 100, 1) if typical > 0 else None,
+                        "distance_m": round(candidate.distance_m, 1) if getattr(candidate, "distance_m", None) is not None else None,
                         "matched_steps": count, "ai": False})
     # Incomplete candidates must not win simply because they have no penalty.
     # A low-coverage alternative should not, however, suppress a different
@@ -157,7 +198,7 @@ def predict_routes(db, candidates, now, departure_at=None):
         WHERE v.spot_id IN :spot_ids AND v.measured_at >= :start AND v.measured_at < :target
         GROUP BY v.spot_id, s.spot_name, s.tm_x, s.tm_y, v.direction_code, v.measured_at
         ORDER BY v.measured_at
-    """).bindparams(bindparam("spot_ids", expanding=True)), {"spot_ids": spot_ids, "start": target-timedelta(hours=27), "target": target}).mappings())
+    """).bindparams(bindparam("spot_ids", expanding=True)), {"spot_ids": spot_ids, "start": target-timedelta(days=30), "target": target}).mappings())
     weather = db.execute(text("""
         SELECT temperature_c, rainfall_mm, humidity_pct, wind_speed_ms, pressure_hpa, observed_at
         FROM weather_measurements WHERE weather_station_id='108'
@@ -191,10 +232,87 @@ def predict_routes(db, candidates, now, departure_at=None):
         forecast_steps += 1
     results, available = rank_candidates(candidates, predictions, metadata)
     eligible_count = sum(route["coverage"] >= .5 for route in results)
+    selected = next((route for route in results if route["ai"]), None)
+    osrm_default = min(results, key=lambda route: route["base_duration_sec"])
+    comparable_to_osrm = bool(selected and osrm_default["coverage"] >= .5)
+    saved_seconds = max(0., osrm_default["score"] - selected["score"]) if comparable_to_osrm else None
+    extra_distance = None
+    if comparable_to_osrm and selected["distance_m"] is not None and osrm_default["distance_m"] is not None:
+        extra_distance = selected["distance_m"] - osrm_default["distance_m"]
     return {"model_version": report["model_version"], "algorithm": report["algorithm"],
             "rmse": float(report["rmse"]), "target_at": target.isoformat()+"+09:00",
             "available": available, "routes": results,
             "observed_at": observed.isoformat()+"+09:00",
             "weather_at": weather["observed_at"].isoformat()+"+09:00", "forecast_steps": forecast_steps,
-            "message": f"베스트 모델 교통량 예측 반영 · 후보 {eligible_count}/{len(results)}개 평가 · {forecast_steps}시간 순차 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측 유지 · 도로명 기준 양방향 합산 · 소요시간은 OSRM 추정치" if available
+            "target_context": {
+                "weekday": ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][target.weekday()],
+                "hour": target.hour,
+                "temperature_c": float(weather["temperature_c"]),
+                "rainfall_mm": float(weather["rainfall_mm"] or 0),
+                "humidity_pct": float(weather["humidity_pct"]),
+            },
+            "osrm_comparison": {
+                "osrm_default_route_id": osrm_default["id"],
+                "ai_selected_route_id": selected["id"] if selected else None,
+                "estimated_minutes_saved": round(saved_seconds / 60, 1) if saved_seconds is not None else None,
+                "extra_distance_km": round(extra_distance / 1000, 2) if extra_distance is not None else None,
+                "basis": "traffic_adjusted_comparison_score",
+            },
+            "message": f"베스트 모델 교통량 예측 반영 · 후보 {eligible_count}/{len(results)}개 평가 · 실시간 관측과 최근 30일 시간대 패턴 사용 · {forecast_steps}시간 순차 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측 유지 · 도로명 기준 양방향 합산 · 소요시간은 OSRM 추정치" if available
             else "예측 반영 범위가 50% 이상인 경로 후보가 없어 AI 추천을 보류했습니다."}
+
+
+def predict_spot_series(db, spot_id, now, horizon_hours=3):
+    """Predict one traffic observation spot on demand for the prediction UI."""
+    model, report = best_saved_model()
+    target = now.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    spot = db.execute(text("""
+        SELECT spot_id, spot_name, tm_x, tm_y FROM traffic_spots WHERE spot_id=:spot_id
+    """), {"spot_id": spot_id}).mappings().first()
+    if not spot:
+        raise ValueError("선택한 도로 측정지점을 찾을 수 없습니다.")
+    history = list(db.execute(text("""
+        SELECT v.spot_id, s.spot_name, s.tm_x, s.tm_y, v.direction_code,
+               v.measured_at, SUM(v.traffic_volume) AS volume
+        FROM traffic_volume_measurements v JOIN traffic_spots s ON s.spot_id=v.spot_id
+        WHERE v.spot_id=:spot_id AND v.measured_at>=:start AND v.measured_at<:target
+        GROUP BY v.spot_id, s.spot_name, s.tm_x, s.tm_y, v.direction_code, v.measured_at
+        ORDER BY v.measured_at
+    """), {"spot_id": spot_id, "start": target-timedelta(days=30), "target": target}).mappings())
+    weather = db.execute(text("""
+        SELECT temperature_c, rainfall_mm, humidity_pct, wind_speed_ms, pressure_hpa, observed_at
+        FROM weather_measurements WHERE weather_station_id='108'
+        AND observed_at<=:now AND observed_at>=:start
+        ORDER BY observed_at DESC LIMIT 1
+    """), {"now": target, "start": target-timedelta(hours=36)}).mappings().first()
+    if not history:
+        raise ValueError("선택한 도로의 최근 교통량이 없습니다.")
+    observed = max(row["measured_at"] for row in history)
+    if target - observed > timedelta(hours=3):
+        raise ValueError("선택한 도로의 실시간 교통량이 3시간 이상 지연됐습니다.")
+
+    records = [dict(row) for row in history]
+    forecast_target = observed + timedelta(hours=1)
+    end = target + timedelta(hours=horizon_hours)
+    columns = report["feature_columns"]
+    points = []
+    while forecast_target <= end:
+        features, metadata = build_features(records, weather, forecast_target)
+        predictions = np.asarray(model.predict(features[columns]), dtype=float)
+        if not np.isfinite(predictions).all():
+            raise ValueError("모델이 유효하지 않은 예측값을 반환했습니다.")
+        for value, meta in zip(predictions, metadata, strict=True):
+            records.append({**meta, "measured_at": forecast_target, "volume": max(0., float(value))})
+        if forecast_target >= target:
+            points.append({
+                "target_at": forecast_target.isoformat()+"+09:00",
+                "predicted_volume": round(sum(max(0., float(value)) for value in predictions), 1),
+            })
+        forecast_target += timedelta(hours=1)
+    current = sum(float(row["volume"]) for row in history if row["measured_at"] == observed)
+    return {
+        "spot_id": spot["spot_id"], "road": spot["spot_name"],
+        "observed_at": observed.isoformat()+"+09:00", "current_volume": round(current, 1),
+        "model_version": report["model_version"], "algorithm": report["algorithm"],
+        "points": points,
+    }

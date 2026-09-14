@@ -114,3 +114,41 @@ export async function resolvePlace(query: string): Promise<PlaceSuggestion> {
   }
   return results[0]
 }
+
+export async function reverseGeocodeCurrentLocation(
+  lat: number,
+  lng: number,
+): Promise<PlaceSuggestion> {
+  const sdk = await loadKakaoMaps()
+  const geocoder = new sdk.maps.services.Geocoder()
+
+  return new Promise((resolve, reject) => {
+    geocoder.coord2Address(lng, lat, (results, status) => {
+      if (status !== sdk.maps.services.Status.OK || !results.length) {
+        reject(new Error("현재 위치의 주소를 확인하지 못했습니다."))
+        return
+      }
+
+      const result = results[0]
+      const address = result.address
+      const road = result.road_address
+      if (address?.region_1depth_name !== "서울" && address?.region_1depth_name !== "서울특별시") {
+        reject(new Error("OUTSIDE_SEOUL"))
+        return
+      }
+
+      const roadAddress = road?.address_name || ""
+      const lotAddress = address?.address_name || ""
+      resolve({
+        id: `current-${lat.toFixed(6)}-${lng.toFixed(6)}`,
+        name: roadAddress || lotAddress || "현 위치",
+        address: lotAddress,
+        roadAddress,
+        category: "현재 위치",
+        lat,
+        lng,
+        source: "current",
+      })
+    })
+  })
+}

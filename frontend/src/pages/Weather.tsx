@@ -6,11 +6,19 @@ import { useState, useEffect } from "react"
 const impactColor = { low: "#34c759", medium: "#ff9500", high: "#ff3b30" }
 const impactLabel = { low: "영향 낮음", medium: "주의", high: "영향 높음" }
 
+const SEOUL_DISTRICTS = [
+  "종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구",
+  "성북구", "강북구", "도봉구", "노원구", "은평구", "서대문구", "마포구",
+  "양천구", "강서구", "구로구", "금천구", "영등포구", "동작구", "관악구",
+  "서초구", "강남구", "송파구", "강동구",
+]
+
 type WeatherInfo = Omit<typeof defaultWeatherData, "trafficImpact"> & {
   trafficImpact: "low" | "medium" | "high"
 }
 
 export default function Weather() {
+  const [districtIndex, setDistrictIndex] = useState(0)
   const [weatherState, setWeatherState] = useState<{
     weather: WeatherInfo
     history: { time: string; temp: number; humidity: number; rain: number }[]
@@ -35,7 +43,15 @@ export default function Weather() {
     }
   }, [])
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setDistrictIndex((index) => (index + 1) % SEOUL_DISTRICTS.length)
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   const w = weatherState.weather
+  const district = SEOUL_DISTRICTS[districtIndex]
 
   return (
     <div className="min-h-full flex" style={{ background: "#eef0f5" }}>
@@ -57,7 +73,7 @@ export default function Weather() {
             className="text-[#6b6b8a] text-sm"
             style={{ fontFamily: "var(--font-body)" }}
           >
-            교통에 영향을 주는 기상 변수 분석 · {w.station}
+            교통에 영향을 주는 기상 변수 분석 · 서울 25개 구 자동 순환
           </p>
           <span
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
@@ -95,7 +111,8 @@ export default function Weather() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Current weather card */}
           <div
-            className="lg:col-span-1 p-6 text-white"
+            key={district}
+            className="lg:col-span-1 p-6 text-white weather-district-card"
             style={{
               borderRadius: 24,
               background: "linear-gradient(160deg, #007aff 0%, #5e5ce6 100%)",
@@ -108,8 +125,9 @@ export default function Weather() {
                   className="text-white/70 text-sm mb-1"
                   style={{ fontFamily: "var(--font-body)" }}
                 >
-                  {w.station}
+                  {district}
                 </p>
+                <p className="text-[11px] text-white/60 mb-2">{w.station} 대표 관측 · 3초마다 다음 구</p>
                 <p
                   style={{
                     fontFamily: "var(--font-display)",
@@ -177,6 +195,18 @@ export default function Weather() {
                     {item.value}
                   </span>
                 </div>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center gap-1" aria-label={`서울 자치구 ${districtIndex + 1}/${SEOUL_DISTRICTS.length}`}>
+              {SEOUL_DISTRICTS.map((name, index) => (
+                <button
+                  type="button"
+                  key={name}
+                  aria-label={`${name} 보기`}
+                  onClick={() => setDistrictIndex(index)}
+                  className="h-1 flex-1 rounded-full transition-all duration-300"
+                  style={{ background: index === districtIndex ? "white" : "rgba(255,255,255,.25)" }}
+                />
               ))}
             </div>
           </div>

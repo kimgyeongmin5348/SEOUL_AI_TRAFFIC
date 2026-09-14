@@ -1,4 +1,4 @@
-﻿import {
+import {
   kpiData as defaultKpiData,
   incidents as defaultIncidents,
   roadSpeedData as defaultRoadSpeedData,
@@ -33,6 +33,8 @@ export interface IncidentRow {
   occurred_at: string
   expected_clear_at: string | null
   collected_at: string
+  tm_x: number | null
+  tm_y: number | null
 }
 
 export interface WeatherRow {
@@ -56,6 +58,14 @@ export interface TrafficRow {
   collected_at: string
 }
 
+export interface TrafficHourlyRow {
+  hour_label: string
+  hour: number
+  total_volume: number
+  avg_volume: number
+  measured_at: string
+}
+
 export interface PredictionRow {
   spot_id: string
   spot_name: string
@@ -65,6 +75,30 @@ export interface PredictionRow {
   target_at: string
   predicted_volume: number | null
   actual_volume: number | null
+}
+
+export interface RoadPredictionView {
+  road: string
+  predictions: { time: string; actual: number | null; predicted: number; confidence: number }[]
+  current: "원활" | "서행" | "혼잡"
+  next30: "원활" | "서행" | "혼잡"
+  next60: "원활" | "서행" | "혼잡"
+  trend: "up" | "down" | "stable"
+}
+
+export interface PredictionRoadOption {
+  spot_id: string
+  spot_name: string
+}
+
+interface OnDemandRoadPrediction {
+  spot_id: string
+  road: string
+  observed_at: string
+  current_volume: number
+  model_version: string
+  algorithm: string
+  points: { target_at: string; predicted_volume: number }[]
 }
 
 async function fetchDbDataset<T>(dataset: string): Promise<DbSnapshot<T> | null> {
@@ -111,12 +145,17 @@ export async function fetchDashboardData() {
 
   let mappedIncidents = [...defaultIncidents]
   if (incRes && incRes.rows.length > 0) {
-    kpi.incidents = incRes.rows.length
+    const now = Date.now()
+    const activeRows = incRes.rows.filter((row) => {
+      if (!row.expected_clear_at) return true
+      return new Date(row.expected_clear_at).getTime() > now
+    })
+    kpi.incidents = activeRows.length
     if (!dbLatestTime && incRes.latest_at) {
       dbLatestTime = incRes.latest_at
     }
 
-    mappedIncidents = incRes.rows.map((row, idx) => {
+    mappedIncidents = activeRows.map((row, idx) => {
       let typeStr = "기타"
       let impact: "high" | "medium" | "low" = "medium"
 
@@ -177,6 +216,8 @@ export async function fetchDashboardData() {
         description: row.description,
         impact,
         severity: impact === "high" ? 3 : impact === "medium" ? 2 : 1,
+        tmX: row.tm_x,
+        tmY: row.tm_y,
       }
     })
   }
@@ -225,17 +266,29 @@ export async function fetchDashboardData() {
 
 // 2. 교통량 및 속도 분석 데이터
 export async function fetchTrafficData() {
-  const [trafficRes, speedRes] = await Promise.all([
+  const [trafficRes, speedRes, hourlyRes] = await Promise.all([
     fetchDbDataset<TrafficRow>("traffic"),
     fetchDbDataset<SpeedRow>("speed"),
+    fetchDbDataset<TrafficHourlyRow>("traffic_hourly"),
   ])
 
   let timeData = [...defaultTrafficTimeData]
   let roadSpeeds = [...defaultRoadSpeedData]
   let latestAt: string | null = null
 
+  if (hourlyRes && hourlyRes.rows.length > 0) {
+    timeData = hourlyRes.rows.map((r) => ({
+      time: r.hour_label,
+      volume: Math.round(r.avg_volume || r.total_volume),
+      speed: 40,
+    }))
+    latestAt = hourlyRes.latest_at
+  }
+
   if (speedRes && speedRes.rows.length > 0) {
-    latestAt = speedRes.latest_at
+    if (!latestAt) {
+      latestAt = speedRes.latest_at
+    }
     const roadMap = new Map<string, { total: number; count: number }>()
     for (const r of speedRes.rows) {
       const name = r.road_name || "기타구간"
@@ -269,7 +322,7 @@ export async function fetchTrafficData() {
     timeData,
     roadSpeeds,
     latestAt,
-    isFromDb: Boolean(trafficRes || speedRes),
+    isFromDb: Boolean(trafficRes || speedRes || hourlyRes),
   }
 }
 
@@ -284,7 +337,13 @@ export async function fetchIncidentsData() {
     }
   }
 
-  const mapped = incRes.rows.map((row, idx) => {
+  const now = Date.now()
+  const activeRows = incRes.rows.filter((row) => {
+    if (!row.expected_clear_at) return true
+    return new Date(row.expected_clear_at).getTime() > now
+  })
+
+  const mapped = activeRows.map((row, idx) => {
     let typeStr = "기타"
     let impact: "high" | "medium" | "low" = "medium"
 
@@ -347,6 +406,8 @@ export async function fetchIncidentsData() {
       description: row.description,
       impact,
       severity: impact === "high" ? 3 : impact === "medium" ? 2 : 1,
+      tmX: row.tm_x,
+      tmY: row.tm_y,
     }
   })
 
@@ -440,14 +501,18 @@ export async function fetchPredictionData() {
     return {
       predictions: defaultPredictionData,
       congestion: defaultCongestionPrediction,
+      roads: defaultCongestionPrediction.map((road) => ({
+        ...road,
+        predictions: defaultPredictionData,
+      })) as RoadPredictionView[],
       latestAt: null,
       isFromDb: false,
     }
   }
 
-  const mapped = predRes.rows.slice(0, 10).map((r, i) => {
-    const targetTime = r.target_at
-      ? new Date(r.target_at).toLocaleTimeString("ko-KR", {
+  const mapPoint = (targetAt: string, predictedVolume: number, actualVolume: number | null, i: number) => {
+    const targetTime = targetAt
+      ? new Date(targetAt).toLocaleTimeString("ko-KR", {
           hour: "2-digit",
           minute: "2-digit",
           hour12: false,
@@ -456,17 +521,93 @@ export async function fetchPredictionData() {
 
     return {
       time: targetTime,
-      actual: r.actual_volume ?? null,
-      predicted: Math.round(r.predicted_volume ?? 4000),
-      confidence: 90,
+      actual: actualVolume,
+      predicted: Math.round(predictedVolume),
+      confidence: Math.max(65, 94 - i * 5),
+    }
+  }
+
+  const byRoad = new Map<string, PredictionRow[]>()
+  predRes.rows.forEach((row) => {
+    const rows = byRoad.get(row.spot_name) || []
+    rows.push(row)
+    byRoad.set(row.spot_name, rows)
+  })
+  const level = (volume: number): "원활" | "서행" | "혼잡" =>
+    volume >= 5000 ? "혼잡" : volume >= 3000 ? "서행" : "원활"
+  const roads: RoadPredictionView[] = Array.from(byRoad.entries()).map(([road, rows]) => {
+    const byTarget = new Map<string, { predicted: number; actual: number | null }>()
+    rows.forEach((row) => {
+      const total = byTarget.get(row.target_at) || { predicted: 0, actual: null }
+      total.predicted += row.predicted_volume ?? 0
+      if (row.actual_volume != null) total.actual = (total.actual ?? 0) + row.actual_volume
+      byTarget.set(row.target_at, total)
+    })
+    const points = Array.from(byTarget.entries())
+      .sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime())
+      .map(([targetAt, total], index) => mapPoint(targetAt, total.predicted, total.actual, index))
+    const values = points.map((point) => point.predicted)
+    const first = values[0] ?? 0
+    const second = values[1] ?? first
+    const third = values[2] ?? second
+    return {
+      road,
+      predictions: points,
+      current: level(first),
+      next30: level(second),
+      next60: level(third),
+      trend: (third > first * 1.05 ? "up" : third < first * 0.95 ? "down" : "stable") as "up" | "down" | "stable",
     }
   })
+  const mapped = roads[0]?.predictions || []
 
   return {
     predictions: mapped.length > 0 ? mapped : defaultPredictionData,
     congestion: defaultCongestionPrediction,
+    roads,
     latestAt: predRes.latest_at,
     isFromDb: true,
+  }
+}
+
+export async function searchPredictionRoads(query = ""): Promise<PredictionRoadOption[]> {
+  const response = await fetch(`/api/predictions/roads?q=${encodeURIComponent(query.trim())}`)
+  if (!response.ok) throw new Error("예측 가능한 도로 목록을 불러오지 못했습니다.")
+  const body = await response.json() as { roads: PredictionRoadOption[] }
+  return body.roads || []
+}
+
+export async function fetchRoadPrediction(spotId: string): Promise<RoadPredictionView> {
+  const response = await fetch(`/api/predictions/roads/${encodeURIComponent(spotId)}`)
+  const body = await response.json()
+  if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "도로 예측에 실패했습니다.")
+  const result = body as OnDemandRoadPrediction
+  const predictions = [
+    {
+      time: "현재 실측",
+      actual: Math.round(result.current_volume),
+      predicted: Math.round(result.current_volume),
+      confidence: 100,
+    },
+    ...result.points.map((point, index) => ({
+      time: new Date(point.target_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }),
+      actual: null,
+      predicted: Math.round(point.predicted_volume),
+      confidence: Math.max(65, 94 - index * 8),
+    })),
+  ]
+  const classify = (volume: number): "원활" | "서행" | "혼잡" =>
+    volume >= 5000 ? "혼잡" : volume >= 3000 ? "서행" : "원활"
+  const current = predictions[0].predicted
+  const next30 = predictions[1]?.predicted ?? current
+  const next60 = predictions[2]?.predicted ?? next30
+  return {
+    road: result.road,
+    predictions,
+    current: classify(current),
+    next30: classify(next30),
+    next60: classify(next60),
+    trend: next60 > current * 1.05 ? "up" : next60 < current * 0.95 ? "down" : "stable",
   }
 }
 
@@ -520,4 +661,40 @@ export async function recordRouteSearch(
   } catch (err) {
     console.warn("[API] recordRouteSearch failed:", err)
   }
+}
+
+export interface ParkingLotItem {
+  parking_code: string
+  name: string
+  address: string
+  latitude: number
+  longitude: number
+  distance_m: number
+  capacity: number
+  occupied_spaces: number | null
+  available_spaces: number | null
+  realtime_status: "AVAILABLE" | "STALE" | "UNSUPPORTED"
+  observed_at: string | null
+  restriction: "BUS_ONLY" | "CARGO_ONLY" | null
+  paid: boolean
+}
+
+export async function fetchNearbyParking(
+  latitude: number,
+  longitude: number,
+  radiusM = 1500,
+  limit = 8,
+): Promise<ParkingLotItem[]> {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    radius_m: String(radiusM),
+    limit: String(limit),
+  })
+  const response = await fetch(`/api/parking/nearby?${params}`)
+  const body = await response.json()
+  if (!response.ok) {
+    throw new Error(typeof body.detail === "string" ? body.detail : "주변 주차장을 불러오지 못했습니다.")
+  }
+  return (body.lots || []) as ParkingLotItem[]
 }
