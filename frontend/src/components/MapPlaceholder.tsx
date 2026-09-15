@@ -3,7 +3,7 @@ import precisionRoadsData from "../data/seoul_roads.json"
 import seoulBoundaryData from "../data/seoulBoundary.json"
 import { loadKakaoMaps } from "../services/kakaoMaps"
 import { resolvePlace } from "../services/placeSearch"
-import { fetchNearbyParking, type ParkingLotItem } from "../services/api"
+import { fetchNearbyParking, type ParkingLotItem, type RoadSpeedItem } from "../services/api"
 
 export interface IncidentItem {
   id: number | string
@@ -24,7 +24,7 @@ interface MapProps {
   height?: number | string
   searchQuery?: string
   incidents?: IncidentItem[]
-  roadSpeeds?: Array<{ road: string; speed: number; avg: number; level: string }>
+  roadSpeeds?: RoadSpeedItem[] | Array<{ road: string; speed: number; avg: number; level: string; links?: any[] }>
   selectedIncidentId?: number | string | null
   onSelectIncident?: (incident: IncidentItem) => void
   routeCoordinates?: [number, number][]
@@ -33,9 +33,17 @@ interface MapProps {
   parkingLots?: ParkingLotItem[]
   selectedParkingLotId?: string | null
   onSelectParkingLot?: (lot: ParkingLotItem) => void
+  enableTraffic?: boolean
+  enableIncidents?: boolean
+  enableParking?: boolean
 }
 
 type MapOverlay = kakao.maps.Polyline | kakao.maps.CustomOverlay | kakao.maps.Circle | kakao.maps.Polygon
+
+const EMPTY_INCIDENTS: IncidentItem[] = []
+const EMPTY_SPEEDS: RoadSpeedItem[] = []
+const EMPTY_PARKING: ParkingLotItem[] = []
+const wtmCoordCache = new Map<string, { lat: number; lng: number }>()
 
 function makePill(text: string, background: string) {
   const element = document.createElement("div")
@@ -58,19 +66,24 @@ function makePill(text: string, background: string) {
 export default function MapPlaceholder({
   height = 480,
   searchQuery = "",
-  incidents = [],
-  roadSpeeds = [],
+  incidents = EMPTY_INCIDENTS,
+  roadSpeeds = EMPTY_SPEEDS,
   selectedIncidentId = null,
   onSelectIncident,
   routeCoordinates,
   originPoint,
   destPoint,
-  parkingLots = [],
+  parkingLots = EMPTY_PARKING,
   selectedParkingLotId = null,
   onSelectParkingLot,
+  enableTraffic = true,
+  enableIncidents = true,
+  enableParking = true,
 }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<kakao.maps.Map | null>(null)
+  const onSelectIncidentRef = useRef(onSelectIncident)
+  onSelectIncidentRef.current = onSelectIncident
   const roadOverlaysRef = useRef<MapOverlay[]>([])
   const boundaryOverlaysRef = useRef<kakao.maps.Polygon[]>([])
   const routeOverlaysRef = useRef<MapOverlay[]>([])
@@ -172,7 +185,7 @@ export default function MapPlaceholder({
       locationOverlaysRef.current = [accuracy, marker]
       setLocationStatus(`내 위치 · 정확도 약 ${Math.round(coords.accuracy)}m`)
       if (firstFix) {
-        if (!parkingLots || parkingLots.length === 0) {
+        if (enableParking && (!parkingLots || parkingLots.length === 0)) {
           fetchParkingForLocation(coords.latitude, coords.longitude)
         }
       }
@@ -182,7 +195,7 @@ export default function MapPlaceholder({
       setLocationStatus(error.code === 1
         ? "위치 권한이 꺼져 있습니다. 브라우저 설정에서 허용해 주세요."
         : error.code === 3 ? "위치 확인 시간이 초과되었습니다." : "현재 위치를 확인할 수 없습니다.")
-      if ((!parkingLots || parkingLots.length === 0) && mapRef.current) {
+      if (enableParking && (!parkingLots || parkingLots.length === 0) && mapRef.current) {
         const center = mapRef.current.getCenter()
         fetchParkingForLocation(center.getLat(), center.getLng())
       }
@@ -193,28 +206,138 @@ export default function MapPlaceholder({
       locationOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
       locationOverlaysRef.current = []
     }
-  }, [mapReady, parkingLots, fetchParkingForLocation, viewHasContext])
+  }, [mapReady, parkingLots, fetchParkingForLocation, viewHasContext, enableParking])
 
+  // 1. 도로 폴리라인 렌더링 (돌발상황과 완전 분리)
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map) return
     roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
     roadOverlaysRef.current = []
-    incidentOverlaysRef.current.clear()
-    if (showTrafficLines) {
+
+    if (enableTraffic && showTrafficLines) {
       precisionRoadsData.forEach((road) => {
-        const match = roadSpeeds.find((speed) => speed.road.includes(road.name) || road.name.includes(speed.road))
-        const speed = match?.speed ?? road.defaultSpeed
-        const color = speed < 25 ? "#ff3b30" : speed < 50 ? "#ff9500" : "#34c759"
-        const path = (road.coordinates as [number, number][]).map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
-        const outline = new kakao.maps.Polyline({ map, path, strokeColor: "#ffffff", strokeWeight: 7, strokeOpacity: 0.88, zIndex: 2 })
-        const line = new kakao.maps.Polyline({ map, path, strokeColor: color, strokeWeight: 4, strokeOpacity: 0.92, zIndex: 3 })
-        roadOverlaysRef.current.push(outline, line)
+        const match = (roadSpeeds as RoadSpeedItem[]).find(
+          (speed) => speed.road.includes(road.name) || road.name.includes(speed.road),
+        )
+        const coords = road.coordinates as [number, number][]
+        const P = coords.length
+
+        // 1) 링크 구간별 속도 데이터가 존재하는 경우 (구간별 분할 렌더링)
+        if (match && match.links && match.links.length > 0 && P >= 2) {
+          const links = match.links
+          const L = links.length
+          for (let i = 0; i < L; i++) {
+            const startIdx = Math.floor((i * (P - 1)) / L)
+            const endIdx = Math.min(P - 1, Math.floor(((i + 1) * (P - 1)) / L))
+            if (endIdx <= startIdx && startIdx < P - 1) continue
+            const subCoords = coords.slice(startIdx, endIdx + 1)
+            if (subCoords.length < 2) continue
+
+            const linkData = links[i]
+            const color =
+              linkData.speed < 25 ? "#ff3b30" : linkData.speed < 50 ? "#ff9500" : "#34c759"
+            const path = subCoords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
+
+            const outline = new kakao.maps.Polyline({
+              map,
+              path,
+              strokeColor: "#ffffff",
+              strokeWeight: 7,
+              strokeOpacity: 0.88,
+              zIndex: 2,
+            })
+            const line = new kakao.maps.Polyline({
+              map,
+              path,
+              strokeColor: color,
+              strokeWeight: 4,
+              strokeOpacity: 0.95,
+              zIndex: 3,
+            })
+            roadOverlaysRef.current.push(outline, line)
+          }
+        } else if (match && typeof match.speed === "number" && P >= 2) {
+          // 2) 도로 단일 평균 속도만 존재하는 경우
+          const color = match.speed < 25 ? "#ff3b30" : match.speed < 50 ? "#ff9500" : "#34c759"
+          const path = coords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
+          const outline = new kakao.maps.Polyline({
+            map,
+            path,
+            strokeColor: "#ffffff",
+            strokeWeight: 7,
+            strokeOpacity: 0.88,
+            zIndex: 2,
+          })
+          const line = new kakao.maps.Polyline({
+            map,
+            path,
+            strokeColor: color,
+            strokeWeight: 4,
+            strokeOpacity: 0.92,
+            zIndex: 3,
+          })
+          roadOverlaysRef.current.push(outline, line)
+        } else if (P >= 2) {
+          // 3) 실시간 데이터가 없는 도로는 회색 '정보 없음' (#94a3b8)
+          const path = coords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
+          const outline = new kakao.maps.Polyline({
+            map,
+            path,
+            strokeColor: "#ffffff",
+            strokeWeight: 6,
+            strokeOpacity: 0.6,
+            zIndex: 2,
+          })
+          const line = new kakao.maps.Polyline({
+            map,
+            path,
+            strokeColor: "#94a3b8",
+            strokeWeight: 4,
+            strokeOpacity: 0.75,
+            zIndex: 3,
+          })
+          roadOverlaysRef.current.push(outline, line)
+        }
       })
     }
+    return () => {
+      roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+      roadOverlaysRef.current = []
+    }
+  }, [mapReady, enableTraffic, showTrafficLines, roadSpeeds])
+
+  // 2. 돌발상황 마커 렌더링 (Diffing 방식: 이미 존재하는 마커는 유지하여 깜빡임 원천 제거)
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map) return
+
+    if (!enableIncidents || !showIncidents) {
+      incidentOverlaysRef.current.forEach(({ overlay }) => overlay.setMap(null))
+      incidentOverlaysRef.current.clear()
+      return
+    }
+
+    const currentIncidentMap = incidentOverlaysRef.current
+    const newIncidentIds = new Set(incidents.map((i) => String(i.id)))
+
+    // 1) 제거된 돌발상황만 지도에서 언마운트
+    for (const [id, item] of currentIncidentMap.entries()) {
+      if (!newIncidentIds.has(id)) {
+        item.overlay.setMap(null)
+        currentIncidentMap.delete(id)
+      }
+    }
+
+    // 2) 신규 돌발상황만 마커 생성 (기존 마커는 건드리지 않고 그대로 유지)
     let active = true
-    const drawIncident = (incident: IncidentItem, lat: number, lng: number) => {
-      if (!active || !showIncidents) return
+    const geocoder = new kakao.maps.services.Geocoder()
+
+    const addIncidentMarker = (incident: IncidentItem, lat: number, lng: number) => {
+      if (!active || !mapRef.current) return
+      const idKey = String(incident.id)
+      if (currentIncidentMap.has(idKey)) return
+
       const position = new kakao.maps.LatLng(lat, lng)
       const isAccident = incident.type === "사고"
       const isConstruction = incident.type === "공사"
@@ -223,35 +346,48 @@ export default function MapPlaceholder({
       const button = makePill(symbol, color)
       button.title = `[${incident.type}] ${incident.road} - ${incident.location}`
       button.style.cursor = "pointer"
-      button.addEventListener("click", () => onSelectIncident?.(incident))
+      button.addEventListener("click", () => onSelectIncidentRef.current?.(incident))
       const overlay = new kakao.maps.CustomOverlay({ map, position, content: button, clickable: true, zIndex: 8 })
-      roadOverlaysRef.current.push(overlay)
-      incidentOverlaysRef.current.set(String(incident.id), { overlay, lat, lng })
+      currentIncidentMap.set(idKey, { overlay, lat, lng })
     }
-    if (showIncidents) {
-      const geocoder = new kakao.maps.services.Geocoder()
-      incidents.forEach((incident) => {
-        if (typeof incident.lat === "number" && typeof incident.lng === "number") {
-          drawIncident(incident, incident.lat, incident.lng)
-        } else if (typeof incident.tmX === "number" && typeof incident.tmY === "number") {
-          geocoder.transCoord(incident.tmX, incident.tmY, (results, status) => {
-            if (status === kakao.maps.services.Status.OK && results[0]) {
-              drawIncident(incident, Number(results[0].y), Number(results[0].x))
-            }
-          }, {
-            input_coord: kakao.maps.services.Coords.WTM,
-            output_coord: kakao.maps.services.Coords.WGS84,
-          })
+
+    incidents.forEach((incident) => {
+      const idKey = String(incident.id)
+      if (currentIncidentMap.has(idKey)) return
+
+      if (typeof incident.lat === "number" && typeof incident.lng === "number") {
+        addIncidentMarker(incident, incident.lat, incident.lng)
+      } else if (typeof incident.tmX === "number" && typeof incident.tmY === "number") {
+        const coordKey = `${incident.tmX}_${incident.tmY}`
+        const cached = wtmCoordCache.get(coordKey)
+        if (cached) {
+          addIncidentMarker(incident, cached.lat, cached.lng)
+        } else {
+          geocoder.transCoord(
+            incident.tmX,
+            incident.tmY,
+            (results, status) => {
+              if (!active) return
+              if (status === kakao.maps.services.Status.OK && results[0]) {
+                const lat = Number(results[0].y)
+                const lng = Number(results[0].x)
+                wtmCoordCache.set(coordKey, { lat, lng })
+                addIncidentMarker(incident, lat, lng)
+              }
+            },
+            {
+              input_coord: kakao.maps.services.Coords.WTM,
+              output_coord: kakao.maps.services.Coords.WGS84,
+            },
+          )
         }
-      })
-    }
+      }
+    })
+
     return () => {
       active = false
-      roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
-      roadOverlaysRef.current = []
-      incidentOverlaysRef.current.clear()
     }
-  }, [incidents, mapReady, onSelectIncident, roadSpeeds, showIncidents, showTrafficLines])
+  }, [incidents, mapReady, showIncidents, enableIncidents])
 
   useEffect(() => {
     const map = mapRef.current
@@ -328,13 +464,13 @@ export default function MapPlaceholder({
       }, zoomInDelay)
       flyAnimationTimersRef.current.push(t2)
 
-      // 선택된 돌발상황 위치에 반짝이는 펄스 링 하이라이트 오버레이
+      // 선택된 돌발상황 위치에 선명하고 안정적인 하이라이트 오버레이 (깜빡임 애니메이션 배제)
       const pulseEl = document.createElement("div")
       pulseEl.style.cssText = "position: relative; display: flex; align-items: center; justify-content: center; pointer-events: none;"
       pulseEl.innerHTML = `
-        <div style="position: absolute; width: 50px; height: 50px; border-radius: 50%; background: rgba(255, 59, 48, 0.35); animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-        <div style="position: absolute; width: 32px; height: 32px; border-radius: 50%; background: rgba(255, 59, 48, 0.6); border: 2.5px solid white; box-shadow: 0 3px 10px rgba(0,0,0,0.35);"></div>
-        <div style="position: relative; z-index: 2; font-size: 16px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));">${incident?.type === "사고" ? "🚨" : incident?.type === "공사" ? "🚧" : "⚠️"}</div>
+        <div style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: rgba(255, 59, 48, 0.2); border: 2px solid rgba(255, 59, 48, 0.7); box-shadow: 0 0 14px rgba(255, 59, 48, 0.5);"></div>
+        <div style="position: absolute; width: 28px; height: 28px; border-radius: 50%; background: #ff3b30; border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.35);"></div>
+        <div style="position: relative; z-index: 2; font-size: 14px; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4));">${incident?.type === "사고" ? "🚨" : incident?.type === "공사" ? "🚧" : "⚠️"}</div>
       `
       const highlight = new kakao.maps.CustomOverlay({
         map,
@@ -379,7 +515,7 @@ export default function MapPlaceholder({
 
   // 주차장 토글 시 데이터가 없으면 현재 내 위치(우선) 또는 지도 중심 좌표 기준 주차장 조회
   useEffect(() => {
-    if (showParking && (!parkingLots || parkingLots.length === 0) && internalParkingLots.length === 0 && mapReady) {
+    if (enableParking && showParking && (!parkingLots || parkingLots.length === 0) && internalParkingLots.length === 0 && mapReady) {
       if (currentPosition.current) {
         fetchParkingForLocation(currentPosition.current.latitude, currentPosition.current.longitude)
       } else if (navigator.geolocation) {
@@ -399,7 +535,7 @@ export default function MapPlaceholder({
         if (center) fetchParkingForLocation(center.getLat(), center.getLng())
       }
     }
-  }, [showParking, parkingLots, internalParkingLots.length, mapReady, fetchParkingForLocation])
+  }, [showParking, parkingLots, internalParkingLots.length, mapReady, fetchParkingForLocation, enableParking])
 
   // 주차장 마커 및 선택 시 상세 정보 팝업 렌더링
   useEffect(() => {
@@ -407,7 +543,7 @@ export default function MapPlaceholder({
     parkingOverlaysRef.current.forEach((o) => o.setMap(null))
     parkingOverlaysRef.current = []
 
-    if (!mapReady || !map || !showParking || !effectiveParkingLots.length) return
+    if (!mapReady || !map || !enableParking || !showParking || !effectiveParkingLots.length) return
 
     effectiveParkingLots.forEach((lot) => {
       const position = new kakao.maps.LatLng(lot.latitude, lot.longitude)
@@ -533,7 +669,7 @@ export default function MapPlaceholder({
       })
       parkingOverlaysRef.current.push(overlay)
     })
-  }, [mapReady, showParking, effectiveParkingLots, activeSelectedParkingId, onSelectParkingLot])
+  }, [mapReady, showParking, effectiveParkingLots, activeSelectedParkingId, onSelectParkingLot, enableParking])
 
   // 선택된 주차장으로 부드럽게 시점 이동 (줌 레벨은 억지로 바꾸지 않고 중심만 이동)
   useEffect(() => {
@@ -579,7 +715,7 @@ export default function MapPlaceholder({
     }
     mapRef.current.panTo(new kakao.maps.LatLng(coords.latitude, coords.longitude))
     mapRef.current.setLevel(4)
-    if (!parkingLots || parkingLots.length === 0) {
+    if (enableParking && (!parkingLots || parkingLots.length === 0)) {
       fetchParkingForLocation(coords.latitude, coords.longitude)
     }
   }
@@ -622,134 +758,142 @@ export default function MapPlaceholder({
         </div>
 
         {/* 우측: 돌발상황, 실시간혼잡도, 주차장표시 토글 일렬 나열 (슬림 & 컴팩트) */}
-        <div className="liquid-glass-capsule p-1 flex flex-wrap items-center gap-1 rounded-xl">
-          {/* 1. 돌발상황 토글 아이템 */}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-            <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
-              <span>🚨 돌발상황</span>
-              <span
-                className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
-                  showIncidents
-                    ? "text-[#ff453a] bg-[#ff453a]/20 border border-[#ff453a]/30"
-                    : "text-white/40 bg-white/[0.06]"
-                }`}
-              >
-                {showIncidents ? "ON" : "OFF"}
-              </span>
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={showIncidents}
-              onClick={() => setShowIncidents((value) => !value)}
-              className="relative inline-flex items-center h-4 w-7 shrink-0 cursor-pointer rounded-full border transition-all duration-200 focus:outline-none"
-              style={{
-                background: showIncidents
-                  ? "linear-gradient(135deg, #ff3b30, #ff6259)"
-                  : "rgba(255, 255, 255, 0.15)",
-                borderColor: showIncidents
-                  ? "rgba(255, 99, 90, 0.6)"
-                  : "rgba(255, 255, 255, 0.28)",
-                boxShadow: showIncidents
-                  ? "0 0 8px rgba(255, 59, 48, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.35)"
-                  : "inset 0 1px 2px rgba(0, 0, 0, 0.4)",
-              }}
-              title={`돌발상황 ${showIncidents ? "끄기" : "켜기"}`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
-                  showIncidents ? "translate-x-3.5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
+        {(enableIncidents || enableTraffic || enableParking) && (
+          <div className="liquid-glass-capsule p-1 flex flex-wrap items-center gap-1 rounded-xl">
+            {/* 1. 돌발상황 토글 아이템 */}
+            {enableIncidents && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
+                  <span>🚨 돌발상황</span>
+                  <span
+                    className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
+                      showIncidents
+                        ? "text-[#ff453a] bg-[#ff453a]/20 border border-[#ff453a]/30"
+                        : "text-white/40 bg-white/[0.06]"
+                    }`}
+                  >
+                    {showIncidents ? "ON" : "OFF"}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={showIncidents}
+                  onClick={() => setShowIncidents((value) => !value)}
+                  className="relative inline-flex items-center h-4 w-7 shrink-0 cursor-pointer rounded-full border transition-all duration-200 focus:outline-none"
+                  style={{
+                    background: showIncidents
+                      ? "linear-gradient(135deg, #ff3b30, #ff6259)"
+                      : "rgba(255, 255, 255, 0.15)",
+                    borderColor: showIncidents
+                      ? "rgba(255, 99, 90, 0.6)"
+                      : "rgba(255, 255, 255, 0.28)",
+                    boxShadow: showIncidents
+                      ? "0 0 8px rgba(255, 59, 48, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.35)"
+                      : "inset 0 1px 2px rgba(0, 0, 0, 0.4)",
+                  }}
+                  title={`돌발상황 ${showIncidents ? "끄기" : "켜기"}`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                      showIncidents ? "translate-x-3.5" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
+
+            {enableIncidents && enableTraffic && <div className="w-px h-3.5 bg-white/15 hidden sm:block" />}
+
+            {/* 2. 실시간혼잡도 토글 아이템 */}
+            {enableTraffic && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
+                  <span>🚦 실시간혼잡도</span>
+                  <span
+                    className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
+                      showTrafficLines
+                        ? "text-[#38bdf8] bg-[#007aff]/20 border border-[#007aff]/30"
+                        : "text-white/40 bg-white/[0.06]"
+                    }`}
+                  >
+                    {showTrafficLines ? "ON" : "OFF"}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={showTrafficLines}
+                  onClick={() => setShowTrafficLines((value) => !value)}
+                  className="relative inline-flex items-center h-4 w-7 shrink-0 cursor-pointer rounded-full border transition-all duration-200 focus:outline-none"
+                  style={{
+                    background: showTrafficLines
+                      ? "linear-gradient(135deg, #007aff, #38bdf8)"
+                      : "rgba(255, 255, 255, 0.15)",
+                    borderColor: showTrafficLines
+                      ? "rgba(56, 189, 248, 0.6)"
+                      : "rgba(255, 255, 255, 0.28)",
+                    boxShadow: showTrafficLines
+                      ? "0 0 8px rgba(0, 122, 255, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.35)"
+                      : "inset 0 1px 2px rgba(0, 0, 0, 0.4)",
+                  }}
+                  title={`실시간혼잡도 ${showTrafficLines ? "끄기" : "켜기"}`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                      showTrafficLines ? "translate-x-3.5" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
+
+            {enableParking && (enableIncidents || enableTraffic) && <div className="w-px h-3.5 bg-white/15 hidden sm:block" />}
+
+            {/* 3. 주차장표시 토글 아이템 */}
+            {enableParking && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
+                  <span>🅿️ 주차장</span>
+                  <span
+                    className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
+                      showParking
+                        ? "text-[#38bdf8] bg-[#007aff]/20 border border-[#007aff]/30"
+                        : "text-white/40 bg-white/[0.06]"
+                    }`}
+                  >
+                    {showParking ? "ON" : "OFF"}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={showParking}
+                  onClick={() => setShowParking((value) => !value)}
+                  className="relative inline-flex items-center h-4 w-7 shrink-0 cursor-pointer rounded-full border transition-all duration-200 focus:outline-none"
+                  style={{
+                    background: showParking
+                      ? "linear-gradient(135deg, #007aff, #38bdf8)"
+                      : "rgba(255, 255, 255, 0.15)",
+                    borderColor: showParking
+                      ? "rgba(56, 189, 248, 0.6)"
+                      : "rgba(255, 255, 255, 0.28)",
+                    boxShadow: showParking
+                      ? "0 0 8px rgba(0, 122, 255, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.35)"
+                      : "inset 0 1px 2px rgba(0, 0, 0, 0.4)",
+                  }}
+                  title={`주차장 표시 ${showParking ? "끄기" : "켜기"}`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                      showParking ? "translate-x-3.5" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
           </div>
-
-          <div className="w-px h-3.5 bg-white/15 hidden sm:block" />
-
-          {/* 2. 실시간혼잡도 토글 아이템 */}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-            <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
-              <span>🚦 실시간혼잡도</span>
-              <span
-                className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
-                  showTrafficLines
-                    ? "text-[#38bdf8] bg-[#007aff]/20 border border-[#007aff]/30"
-                    : "text-white/40 bg-white/[0.06]"
-                }`}
-              >
-                {showTrafficLines ? "ON" : "OFF"}
-              </span>
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={showTrafficLines}
-              onClick={() => setShowTrafficLines((value) => !value)}
-              className="relative inline-flex items-center h-4 w-7 shrink-0 cursor-pointer rounded-full border transition-all duration-200 focus:outline-none"
-              style={{
-                background: showTrafficLines
-                  ? "linear-gradient(135deg, #007aff, #38bdf8)"
-                  : "rgba(255, 255, 255, 0.15)",
-                borderColor: showTrafficLines
-                  ? "rgba(56, 189, 248, 0.6)"
-                  : "rgba(255, 255, 255, 0.28)",
-                boxShadow: showTrafficLines
-                  ? "0 0 8px rgba(0, 122, 255, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.35)"
-                  : "inset 0 1px 2px rgba(0, 0, 0, 0.4)",
-              }}
-              title={`실시간혼잡도 ${showTrafficLines ? "끄기" : "켜기"}`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
-                  showTrafficLines ? "translate-x-3.5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="w-px h-3.5 bg-white/15 hidden sm:block" />
-
-          {/* 3. 주차장표시 토글 아이템 */}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-            <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
-              <span>🅿️ 주차장</span>
-              <span
-                className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
-                  showParking
-                    ? "text-[#38bdf8] bg-[#007aff]/20 border border-[#007aff]/30"
-                    : "text-white/40 bg-white/[0.06]"
-                }`}
-              >
-                {showParking ? "ON" : "OFF"}
-              </span>
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={showParking}
-              onClick={() => setShowParking((value) => !value)}
-              className="relative inline-flex items-center h-4 w-7 shrink-0 cursor-pointer rounded-full border transition-all duration-200 focus:outline-none"
-              style={{
-                background: showParking
-                  ? "linear-gradient(135deg, #007aff, #38bdf8)"
-                  : "rgba(255, 255, 255, 0.15)",
-                borderColor: showParking
-                  ? "rgba(56, 189, 248, 0.6)"
-                  : "rgba(255, 255, 255, 0.28)",
-                boxShadow: showParking
-                  ? "0 0 8px rgba(0, 122, 255, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.35)"
-                  : "inset 0 1px 2px rgba(0, 0, 0, 0.4)",
-              }}
-              title={`주차장 표시 ${showParking ? "끄기" : "켜기"}`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
-                  showParking ? "translate-x-3.5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* 지도 캔버스 영역 (토글 겹침 없음) */}
@@ -769,38 +913,51 @@ export default function MapPlaceholder({
           </div>
         )}
 
-        {/* 하단 범례 캡슐 */}
-        <div
-          className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm"
-          style={{ borderRadius: 12 }}
-        >
-          {[
-            { color: "#34c759", label: "원활 (≥50km/h)" },
-            { color: "#ff9500", label: "서행 (25~49km/h)" },
-            { color: "#ff3b30", label: "혼잡 (<25km/h)" },
-          ].map((item) => (
-            <div key={item.label} className="flex items-center gap-1.5">
-              <div
-                className="w-3 h-1.5 rounded-full"
-                style={{ background: item.color }}
-              />
-              <span className="text-[11px] font-semibold text-[#4a4a68]">
-                {item.label}
-              </span>
-            </div>
-          ))}
-          <div className="w-px h-3 bg-black/10 mx-1" />
-          <span className="text-[11px] text-[#ff3b30] font-semibold">🚨 사고</span>
-          <span className="text-[11px] text-[#ff9500] font-semibold">🚧 공사</span>
-          {showParking && effectiveParkingLots.length > 0 && (
-            <>
+        {/* 하단 범례 캡슐 (활성화된 레이어만 표시) */}
+        {((enableTraffic && showTrafficLines) ||
+          (enableIncidents && showIncidents) ||
+          (enableParking && showParking && effectiveParkingLots.length > 0)) && (
+          <div
+            className="glass absolute bottom-3 left-3 right-3 sm:right-auto z-10 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 shadow-sm"
+            style={{ borderRadius: 12 }}
+          >
+            {enableTraffic &&
+              showTrafficLines &&
+              [
+                { color: "#34c759", label: "원활 (≥50km/h)" },
+                { color: "#ff9500", label: "서행 (25~49km/h)" },
+                { color: "#ff3b30", label: "혼잡 (<25km/h)" },
+                { color: "#94a3b8", label: "정보 없음" },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center gap-1.5">
+                  <div
+                    className="w-3 h-1.5 rounded-full"
+                    style={{ background: item.color }}
+                  />
+                  <span className="text-[11px] font-semibold text-[#4a4a68]">
+                    {item.label}
+                  </span>
+                </div>
+              ))}
+            {enableTraffic && showTrafficLines && enableIncidents && showIncidents && (
               <div className="w-px h-3 bg-black/10 mx-1" />
-              <span className="text-[11px] text-[#007aff] font-semibold">
-                🅿️ 주차장 ({effectiveParkingLots.length}곳)
-              </span>
-            </>
-          )}
-        </div>
+            )}
+            {enableIncidents && showIncidents && (
+              <>
+                <span className="text-[11px] text-[#ff3b30] font-semibold">🚨 사고</span>
+                <span className="text-[11px] text-[#ff9500] font-semibold">🚧 공사</span>
+              </>
+            )}
+            {enableParking && showParking && effectiveParkingLots.length > 0 && (
+              <>
+                {(enableTraffic || enableIncidents) && <div className="w-px h-3 bg-black/10 mx-1" />}
+                <span className="text-[11px] text-[#007aff] font-semibold">
+                  🅿️ 주차장 ({effectiveParkingLots.length}곳)
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

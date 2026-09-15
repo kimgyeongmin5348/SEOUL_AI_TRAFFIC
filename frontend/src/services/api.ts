@@ -1,4 +1,22 @@
 // Pure DB API Client without mock data fallbacks
+import precisionRoadsData from "../data/seoul_roads.json"
+
+export interface RoadLinkSpeed {
+  linkId: string
+  speed: number
+  level: "red" | "orange" | "yellow" | "green"
+  startNode?: string | null
+  endNode?: string | null
+  linkSequence?: number | null
+}
+
+export interface RoadSpeedItem {
+  road: string
+  speed: number
+  avg: number
+  level: "red" | "orange" | "yellow" | "green"
+  links: RoadLinkSpeed[]
+}
 
 export interface DbSnapshot<T> {
   source: string
@@ -16,6 +34,9 @@ export interface SpeedRow {
   speed_kmh: number | null
   travel_time_sec: number | null
   collected_at: string
+  start_node_name?: string | null
+  end_node_name?: string | null
+  link_sequence?: number | null
 }
 
 export interface IncidentRow {
@@ -232,41 +253,64 @@ export async function fetchDashboardData() {
     })
   }
 
-  // 도로별 속도 가공 (DB 실측치만 사용)
-  let roadSpeeds: Array<{
-    road: string
-    speed: number
-    avg: number
-    level: "red" | "yellow" | "green"
-  }> = []
+  // 도로별 및 링크 구간별 속도 가공 (DB 실측치 사용)
+  let roadSpeeds: RoadSpeedItem[] = []
+  let speedSampleCount = 0
 
   if (speedRes && speedRes.rows.length > 0) {
-    const roadMap = new Map<string, { total: number; count: number }>()
+    const roadGroup = new Map<string, { total: number; count: number; links: RoadLinkSpeed[] }>()
     for (const r of speedRes.rows) {
       const name = r.road_name?.trim() || ""
       if (name && r.speed_kmh !== null) {
-        const cur = roadMap.get(name) || { total: 0, count: 0 }
+        speedSampleCount++
+        const speed = Math.round(r.speed_kmh)
+        const level = (speed < 25 ? "red" : speed < 50 ? "orange" : "green") as
+          | "red"
+          | "orange"
+          | "yellow"
+          | "green"
+        const cur = roadGroup.get(name) || { total: 0, count: 0, links: [] }
         cur.total += r.speed_kmh
         cur.count += 1
-        roadMap.set(name, cur)
+        cur.links.push({
+          linkId: r.link_id,
+          speed,
+          level,
+          startNode: r.start_node_name,
+          endNode: r.end_node_name,
+          linkSequence: r.link_sequence,
+        })
+        roadGroup.set(name, cur)
       }
     }
 
-    if (roadMap.size > 0) {
-      roadSpeeds = Array.from(roadMap.entries()).map(([road, stat]) => {
+    if (roadGroup.size > 0) {
+      roadSpeeds = Array.from(roadGroup.entries()).map(([road, stat]) => {
         const avgSpeed = Math.round(stat.total / stat.count)
+        const sortedLinks = stat.links.sort((a, b) => {
+          if (a.linkSequence != null && b.linkSequence != null) {
+            return a.linkSequence - b.linkSequence
+          }
+          return a.linkId.localeCompare(b.linkId)
+        })
         return {
           road,
           speed: avgSpeed,
           avg: Math.round(avgSpeed * 1.1),
-          level: (avgSpeed < 25 ? "red" : avgSpeed < 50 ? "yellow" : "green") as
+          level: (avgSpeed < 25 ? "red" : avgSpeed < 50 ? "orange" : "green") as
             | "red"
+            | "orange"
             | "yellow"
             | "green",
+          links: sortedLinks,
         }
-      }).slice(0, 8)
+      })
     }
   }
+
+  const connectedRoads = precisionRoadsData.filter((displayRoad) =>
+    roadSpeeds.some((speed) => speed.road.includes(displayRoad.name) || displayRoad.name.includes(speed.road)),
+  ).length
 
   const hasDb = Boolean(
     (speedRes && speedRes.rows.length > 0) || (incRes && incRes.rows.length > 0)
@@ -278,6 +322,11 @@ export async function fetchDashboardData() {
     roadSpeeds,
     latestAt: dbLatestTime,
     isFromDb: hasDb,
+    trafficCoverage: {
+      connectedRoads,
+      totalRoads: precisionRoadsData.length,
+      sampleCount: speedSampleCount,
+    },
   }
 }
 
