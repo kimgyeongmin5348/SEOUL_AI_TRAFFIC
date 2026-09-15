@@ -47,6 +47,13 @@ AXIS_EXTEND_MAX_M = 1500.0
 # 표준노드링크 .prj는 ITRF2000 중부원점(False Northing 600000) = EPSG:5186 입니다.
 TO_WGS84 = Transformer.from_crs("EPSG:5186", "EPSG:4326", always_xy=True)
 
+# 같은 서비스링크 안에서 구성 표준링크가 겹칠 때 남길 역할 우선순위입니다.
+# 축 확장(head/tail)이 본 체인과 겹치므로 매핑 원본(mapped)을 가장 신뢰합니다.
+ROLE_PRIORITY = {"mapped": 0, "gap_fill": 1, "axis_extend": 2, "outlier": 3, "missing": 4}
+
+# 대량 INSERT·좌표 JSON UPDATE는 기본 연결 read timeout(30초)을 넘기므로 청크로 나눠 보냅니다.
+DB_CHUNK_ROWS = 1000
+
 
 def load_mapping(path):
     frame = pd.read_csv(path, dtype=str, encoding="utf-8-sig")
@@ -287,6 +294,35 @@ def extend_along_axis(chains, axis_links, graph):
     return extensions
 
 
+def dedupe_sequences(frame):
+    """한 서비스링크 안에서 같은 표준링크가 여러 역할로 중복되면 1행만 남깁니다.
+
+    선형 복원에서 축 확장 구간(head/tail)이 본 체인(mapped/gap_fill)과 겹칠 수 있어
+    service_link_standard_links PRIMARY(link_id, standard_link_id)를 위반합니다.
+    역할 우선순위대로 1행을 남기고 순번을 1..N으로 다시 매깁니다(순서는 유지).
+    """
+    if frame.empty:
+        return frame
+    ordered_mask = frame["sequence"].notna()
+    ordered = frame[ordered_mask].copy()
+    ranked = ordered.assign(
+        _rank=ordered["role"].map(ROLE_PRIORITY).fillna(9),
+        _seq=ordered["sequence"].astype(float),
+    ).sort_values(["link_id", "_rank", "_seq"], kind="stable")
+    ranked = ranked.drop_duplicates(subset=["link_id", "standard_link_id"], keep="first")
+    ranked = ranked.sort_values(["link_id", "_seq"], kind="stable")
+    ranked["sequence"] = ranked.groupby("link_id").cumcount() + 1
+    ranked = ranked.drop(columns=["_rank", "_seq"])
+    used = set(zip(ranked["link_id"], ranked["standard_link_id"]))
+    others = frame[~ordered_mask].copy()
+    others = others[[key not in used for key in zip(others["link_id"], others["standard_link_id"])]]
+    others["_rank"] = others["role"].map(ROLE_PRIORITY).fillna(9)
+    others = others.sort_values(["link_id", "_rank"], kind="stable")
+    others = others.drop_duplicates(subset=["link_id", "standard_link_id"], keep="first")
+    others = others.drop(columns=["_rank"])
+    return pd.concat([ranked, others], ignore_index=True)
+
+
 def build_geometry(mapping, standard_links, graph, road_names, axis_links=None):
     """road_names: {link_id: DB road_name}. 대상 서비스링크는 이 dict의 키입니다."""
     grouped = mapping.groupby("link_id")["standard_link_id"].apply(list)
@@ -352,28 +388,45 @@ def build_geometry(mapping, standard_links, graph, road_names, axis_links=None):
             "moct_road_names": "|".join(dict.fromkeys(graph[s]["road_name"] for s in final)),
             "geometry_json": json.dumps([[round(lng, 7), round(lat, 7)] for lng, lat in points]) if points else None,
         })
-    return pd.DataFrame(rows), pd.DataFrame(sequences)
+    return pd.DataFrame(rows), dedupe_sequences(pd.DataFrame(sequences))
 
 
 def load_to_db(geometry, sequences):
-    from sqlalchemy import text
-    from backend.src.db.database import engine
+    from sqlalchemy import create_engine, text
+    from backend.src.core.config import settings
 
+    # 공유 engine은 read timeout이 30초라 5천여 건 좌표 JSON UPDATE에서 연결이 끊깁니다.
+    # 전용 engine과 청크를 써서 읽기/쓰기 여유를 주고, 끝나면 연결을 정리합니다.
+    engine = create_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 10, "read_timeout": 600, "write_timeout": 600, "charset": "utf8mb4"},
+    )
+    delete_links = text("DELETE FROM service_link_standard_links")
+    insert_link = text("""
+        INSERT INTO service_link_standard_links (link_id, standard_link_id, sequence, in_moct_link, role)
+        VALUES (:link_id, :standard_link_id, :sequence, :in_moct_link, :role)
+    """)
+    update_geometry = text("""
+        UPDATE road_segments SET
+            start_lat = :start_lat, start_lng = :start_lng, end_lat = :end_lat, end_lng = :end_lng,
+            bearing_deg = :bearing_deg, geometry_length_m = :length_m, geometry_json = :geometry_json,
+            geometry_source = :geometry_source, geometry_quality = :geometry_quality,
+            geometry_extended_head_m = :extended_head_m, geometry_extended_tail_m = :extended_tail_m
+        WHERE link_id = :link_id
+    """)
+    sequence_rows = sequences.astype(object).where(sequences.notna(), None).to_dict("records")
     rows = geometry.astype(object).where(geometry.notna(), None).to_dict("records")
-    with engine.begin() as connection:
-        connection.execute(text("DELETE FROM service_link_standard_links"))
-        connection.execute(text("""
-            INSERT INTO service_link_standard_links (link_id, standard_link_id, sequence, in_moct_link, role)
-            VALUES (:link_id, :standard_link_id, :sequence, :in_moct_link, :role)
-        """), sequences.astype(object).where(sequences.notna(), None).to_dict("records"))
-        connection.execute(text("""
-            UPDATE road_segments SET
-                start_lat = :start_lat, start_lng = :start_lng, end_lat = :end_lat, end_lng = :end_lng,
-                bearing_deg = :bearing_deg, geometry_length_m = :length_m, geometry_json = :geometry_json,
-                geometry_source = :geometry_source, geometry_quality = :geometry_quality,
-                geometry_extended_head_m = :extended_head_m, geometry_extended_tail_m = :extended_tail_m
-            WHERE link_id = :link_id
-        """), [{**row, "geometry_source": GEOMETRY_SOURCE if row["geometry_json"] else None} for row in rows])
+    geometry_rows = [{**row, "geometry_source": GEOMETRY_SOURCE if row["geometry_json"] else None} for row in rows]
+    try:
+        with engine.begin() as connection:
+            connection.execute(delete_links)
+            for start in range(0, len(sequence_rows), DB_CHUNK_ROWS):
+                connection.execute(insert_link, sequence_rows[start:start + DB_CHUNK_ROWS])
+            for start in range(0, len(geometry_rows), DB_CHUNK_ROWS):
+                connection.execute(update_geometry, geometry_rows[start:start + DB_CHUNK_ROWS])
+    finally:
+        engine.dispose()
 
 
 def main():

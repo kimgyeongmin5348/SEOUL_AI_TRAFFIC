@@ -173,10 +173,24 @@
 - `pyshp` 의존성 추가. 합성 그래프 단위 테스트 5개 추가.
 - 검증 결과: 백엔드 전체 단위 테스트 `56 passed`
 
+### RDS 007 마이그레이션 적용 및 링크 기하 적재
+
+- RDS에 `007_add_road_segments_geometry.sql`을 적용했다. `road_segments`에 시·종점 좌표, `bearing_deg`, `geometry_length_m`, `geometry_json`, 출처·품질·확장 길이 컬럼이 생성되고 `service_link_standard_links` 테이블이 추가됐다.
+- `scripts/apply_sql_migration.py`가 프로젝트 루트를 `sys.path`에 넣지 않아 `ModuleNotFoundError: No module named 'backend'`로 실패하던 문제를 수정했다.
+- `scripts/build_link_geometry.py --load-db`로 복원 선형을 RDS에 적재했다. 적재 중 두 문제를 수정했다.
+    - `service_link_standard_links` PRIMARY(`link_id`, `standard_link_id`) 위반: 빈 구간 최단경로(`gap_fill`)가 이상치로 제외한 표준링크(`outlier`)를 지나면서 같은 표준링크가 두 역할로 중복됐다. `dedupe_sequences`를 추가해 순번 있는 행(실제 선형 구성)을 우선 남기고 순번 없는 `outlier`·`missing` 행이 겹치면 버리며 순번을 1..N으로 재부여한다.
+    - 좌표 JSON UPDATE에서 read timeout(30초) 발생: 공유 engine 대신 전용 engine(`read_timeout=600`)과 1,000행 청크로 나눠 적재하도록 `load_to_db`를 수정했다.
+- 적재 결과: `service_link_standard_links` 25,514행, `road_segments` 기하 보유 5,061행.
+    - 품질: `complete` 4,667 / `partial` 394 / `unmapped` 229 / `missing` 51
+    - 역할: `mapped` 10,855 / `gap_fill` 7,493 / `axis_extend` 6,452 / `outlier` 203 / `missing` 511
+    - 좌표·방위 보유 5,061건(품질 `unmapped`·`missing` 280건 제외와 일치), 출처 `moct_link_via_topis_mapping_2026_03`
+- 중복 제거 단위 테스트 1개를 추가했다.
+- 검증 결과: 백엔드 전체 단위 테스트 `57 passed`
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
-2. [완료] 표준노드링크 기하를 확보해 `road_segments`에 시·종점 좌표 또는 geometry를 추가한다. (TOPIS 매핑표로 연결, RDS 반영은 007 적용 후 `--load-db`)
+2. [완료] 표준노드링크 기하를 확보해 `road_segments`에 시·종점 좌표 또는 geometry를 추가한다. (TOPIS 매핑표로 연결, RDS에 007 적용 후 `--load-db`로 5,061건 적재 완료)
 3. OSRM step 좌표를 링크 기하에 map-match하고 진행 방위와 링크 `bearing_deg`를 비교해 방향 일치 여부를 저장한다. (`axis_direction`은 유입/유출과 무관하므로 방위 직접 비교)
 4. [완료] `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.
 5. 매칭 방법·거리·방향 일치율을 API 응답과 링크 데이터셋에 기록한다.

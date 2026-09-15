@@ -5,6 +5,7 @@ import pandas as pd
 from scripts.build_link_geometry import (
     build_geometry,
     chain_standard_links,
+    dedupe_sequences,
     extend_along_axis,
     fill_gaps,
     split_outliers,
@@ -65,6 +66,21 @@ def test_axis_extension_splits_gap_between_neighbouring_service_links():
     # b, c, d(각 88m) 중 절반(≥132m)까지 앞 링크 뒤에, 나머지는 뒤 링크 앞에 붙는다.
     assert extensions["S1"] == ([], ["b", "c"])
     assert extensions["S2"] == (["d"], [])
+
+
+def test_dedupe_sequences_prefers_ordered_row_over_outlier_collision():
+    # gap_fill 최단경로가 outlier로 제외한 표준링크를 지나면 순번 행과 outlier 행이 겹친다.
+    # 실제 선형에 포함된 순번 있는 행을 남기고, PRIMARY(link_id, standard_link_id)를 지킨다.
+    frame = pd.DataFrame([
+        {"link_id": "S1", "standard_link_id": "a", "sequence": 1, "in_moct_link": True, "role": "mapped"},
+        {"link_id": "S1", "standard_link_id": "a", "sequence": None, "in_moct_link": True, "role": "outlier"},
+        {"link_id": "S1", "standard_link_id": "b", "sequence": 2, "in_moct_link": True, "role": "gap_fill"},
+    ])
+    result = dedupe_sequences(frame)
+    assert not result.duplicated(subset=["link_id", "standard_link_id"]).any()
+    row = result.set_index("standard_link_id")
+    assert row.loc["a", "role"] == "mapped" and row.loc["a", "sequence"] == 1
+    assert list(result[result.link_id == "S1"]["sequence"]) == [1, 2]
 
 
 def test_build_geometry_reports_quality_and_wgs84_polyline():
