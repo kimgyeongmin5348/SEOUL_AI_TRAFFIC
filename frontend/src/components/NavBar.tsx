@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { useAuth } from "../auth"
+import BrandLogo from "./BrandLogo"
 
 export default function NavBar() {
   const { pathname } = useLocation()
@@ -220,30 +221,12 @@ export default function NavBar() {
             to="/"
             className="flex items-center gap-2 group flex-shrink-0"
             onClick={() => setMobileMenuOpen(false)}
+            aria-label="RoadPulse 홈"
           >
-            <div
-              className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_0_16px_rgba(56,189,248,0.55)]"
-              style={{
-                background: "linear-gradient(135deg, #2563eb, #38bdf8)",
-                borderRadius: 10,
-                boxShadow: "0 2px 10px rgba(37, 99, 235, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.45)",
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
-                <path
-                  d="M2 9C2 5.13 5.13 2 9 2s7 3.13 7 7-3.13 7-7 7-7-3.13-7-7z"
-                  stroke="white"
-                  strokeWidth="1.6"
-                />
-                <path
-                  d="M9 5v4l2.5 2.5"
-                  stroke="white"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                />
-                <circle cx="9" cy="9" r="1.2" fill="white" />
-              </svg>
-            </div>
+            <BrandLogo
+              priority
+              className="w-[42px] h-7 sm:w-12 sm:h-8 rounded-lg transition-transform duration-300 group-hover:scale-105"
+            />
             <span
               style={{
                 fontFamily: "var(--font-display)",

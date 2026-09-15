@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useAuth } from "../auth"
+import BrandLogo from "../components/BrandLogo"
 import SubpageBackground from "../components/SubpageBackground"
 
 export default function Login() {
@@ -36,25 +37,7 @@ export default function Login() {
       <div className="relative w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div
-            className="w-14 h-14 mx-auto mb-4 flex items-center justify-center"
-            style={{
-              background: "linear-gradient(135deg, #007aff, #5e5ce6)",
-              borderRadius: 18,
-              boxShadow: "0 8px 32px rgba(0,122,255,0.4)",
-            }}
-          >
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <circle cx="14" cy="14" r="10" stroke="white" strokeWidth="1.8" />
-              <circle cx="14" cy="14" r="3" fill="white" />
-              <path
-                d="M14 7v3M14 18v3M7 14h3M18 14h3"
-                stroke="white"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
+          <BrandLogo priority className="w-28 h-[75px] sm:w-32 sm:h-[85px] mx-auto mb-3 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.35)]" />
           <h1
             className="text-white"
             style={{

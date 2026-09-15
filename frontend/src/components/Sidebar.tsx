@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { useAuth } from "../auth"
+import BrandLogo from "./BrandLogo"
 
 const navItems = [
   {
@@ -256,30 +257,9 @@ export default function Sidebar() {
               to="/"
               className="flex items-center gap-2 group flex-shrink-0"
               onClick={() => setMobileMenuOpen(false)}
+              aria-label="RoadPulse 홈"
             >
-              <div
-                className="w-7 h-7 flex items-center justify-center"
-                style={{
-                  background: "linear-gradient(135deg, #007aff, #5e5ce6)",
-                  borderRadius: 9,
-                  boxShadow: "0 2px 8px rgba(0,122,255,0.3)",
-                }}
-              >
-                <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
-                  <path
-                    d="M2 9C2 5.13 5.13 2 9 2s7 3.13 7 7-3.13 7-7 7-7-3.13-7-7z"
-                    stroke="white"
-                    strokeWidth="1.6"
-                  />
-                  <path
-                    d="M9 5v4l2.5 2.5"
-                    stroke="white"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                  />
-                  <circle cx="9" cy="9" r="1.2" fill="white" />
-                </svg>
-              </div>
+              <BrandLogo className="w-[42px] h-7 rounded-lg transition-transform duration-300 group-hover:scale-105" />
               <span
                 style={{
                   fontFamily: "var(--font-display)",
@@ -294,7 +274,7 @@ export default function Sidebar() {
             </Link>
 
             {/* Current Page Badge */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/[0.04] border border-black/[0.05]">
+            <div className="hidden min-[420px]:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/[0.04] border border-black/[0.05]">
               <span className="w-1.5 h-1.5 rounded-full bg-[#007aff] pulse-dot" />
               <span className="text-xs font-semibold text-[#3a3a52]">{currentPageTitle}</span>
             </div>
@@ -463,29 +443,7 @@ export default function Sidebar() {
         style={{ borderRadius: 28 }}
       >
         <Link to="/" className="flex justify-center mb-3 group" title="홈으로 이동">
-          <div
-            className="w-8 h-8 flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:shadow-[0_0_18px_rgba(56,189,248,0.6)]"
-            style={{
-              background: "linear-gradient(135deg, #2563eb, #38bdf8)",
-              borderRadius: 10,
-              boxShadow: "0 2px 10px rgba(37,99,235,0.45), inset 0 1px 1px rgba(255,255,255,0.45)",
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path
-                d="M2 9C2 5.13 5.13 2 9 2s7 3.13 7 7-3.13 7-7 7-7-3.13-7-7z"
-                stroke="white"
-                strokeWidth="1.6"
-              />
-              <path
-                d="M9 5v4l2.5 2.5"
-                stroke="white"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-              />
-              <circle cx="9" cy="9" r="1.2" fill="white" />
-            </svg>
-          </div>
+          <BrandLogo className="w-[52px] h-[35px] rounded-lg transition-transform duration-300 group-hover:scale-110" />
         </Link>
 
         {/* Nav items container with sliding indicator */}
