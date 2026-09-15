@@ -3,11 +3,13 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import hmac
+import logging
 import os
 import re
 import secrets
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response
@@ -22,7 +24,29 @@ from backend.src.db.database import get_db
 from backend.src.core.config import settings
 from backend.src.services.parking_service import ParkingApiError, SeoulParkingService
 
-app = FastAPI(title="RoadPulse")
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler = None
+    start_scheduler = os.environ.get("START_SCHEDULER_IN_PROCESS", "true").lower() in ("true", "1", "yes")
+    if start_scheduler and os.environ.get("APP_ROLE", "web") != "worker":
+        try:
+            from backend.src.workers.realtime_scheduler import start_background_scheduler
+            scheduler = start_background_scheduler()
+            logger.info("In-process background scheduler started successfully")
+        except Exception as e:
+            logger.warning("Failed to start in-process scheduler: %s", e)
+    yield
+    if scheduler:
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception:
+            pass
+
+
+app = FastAPI(title="RoadPulse", lifespan=lifespan)
 KST = timezone(timedelta(hours=9))
 SESSION_COOKIE = "roadpulse_session"
 SESSION_DAYS = 30
@@ -75,11 +99,18 @@ DATASETS = {
         ORDER BY MAX(v.measured_at) ASC
     """),
     "speed": ("traffic_speed_measurements", "measured_at", """
-        SELECT r.road_name, s.link_id, s.measured_at, s.speed_kmh, s.travel_time_sec, s.collected_at
+        SELECT r.road_name, s.link_id, s.measured_at, s.speed_kmh, s.travel_time_sec, s.collected_at,
+               r.start_node_name, r.end_node_name, r.link_sequence
         FROM traffic_speed_measurements s 
+        JOIN (
+            SELECT link_id, MAX(measured_at) AS measured_at
+            FROM traffic_speed_measurements
+            WHERE measured_at >= DATE_SUB(:latest, INTERVAL 15 MINUTE)
+            GROUP BY link_id
+        ) recent ON recent.link_id=s.link_id AND recent.measured_at=s.measured_at
         JOIN road_segments r ON r.link_id=s.link_id
-        WHERE s.measured_at=:latest AND r.road_name IS NOT NULL AND r.road_name != ''
-        ORDER BY r.road_name, s.link_id LIMIT 1000
+        WHERE r.road_name IS NOT NULL AND r.road_name != ''
+        ORDER BY r.road_name, COALESCE(r.link_sequence, 0), s.link_id LIMIT 1000
     """),
     "weather": ("weather_measurements", "observed_at", """
         SELECT s.station_name, w.weather_station_id, w.observed_at, w.temperature_c,

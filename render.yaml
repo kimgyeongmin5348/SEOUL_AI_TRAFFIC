@@ -19,3 +19,27 @@ services:
         sync: false
       - key: VITE_KAKAO_MAP_JS_KEY
         sync: false
+      - key: START_SCHEDULER_IN_PROCESS
+        value: "true"
+
+  - type: worker
+    name: roadpulse-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python -m backend.src.workers.realtime_scheduler
+    autoDeployTrigger: commit
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_ROLE
+        value: worker
+      - key: START_SCHEDULER_IN_PROCESS
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: SEOUL_TRAFFIC_API_KEY
+        sync: false
+      - key: SEOUL_INCIDENT_API_KEY
+        sync: false
+      - key: KMA_API_KEY
+        sync: false

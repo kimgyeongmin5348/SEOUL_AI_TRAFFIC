@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Sidebar from "../components/Sidebar"
 import SubpageBackground from "../components/SubpageBackground"
-import MapPlaceholder from "../components/MapPlaceholder"
+import MapPlaceholder, { type IncidentItem } from "../components/MapPlaceholder"
 import { fetchIncidentsData } from "../services/api"
 
 const impactColor = { high: "#ff3b30", medium: "#ff9500", low: "#34c759" }
@@ -18,6 +18,10 @@ export default function Incidents() {
   const [selected, setSelected] = useState<number | string | null>(null)
   const [filter, setFilter] = useState("전체")
   const [loading, setLoading] = useState(true)
+
+  const handleSelectIncident = useCallback((inc: IncidentItem) => {
+    setSelected((prev) => (prev === inc.id ? null : inc.id))
+  }, [])
   const [incidentsState, setIncidentsState] = useState<{
     incidents: Array<{
       id: number | string
@@ -109,7 +113,7 @@ export default function Incidents() {
               돌발상황
             </h1>
             <div className="flex items-center gap-2">
-              <span className="pulse-dot w-2 h-2 rounded-full bg-[#ff3b30] inline-block shadow-[0_0_8px_#ff3b30]" />
+              <span className="w-2 h-2 rounded-full bg-[#ff3b30] inline-block shadow-[0_0_8px_rgba(255,59,48,0.7)]" />
               <span
                 className="text-sm font-medium text-[#ff6961]"
                 style={{ fontFamily: "var(--font-body)" }}
@@ -301,7 +305,9 @@ export default function Incidents() {
                 height={isMobile ? 320 : 560}
                 incidents={incidents}
                 selectedIncidentId={selected}
-                onSelectIncident={(inc) => setSelected(inc.id)}
+                onSelectIncident={handleSelectIncident}
+                enableTraffic={false}
+                enableParking={false}
               />
               {selInc && (
                 <div

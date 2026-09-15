@@ -679,6 +679,9 @@ export default function Route() {
                 originPoint={originPoint || undefined}
                 destPoint={destPoint || undefined}
                 parkingLots={parkingLots}
+                enableTraffic={false}
+                enableIncidents={false}
+                enableParking={true}
                 selectedParkingLotId={selectedParkingCode}
                 onSelectParkingLot={(lot) => setSelectedParkingCode(lot.parking_code)}
               />
