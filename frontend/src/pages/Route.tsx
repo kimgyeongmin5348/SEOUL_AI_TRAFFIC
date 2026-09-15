@@ -26,6 +26,24 @@ const POPULAR_ROUTES = [
   { from: "노원구 상계동", to: "서초구 양재동", label: "노원 ➔ 양재" },
 ]
 
+function explanationSentences(text: string | null | undefined) {
+  if (!text) return []
+  const cleaned = text
+    .replace(/\*\*/g, "")
+    .replace(/^\s*(?:추천 이유|AI 추천 근거)\s*[:：]\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+  return (cleaned.match(/[^.!?]+[.!?]?/g) || [cleaned])
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+}
+
+function shortExplanation(text: string | null | undefined) {
+  const sentence = explanationSentences(text)[0]
+  if (!sentence) return ""
+  return sentence.length > 86 ? `${sentence.slice(0, 83).trim()}…` : sentence
+}
+
 export default function Route() {
   const [searchParams] = useSearchParams()
   const { user } = useAuth()
@@ -210,6 +228,10 @@ export default function Route() {
   }, [searchParams])
 
   const selectedRoute = routeList.find((r) => r.id === selected) || routeList[0]
+  const aiRecommendedRoute = routeList.find((route) => route.ai) || routeList[0]
+  const hasResults = routeList.length > 0
+  const aiExplanation = explanationSentences(aiRecommendedRoute?.reason).slice(0, 3)
+  const recommendationMeta = predictionMessage.split(" · ").slice(0, 2).join(" · ")
 
   return (
     <div className="min-h-full flex relative" style={{ minHeight: "100dvh" }}>
@@ -446,7 +468,7 @@ export default function Route() {
             </div>
 
             {locationMessage && <p role="status" className="mt-2.5 text-xs text-[#6b6b8a]">{locationMessage}</p>}
-            {predictionMessage && <p role="status" className="mt-2.5 text-xs sm:text-sm text-[#4a4a68] font-medium">{predictionMessage}</p>}
+            {predictionMessage && !hasResults && <p role="status" className="mt-2.5 text-xs sm:text-sm text-[#4a4a68] font-medium">{predictionMessage}</p>}
             {error && <p role="alert" className="mt-2.5 text-xs sm:text-sm text-red-600">{error}</p>}
 
             {/* 빠른 추천 경로 칩 (가로 스크롤 & no-scrollbar) */}
@@ -481,9 +503,50 @@ export default function Route() {
           </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-4 animate-slide-up-delay-2">
+        <div className={`route-workspace animate-slide-up-delay-2 ${hasResults ? "has-results" : ""}`}>
           {/* Route list */}
-          <div className="lg:w-84 flex flex-col gap-3">
+          <div className="route-recommendations flex flex-col gap-3">
+            {hasResults && aiRecommendedRoute && (
+              <section className="route-ai-brief" aria-live="polite" aria-label="AI 추천 브리핑">
+                <div className="route-ai-brief__glow" aria-hidden="true" />
+                <div className="route-ai-brief__header">
+                  <div>
+                    <span className="route-ai-brief__eyebrow">✦ AI ROUTE BRIEF</span>
+                    <h2>경로 {aiRecommendedRoute.id}를 추천해요</h2>
+                  </div>
+                  <span className="route-ai-brief__status">추천 완료</span>
+                </div>
+
+                <div className="route-ai-brief__metrics" aria-label="추천 경로 핵심 정보">
+                  <div><span>예상 시간</span><strong>{aiRecommendedRoute.time}분</strong></div>
+                  <div><span>주행 거리</span><strong>{aiRecommendedRoute.distance}km</strong></div>
+                  <div><span>예측 반영</span><strong>{aiRecommendedRoute.coverage === undefined ? "미적용" : `${Math.round(aiRecommendedRoute.coverage * 100)}%`}</strong></div>
+                </div>
+
+                <div className="route-ai-brief__reason">
+                  <p className="route-ai-brief__reason-label">이 경로를 고른 이유</p>
+                  <ol>
+                    {(aiExplanation.length > 0
+                      ? aiExplanation
+                      : [
+                          "기본 소요시간과 예측 교통량을 함께 비교해 가장 유리한 후보를 골랐어요.",
+                          "도로 상황에 따라 실제 도착 시간은 달라질 수 있어요.",
+                        ]
+                    ).map((sentence, index) => (
+                      <li key={`${index}-${sentence}`}>
+                        <span>{index + 1}</span>
+                        <p>{sentence}</p>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+
+                <div className="route-ai-brief__footer">
+                  <span>주요 경유 · {aiRecommendedRoute.via}</span>
+                  {recommendationMeta && <span>{recommendationMeta}</span>}
+                </div>
+              </section>
+            )}
             {routeList.map((r) => {
               const isSelected = r.id === selected
               const color = trafficColor[r.trafficLevel]
@@ -594,7 +657,8 @@ export default function Route() {
                           fontFamily: "var(--font-body)",
                         }}
                       >
-                        ✦ {r.reason}
+                        <span className="font-semibold text-[#5e5ce6]">AI 한줄 요약</span>
+                        <p className="mt-1 text-[13px] leading-relaxed">{shortExplanation(r.reason)}</p>
                       </div>
                     )}
                   </div>
