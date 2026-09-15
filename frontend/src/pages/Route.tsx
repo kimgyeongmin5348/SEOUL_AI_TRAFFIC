@@ -267,7 +267,7 @@ export default function Route() {
               className="text-white/70 text-xs sm:text-sm mb-3"
               style={{ fontFamily: "var(--font-body)" }}
             >
-              실제 도로 경로 · 베스트 모델 교통량 예측으로 추천 · 소요시간은 OSRM 추정
+              실제 도로 경로 · 실시간 도로 속도 및 AI 교통량·돌발상황 통합 소요시간 산출
               {departureAt && ` · 출발 ${new Date(departureAt).toLocaleString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`}
             </p>
           </div>
@@ -613,7 +613,7 @@ export default function Route() {
                       )}
                     </div>
 
-                    <div className="flex items-end gap-3 mt-3">
+                    <div className="flex items-end gap-3 mt-3 flex-wrap">
                       <div>
                         <span
                           className="text-[#1a1a2e]"
@@ -627,13 +627,28 @@ export default function Route() {
                           {r.time}
                         </span>
                         <span className="text-sm text-[#6b6b8a] ml-1">분</span>
-                        <span className="text-[10px] text-[#6b6b8a] ml-1.5 px-1.5 py-0.5 rounded bg-black/5 font-normal">OSRM 기준</span>
+                        <span
+                          className="text-[10px] font-semibold ml-1.5 px-1.5 py-0.5 rounded"
+                          style={{
+                            background: r.ai ? "rgba(94,92,230,0.14)" : "rgba(0,122,255,0.12)",
+                            color: r.ai ? "#5e5ce6" : "#007aff",
+                          }}
+                        >
+                          {r.ai ? "실시간 속도·AI 반영" : "실시간 속도 반영"}
+                        </span>
+                        {r.delayMin > 0 && (
+                          <span className="text-[10px] font-semibold text-[#ff3b30] bg-[#ff3b30]/10 px-1.5 py-0.5 rounded ml-1">
+                            +{r.delayMin}분 정체
+                          </span>
+                        )}
                       </div>
                       <div
-                        className="text-sm text-[#6b6b8a] pb-1"
+                        className="text-xs text-[#6b6b8a] pb-1 flex items-center gap-1.5"
                         style={{ fontFamily: "var(--font-body)" }}
                       >
-                        {r.distance}km
+                        <span>{r.distance}km</span>
+                        <span>·</span>
+                        <span style={{ color }}>{r.traffic} ({r.avgSpeed}km/h)</span>
                       </div>
                       <div
                         className="ml-auto text-xs px-2.5 py-1 rounded-full font-semibold shrink-0"
@@ -683,7 +698,7 @@ export default function Route() {
                 enableIncidents={false}
                 enableParking={true}
                 selectedParkingLotId={selectedParkingCode}
-                onSelectParkingLot={(lot) => setSelectedParkingCode(lot.parking_code)}
+                onSelectParkingLot={(lot) => setSelectedParkingCode(lot ? lot.parking_code : null)}
               />
             </div>
 
@@ -720,7 +735,7 @@ export default function Route() {
                       return (
                         <article
                           key={lot.parking_code}
-                          onClick={() => setSelectedParkingCode(lot.parking_code)}
+                          onClick={() => setSelectedParkingCode((prev) => (prev === lot.parking_code ? null : lot.parking_code))}
                           className={`rounded-2xl p-3.5 border transition-all cursor-pointer ${
                             isSelected
                               ? "bg-blue-50/80 border-[#007aff] ring-2 ring-[#007aff]/30 shadow-sm"
@@ -773,20 +788,22 @@ export default function Route() {
                   {selectedRoute?.label} 주행 상세 분석
                 </h3>
 
-                {/* ETA 오해 방지 명시 배너 */}
+                {/* 실시간 속도 및 AI 예측 안내 배너 */}
                 <div className="mb-4 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/60 flex items-start gap-2.5 text-xs text-[#2c3e50] leading-relaxed">
                   <span className="text-base shrink-0 mt-0.5">ℹ️</span>
                   <div>
-                    <span className="font-semibold text-[#007aff]">AI 추천 점수 안내:</span>
-                    {" "}AI 추천은 OSRM 기준 소요시간에 교통량 증가율, 실시간 관측 속도 지연, 돌발상황(사고·공사·통제) 패널티를 종합한 <strong className="text-[#1a1a2e]">후보 간 비교 순위용 비용 점수(Cost)</strong>이며, 실제 주행 도착시간(ETA)이 아닙니다.
+                    <span className="font-semibold text-[#007aff]">실시간 속도·AI 경로 분석:</span>
+                    {" "}본 경로는 OSRM 도로망 기본 시간에 <strong className="text-[#1a1a2e]">서울시 실시간 관측 속도 지연, AI 모델의 미래 혼잡도 예측, 실시간 돌발상황(사고·공사)</strong>을 모두 반영하여 실제 체감 소요시간과 최적 경로를 산출합니다.
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
                   {[
                     {
-                      label: "OSRM 기준 소요 시간",
-                      value: `${selectedRoute?.time}분`,
+                      label: "실시간 예상 소요 시간",
+                      value: selectedRoute?.delayMin > 0
+                        ? `${selectedRoute?.time}분 (정체 +${selectedRoute?.delayMin}분)`
+                        : `${selectedRoute?.time}분`,
                       color: "#007aff",
                     },
                     {
@@ -800,8 +817,8 @@ export default function Route() {
                       color: "#4a4a68",
                     },
                     {
-                      label: "OSRM 예상 평균 속도",
-                      value: `${selectedRoute?.avgSpeed}km/h`,
+                      label: "실시간 평균 주행 속도",
+                      value: `${selectedRoute?.avgSpeed}km/h (${selectedRoute?.traffic})`,
                       color: "#4a4a68",
                     },
                     {

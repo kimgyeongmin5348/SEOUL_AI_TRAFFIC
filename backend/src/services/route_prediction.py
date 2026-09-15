@@ -487,7 +487,7 @@ def predict_routes(db, candidates, now, departure_at=None):
                 "extra_distance_km": round(extra_distance / 1000, 2) if extra_distance is not None else None,
                 "basis": "traffic_adjusted_comparison_score",
             },
-            "message": f"베스트 모델 교통량 예측 반영 · 후보 {eligible_count}/{len(results)}개 평가 · 실시간 관측과 최근 30일 시간대 패턴 사용 · {forecast_steps}시간 순차 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측 유지 · 도로명·진행 방향 기준 교통량 매칭 · 소요시간은 OSRM 추정치" if available
+            "message": f"베스트 모델 교통량 예측 반영 · 후보 {eligible_count}/{len(results)}개 평가 · 실시간 관측과 최근 30일 시간대 패턴 사용 · {forecast_steps}시간 순차 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측 유지 · 도로명·진행 방향 기준 교통량 매칭 · 소요시간은 실시간 속도·AI 혼잡도 반영" if available
             else "예측 반영 범위가 50% 이상인 경로 후보가 없어 AI 추천을 보류했습니다."}
 
 
