@@ -225,6 +225,18 @@
 - 검증: 순위 지표 단위 테스트 6개 추가.
 - 검증 결과: 백엔드 전체 단위 테스트 `74 passed`
 
+### OD 기반 경로 학습 데이터셋 구축기
+
+- 서울 주요 OD 쌍의 OSRM 후보 경로를 대량 시뮬레이션해 경로 학습 데이터셋을 만드는 `route_training_dataset.py`를 추가했다.
+    - `parse_osrm_routes`가 production과 같은 OSRM 응답(alternatives 최대 3, steps)을 후보 목록으로 변환한다.
+    - `fetch_osrm_candidates`가 production 프론트와 동일한 공개 OSRM 요청을 사용한다.
+    - `build_candidate_record`가 링크 기하 map-match와 관측 통행시간 재구성을 재사용해 후보별 `actual_duration_sec`·`actual_delay_sec`·품질 등급을 계산한다.
+    - `assign_ranks`가 동일 요청 내 실제 통행시간 순위와 `chosen_best` 라벨을 부여한다.
+    - `RouteTrainingDatasetBuilder`가 OD 쌍·출발 시각별로 후보를 생성하고 출발 시각 ±60분 관측을 링크별로 선택한다.
+- `scripts/build_route_training_dataset.py` CLI를 추가했다. 서울 주요 OD 쌍 5쌍과 관측 기간(2026-09-13) 출발 시각 2개를 기본값으로 쓴다. `--limit`, `--sleep`으로 호출량을 제한한다.
+- 검증: OSRM 파싱·링크 매칭·재구성·순위·CSV 단위 테스트 7개 추가.
+- 검증 결과: 백엔드 전체 단위 테스트 `81 passed`
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
@@ -237,6 +249,6 @@
 8. [완료] Top-1 accuracy, pairwise ranking accuracy, regret 계산 스크립트를 추가한다.
 9. [완료] 화면에 AI 점수가 ETA가 아님을 명시한다.
 10. [진행 중] `inbbong` 브랜치를 `main`에 PR로 병합한다. (origin/main 병합·푸시 완료, PR 생성 대기)
-11. 서울시 주요 출발·도착지(OD) 쌍 기반으로 과거 OSRM 후보 경로를 대량 시뮬레이션 생성하고 링크 관측과 결합해 `route_training_dataset.csv`를 일괄 구축한다. (Cold Start 해소)
+11. [완료] 서울시 주요 출발·도착지(OD) 쌍 기반으로 과거 OSRM 후보 경로를 대량 시뮬레이션 생성하고 링크 관측과 결합해 `route_training_dataset.csv`를 일괄 구축한다. (Cold Start 해소)
 12. 경로 실제 소요시간(`actual_duration_sec`) 회귀 또는 후보 간 순위 학습(Pairwise Ranking) AI 모델을 학습하고 아티팩트(`ml/artifacts/ml_models`)를 생성한다.
 13. `route_prediction.py`의 휴리스틱 추천 방식을 신규 경로 AI 모델 추론으로 교체하고, 매칭 데이터 부족 시 기존 방식으로 안전하게 fallback하도록 연동한다.
