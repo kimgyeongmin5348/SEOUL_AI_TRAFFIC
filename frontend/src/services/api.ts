@@ -1,5 +1,4 @@
 // Pure DB API Client without mock data fallbacks
-import precisionRoadsData from "../data/seoul_roads.json"
 
 export interface RoadLinkSpeed {
   linkId: string
@@ -308,10 +307,6 @@ export async function fetchDashboardData() {
     }
   }
 
-  const connectedRoads = precisionRoadsData.filter((displayRoad) =>
-    roadSpeeds.some((speed) => speed.road.includes(displayRoad.name) || displayRoad.name.includes(speed.road)),
-  ).length
-
   const hasDb = Boolean(
     (speedRes && speedRes.rows.length > 0) || (incRes && incRes.rows.length > 0)
   )
@@ -323,10 +318,38 @@ export async function fetchDashboardData() {
     latestAt: dbLatestTime,
     isFromDb: hasDb,
     trafficCoverage: {
-      connectedRoads,
-      totalRoads: precisionRoadsData.length,
+      connectedRoads: roadSpeeds.length,
+      totalRoads: roadSpeeds.length,
       sampleCount: speedSampleCount,
     },
+  }
+}
+
+export interface AllRoadSpeedItem {
+  road: string
+  speed: number
+  travelTimeSec: number
+  linkCount: number
+  level: "red" | "yellow" | "green"
+}
+
+export async function fetchAllRoadSpeeds(search?: string, limit: number = 300): Promise<{
+  total: number
+  latestAt: string | null
+  roads: AllRoadSpeedItem[]
+}> {
+  try {
+    const params = new URLSearchParams()
+    if (search) params.set("search", search)
+    params.set("limit", String(limit))
+    const res = await fetch(`/api/v1/traffic/roads?${params.toString()}`)
+    if (!res.ok) {
+      return { total: 0, latestAt: null, roads: [] }
+    }
+    return await res.json()
+  } catch (err) {
+    console.warn("Failed to fetch all road speeds:", err)
+    return { total: 0, latestAt: null, roads: [] }
   }
 }
 

@@ -188,14 +188,28 @@ class DataPipelineService:
         )
 
         # ---------------------------------------------------------------------
-        # 1-1. 속도·통행시간을 측정지점 단위로 집계 (미래 정보 방지)
+        # 1-1. 속도·통행시간을 측정지점 단위 및 서울시 전역 단위로 집계 (미래 정보 방지)
         # ---------------------------------------------------------------------
-        logger.info("  [Processing] Aggregating linked speed and travel time...")
+        logger.info("  [Processing] Aggregating linked speed and Seoul-wide network speed...")
         df_speed["datetime"] = pd.to_datetime(df_speed["measured_at"]).dt.floor("h")
         df_speed_hourly = (
             df_speed.groupby(["link_id", "datetime"], as_index=False)
             .agg(speed_kmh=("speed_kmh", "mean"), travel_time_sec=("travel_time_sec", "mean"))
         )
+
+        # 서울시 전체 도로 링크(5,200개 링크)의 시간별 거시 평균 속도 및 소통 통계
+        df_seoul_speed_hourly = (
+            df_speed.groupby("datetime", as_index=False)
+            .agg(
+                seoul_avg_speed=("speed_kmh", "mean"),
+                seoul_avg_travel_time=("travel_time_sec", "mean"),
+            )
+            .sort_values("datetime")
+        )
+        df_seoul_speed_hourly["seoul_avg_speed_lag_1h"] = df_seoul_speed_hourly["seoul_avg_speed"].shift(1)
+        df_seoul_speed_hourly["seoul_avg_travel_time_lag_1h"] = df_seoul_speed_hourly["seoul_avg_travel_time"].shift(1)
+        seoul_speed_features = df_seoul_speed_hourly[["datetime", "seoul_avg_speed_lag_1h", "seoul_avg_travel_time_lag_1h"]]
+
         df_maps = df_maps[df_maps["is_primary"].astype(bool)]
         speed_by_spot = df_maps[["spot_id", "link_id"]].merge(
             df_speed_hourly, on="link_id", how="inner"
@@ -245,12 +259,18 @@ class DataPipelineService:
         weather_hourly["weather_source_datetime"] = weather_hourly["weather_source_datetime"].ffill()
 
         # ---------------------------------------------------------------------
-        # 3. 교통량 + 날씨 + 지점정보 조인 (Merge)
+        # 3. 교통량 + 날씨 + 서울시 전역 속도 + 지점정보 조인 (Merge)
         # ---------------------------------------------------------------------
-        logger.info("  [Processing] Merging traffic volume, weather, and spots...")
+        logger.info("  [Processing] Merging traffic volume, weather, Seoul speed, and spots...")
         merged = pd.merge(grouped_traffic, weather_hourly, on="datetime", how="left")
+        merged = pd.merge(merged, seoul_speed_features, on="datetime", how="left")
         merged = pd.merge(merged, speed_features, on=["spot_id", "datetime"], how="left")
         merged = pd.merge(merged, df_spots[["spot_id", "spot_name", "tm_x", "tm_y"]], on="spot_id", how="left")
+
+        # 서울시 전역 평균 속도 결측 보정
+        if "seoul_avg_speed_lag_1h" in merged.columns:
+            merged["seoul_avg_speed_lag_1h"] = merged["seoul_avg_speed_lag_1h"].ffill().bfill().fillna(35.0)
+            merged["seoul_avg_travel_time_lag_1h"] = merged["seoul_avg_travel_time_lag_1h"].ffill().bfill().fillna(60.0)
 
         # 관측 이전 구간은 미래값으로 채우지 않고 학습에서 제외합니다.
         merged["weather_observed"] = (
