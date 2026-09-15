@@ -202,6 +202,18 @@
 - 검증: 신규 방위·매칭 단위 테스트 7개 추가, 기존 `predict_routes` mock에 geometry 쿼리 반영.
 - 검증 결과: 백엔드 전체 단위 테스트 `64 passed`, 프론트엔드 빌드 성공
 
+### 링크 관측 기반 actual_duration_sec 재구성
+
+- 실제 주행 이력이 없으므로 링크 관측 통행시간으로 경로 통행시간 라벨을 재구성하는 `route_duration_reconstruction.py`를 추가했다.
+    - `link_match_details`에 step index를 추가해 `steps_json`과 순서를 맞출 수 있게 했다.
+    - `reconstruct_candidate_duration`이 매칭 링크의 `travel_time_sec`로 step 시간을 대체하고, 미매칭 step은 OSRM 시간을 유지한다.
+    - `quality_grade`가 링크 매칭률·관측 사용률로 `high`/`medium`/`low` 등급을 남긴다.
+    - `RouteDurationReconstructionService`가 출발 시각 ±60분 내 가장 가까운 관측을 링크별로 선택하고, `route_requests` JOIN으로 출발 시각을 참조한다.
+- `scripts/reconstruct_route_durations.py` CLI를 추가했다.
+- 기존 후보 행은 008 적용 이전에 저장되어 `link_match_json`이 NULL이므로 재구성 대상이 0건이다. 신규 요청부터 actual_duration이 채워진다.
+- 검증: 재구성·품질 등급 단위 테스트 4개 추가.
+- 검증 결과: 백엔드 전체 단위 테스트 `68 passed`
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
@@ -209,7 +221,7 @@
 3. [완료] OSRM step 좌표를 링크 기하에 map-match하고 진행 방위와 링크 `bearing_deg`를 비교해 방향 일치 여부를 저장한다. (008 RDS 적용 완료)
 4. [완료] `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.
 5. [완료] 매칭 방법·거리·방향 일치율을 API 응답(`link_match_ratio`, `direction_match_ratio`)과 로그(`link_match_json`)에 기록한다.
-6. 매칭된 링크의 시간대별 `travel_time_sec`로 경로별 `actual_duration_sec`를 재구성하고 품질 등급을 저장한다.
+6. [완료] 매칭된 링크의 시간대별 `travel_time_sec`로 경로별 `actual_duration_sec`를 재구성하고 품질 등급을 저장한다.
 7. [완료] `/api/routes/predict` 요청 시 `route_request_id`와 후보 경로를 로그 테이블에 저장해 경로 학습 데이터셋 축적을 시작한다.
 8. Top-1 accuracy, pairwise ranking accuracy, regret 계산 스크립트를 추가한다.
 9. [완료] 화면에 AI 점수가 ETA가 아님을 명시한다.

@@ -366,11 +366,13 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
         route_incidents = {}
         coordinates = getattr(candidate, "coordinates", [])
         preferred_direction = determine_route_direction(coordinates)
-        for step in candidate.steps:
+        for index, step in enumerate(candidate.steps):
             # 도로명 후보 링크 중 step 대표점에 가장 가까운 링크를 찾아 방위 일치를 판정합니다.
             step_match = match_step_to_link(step, link_geometry.get(road_key(step.name), [])) if step.name else None
             if step_match:
+                # 재구성 단계에서 steps_json과 순서를 맞출 수 있도록 step index를 함께 저장합니다.
                 link_match_details[candidate.id].append({
+                    "index": index,
                     "name": step.name,
                     "link_id": step_match["link_id"],
                     "distance_m": step_match["distance_m"],
