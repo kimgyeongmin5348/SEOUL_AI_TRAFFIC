@@ -237,6 +237,18 @@
 - 검증: OSRM 파싱·링크 매칭·재구성·순위·CSV 단위 테스트 7개 추가.
 - 검증 결과: 백엔드 전체 단위 테스트 `81 passed`
 
+### 경로 소요시간 회귀 모델 학습 파이프라인
+
+- 경로 학습 데이터셋으로 `actual_duration_sec`를 예측하는 `ml/src/models/route_duration_model.py`를 추가했다.
+    - `prepare_dataset`가 출발 시각을 시간순 정렬하고 `departure_hour` 파생 피처와 `direction_match_ratio` 결측 0 채움을 수행한다.
+    - `time_split`이 경로 요청이 분할에 섞이지 않도록 시간순으로 train/holdout을 나다.
+    - `regression_metrics`가 MAE/RMSE/R²를, `ranking_metrics`가 기존 평가 서비스의 Top-1·pairwise·regret를 재사용해 계산한다.
+    - `requests_from_predictions`가 예측 통행시간을 비용 점수(낮을수록 우수)로 변환한다.
+- `scripts/train_route_model.py` CLI를 추가했다. 기본은 학습 행이 50개 미만이면 아티팩트를 자동 채택하지 않고, `--force`로 강제 학습할 수 있다.
+- 검증: 데이터 준비·시간 분할·회귀 지표·순위 입력·순위 지표·데이터 부족 처리 단위 테스트 6개 추가.
+- 파이프라인 스모크 확인: 6행 강제 학습이 end-to-end로 동작(지표는 데이터 부족으로 무의미해 아티트 삭제).
+- 검증 결과: 백엔드 전체 단위 테스트 `87 passed`
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
@@ -250,5 +262,5 @@
 9. [완료] 화면에 AI 점수가 ETA가 아님을 명시한다.
 10. [진행 중] `inbbong` 브랜치를 `main`에 PR로 병합한다. (origin/main 병합·푸시 완료, PR 생성 대기)
 11. [완료] 서울시 주요 출발·도착지(OD) 쌍 기반으로 과거 OSRM 후보 경로를 대량 시뮬레이션 생성하고 링크 관측과 결합해 `route_training_dataset.csv`를 일괄 구축한다. (Cold Start 해소)
-12. 경로 실제 소요시간(`actual_duration_sec`) 회귀 또는 후보 간 순위 학습(Pairwise Ranking) AI 모델을 학습하고 아티팩트(`ml/artifacts/ml_models`)를 생성한다.
+12. [완료] 경로 실제 소요시간(`actual_duration_sec`) 회귀 또는 후보 간 순위 학습(Pairwise Ranking) AI 모델을 학습하고 아티팩트(`ml/artifacts/ml_models`)를 생성한다.
 13. `route_prediction.py`의 휴리스틱 추천 방식을 신규 경로 AI 모델 추론으로 교체하고, 매칭 데이터 부족 시 기존 방식으로 안전하게 fallback하도록 연동한다.
