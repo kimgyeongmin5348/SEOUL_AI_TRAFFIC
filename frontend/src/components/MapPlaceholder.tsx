@@ -278,26 +278,6 @@ export default function MapPlaceholder({
             zIndex: 3,
           })
           roadOverlaysRef.current.push(outline, line)
-        } else if (P >= 2) {
-          // 3) 실시간 데이터가 없는 도로는 회색 '정보 없음' (#94a3b8)
-          const path = coords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
-          const outline = new kakao.maps.Polyline({
-            map,
-            path,
-            strokeColor: "#ffffff",
-            strokeWeight: 6,
-            strokeOpacity: 0.6,
-            zIndex: 2,
-          })
-          const line = new kakao.maps.Polyline({
-            map,
-            path,
-            strokeColor: "#94a3b8",
-            strokeWeight: 4,
-            strokeOpacity: 0.75,
-            zIndex: 3,
-          })
-          roadOverlaysRef.current.push(outline, line)
         }
       })
     }
@@ -927,7 +907,6 @@ export default function MapPlaceholder({
                 { color: "#34c759", label: "원활 (≥50km/h)" },
                 { color: "#ff9500", label: "서행 (25~49km/h)" },
                 { color: "#ff3b30", label: "혼잡 (<25km/h)" },
-                { color: "#94a3b8", label: "정보 없음" },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-1.5">
                   <div
