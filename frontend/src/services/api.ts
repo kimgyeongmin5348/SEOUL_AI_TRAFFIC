@@ -698,6 +698,15 @@ export interface ChatMessage {
   role: "user" | "assistant"
   content: string
   thinking?: string | null
+  grounding?: ChatGrounding
+}
+
+export interface ChatGrounding {
+  grounded: boolean
+  queried_at?: string | null
+  matched_roads?: string[]
+  sources: string[]
+  warnings?: string[]
 }
 
 export interface ChatResponse {
@@ -705,6 +714,7 @@ export interface ChatResponse {
   thinking?: string | null
   model: string
   error?: string
+  grounding?: ChatGrounding
 }
 
 export async function sendChatMessage(messages: { role: string; content: string }[]): Promise<ChatResponse> {

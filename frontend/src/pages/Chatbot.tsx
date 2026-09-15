@@ -46,6 +46,7 @@ export default function ChatbotPage() {
           role: "assistant",
           content: res.reply,
           thinking: res.thinking,
+          grounding: res.grounding,
         },
       ])
     } catch {
@@ -142,7 +143,7 @@ export default function ChatbotPage() {
                 }`}
               >
                 {m.role === "assistant" ? (
-                  <ChatMessageContent content={m.content} />
+                  <ChatMessageContent content={m.content} grounding={m.grounding} />
                 ) : (
                   m.content
                 )}

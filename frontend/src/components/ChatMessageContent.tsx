@@ -1,21 +1,28 @@
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import type { ChatGrounding } from "../services/api"
 
 interface ChatMessageContentProps {
   content: string
   compact?: boolean
+  grounding?: ChatGrounding
 }
 
-export default function ChatMessageContent({ content, compact = false }: ChatMessageContentProps) {
+export default function ChatMessageContent({
+  content,
+  compact = false,
+  grounding,
+}: ChatMessageContentProps) {
   return (
-    <div
-      className={`min-w-0 overflow-x-auto break-words text-left ${
-        compact ? "text-xs leading-[1.7]" : "text-sm leading-7"
-      }`}
-    >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
+    <div className="min-w-0">
+      <div
+        className={`min-w-0 overflow-x-auto break-words text-left ${
+          compact ? "text-xs leading-[1.7]" : "text-sm leading-7"
+        }`}
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
           h1: ({ children }) => (
             <h1 className="mb-2 mt-4 text-base font-bold text-white first:mt-0">{children}</h1>
           ),
@@ -73,10 +80,38 @@ export default function ChatMessageContent({ content, compact = false }: ChatMes
               {children}
             </a>
           ),
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
+
+      {grounding && (
+        <div className="mt-3 border-t border-white/10 pt-2.5 text-[10px] leading-relaxed text-slate-400">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className={`rounded-full border px-2 py-0.5 font-semibold ${
+                grounding.grounded
+                  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                  : "border-amber-400/30 bg-amber-400/10 text-amber-300"
+              }`}
+            >
+              {grounding.grounded ? "RoadPulse 데이터 기반" : "근거 데이터 제한"}
+            </span>
+            {grounding.sources.map((source) => (
+              <span key={source} className="rounded-full bg-white/5 px-2 py-0.5 text-slate-300">
+                {source}
+              </span>
+            ))}
+          </div>
+          {grounding.queried_at && (
+            <p className="mt-1.5">조회 기준 {new Date(grounding.queried_at).toLocaleString("ko-KR")}</p>
+          )}
+          {!!grounding.warnings?.length && (
+            <p className="mt-1 text-amber-300/90">일부 제한: {grounding.warnings.join(" · ")}</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

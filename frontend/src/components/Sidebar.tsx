@@ -158,6 +158,9 @@ const navItems = [
   },
 ]
 
+// 웹/데스크톱 사이드바에서는 AI 챗봇 제외 (모바일에서만 필요)
+const desktopNavItems = navItems.filter((item) => item.href !== "/chatbot")
+
 // 홈 전용 아이콘
 const homeIcon = (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -488,7 +491,7 @@ export default function Sidebar() {
         {/* Nav items container with sliding indicator */}
         <div className="relative flex flex-col gap-1 w-full px-1">
           {(() => {
-            const activeIndex = navItems.findIndex((item) => item.href === pathname)
+            const activeIndex = desktopNavItems.findIndex((item) => item.href === pathname)
             return (
               <>
                 {/* Fluid Sliding Active Indicator Pill */}
@@ -501,7 +504,7 @@ export default function Sidebar() {
                   />
                 )}
 
-                {navItems.map((item, idx) => {
+                {desktopNavItems.map((item, idx) => {
                   const active = activeIndex === idx
                   return (
                     <Link
