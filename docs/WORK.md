@@ -281,6 +281,15 @@
 - 기타: `.gitignore`에 `route_models/` 추적 규칙 추가, 문제 정의서의 "원천에 방향 없음" 문구 정정, 재구성·매칭·데이터셋·모델 테스트 재작성.
 - 검증 결과: 백엔드 전체 단위 테스트 `94 passed`, 프론트엔드 빌드 성공
 
+### origin/main 재병합 및 온라인 라벨 자동화
+
+- 팀원 UI·배포 설정(`render.yaml`, in-process 스케줄러) 커밋을 `inbbong`에 병합했다. 충돌 없음.
+- 배포는 Render(web + worker)이고 DB만 AWS RDS다. web 서비스가 무료 플랜이면 15분 유휴 시 잠들어 in-process 스케줄러도 멈춘다. 9/11~9/15 속도 수집 커버리지가 35/120시간(29%)이고 밤마다 16~19시간 끊긴 패턴이 이와 일치한다. worker 서비스 가동 여부를 확인해야 한다.
+- 스케줄러에 `route_label_reconstruction` job(1시간 주기)을 추가했다. 출발 후 90분이 지난 요청의 후보에 링크 관측 기반 `actual_duration_sec`를 자동으로 채운다. 서버 시계가 UTC일 수 있어 KST naive로 비교한다.
+- `master_sync`(기준정보·축·방향)를 프로세스 시작 직후 한 번 실행하도록 바꿨다. 기존에는 첫 실행이 24시간 뒤라 web 서비스가 잠드는 환경에서는 영영 돌지 않았다.
+- 기타 확인: 기상은 ASOS 확정자료 특성상 항상 전일까지만 있으며(설계), `traffic_speed_measurements.measured_at`은 KST, `collected_at`은 UTC로 섞여 있다(정의서 단계 1 "타임존 통일" 미해결).
+- 검증 결과: 백엔드 전체 단위 테스트 `96 passed`, 프론트엔드 빌드 성공
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
@@ -298,4 +307,6 @@
 13. `route_prediction.py`의 휴리스틱 추천 방식을 신규 경로 AI 모델 추론으로 교체하고, 매칭 데이터 부족 시 기존 방식으로 안전하게 fallback하도록 연동한다.
 14. OD 단위 holdout(학습에 없는 OD 쌍으로 검증)을 추가해 새 경로 일반화 성능을 측정한다. OD 쌍을 서울 전역으로 늘린다.
 15. 온라인 요청 로그에 `link_match_json`·`actual_duration_sec`가 쌓이기 시작하면 `evaluate_route_ranking.py`로 현재 휴리스틱 점수의 Top-1·regret를 측정해 오프라인 결과와 비교한다.
-16. `road_segments.axis_*` 컬럼을 채운다(`raw_axis_links.csv` 적재 또는 수집기 실행).
+16. [배포 후 자동] `road_segments.axis_*` 컬럼을 채운다 — `master_sync`가 시작 직후 실행되도록 변경.
+17. 9/16 아침 속도 수집 커버리지(0~9시)로 Render worker 24시간 가동 여부를 확인한다.
+18. `measured_at`(KST)·`collected_at`(UTC) 타임존 혼재를 정리한다.
