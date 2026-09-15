@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS traffic_speed_measurements (
     travel_time_sec INT NOT NULL,
     collected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    INDEX idx_speed_measured_link (measured_at, link_id),
     CONSTRAINT uq_speed_link_measured_at
         UNIQUE (link_id, measured_at),
     CONSTRAINT fk_speed_link
