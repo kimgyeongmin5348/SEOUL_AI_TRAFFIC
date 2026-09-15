@@ -122,12 +122,22 @@
 - 단위 테스트에 축·방향·순번 파라미터 전달 검증을 추가했다.
 - 검증 결과: 백엔드 전체 단위 테스트 `35 passed`, 프론트엔드 빌드 성공
 
+### 양방향 교통량 합산 제거 및 주행 방향 매칭
+
+- `route_prediction.py`에서 동일 도로명의 상·하행 관측값을 무조건 합산(`sum`)하던 구조를 제거했다.
+- OSRM polyline의 시·종점 좌표를 서울 도심 중심(서울시청)과 비교해 도심 유입(`direction_code=1`) 또는 외곽 유출(`direction_code=2`)을 판별하는 `determine_route_direction` 함수를 추가했다.
+- 후보 경로의 주행 방향과 일치하는 방향의 교통량 관측치만 선택해 증가율과 패널티를 계산하도록 수정했다. (반대편 차선의 정체가 내 경로 패널티에 부당하게 가산되는 문제 해소)
+- 경로 상세 화면의 예측 교통량 라벨을 `도로별 예측 교통량 (진행 방향)`으로 갱신했다.
+- 방향 매칭 및 반대 차선 정체 비간섭 검증 단위 테스트를 추가했다.
+- 검증 결과: 백엔드 전체 단위 테스트 `36 passed`, 프론트엔드 빌드 성공
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
 2. 표준노드링크 기하를 확보해 `road_segments`에 시·종점 좌표 또는 geometry를 추가한다. RDS `link_id`와 표준링크 ID 일치율을 먼저 샘플로 검증한다.
 3. OSRM step 좌표를 링크 기하에 map-match하고 진행 방위와 `axis_direction`을 비교해 방향 일치 여부를 저장한다.
 4. `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.
+4. [완료] `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.
 5. 매칭 방법·거리·방향 일치율을 API 응답과 링크 데이터셋에 기록한다.
 6. 매칭된 링크의 시간대별 `travel_time_sec`로 경로별 `actual_duration_sec`를 재구성하고 품질 등급을 저장한다.
 7. `/api/routes/predict` 요청 시 `route_request_id`와 후보 경로를 로그 테이블에 저장해 경로 학습 데이터셋 축적을 시작한다.

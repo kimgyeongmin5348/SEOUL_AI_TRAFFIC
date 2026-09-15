@@ -236,3 +236,36 @@ def test_real_model_with_delayed_observations_reaches_current_hour():
     db.execute.side_effect = [spots, traffic, climate, incidents, speeds]
     with pytest.raises(ValueError, match="지연"):
         predict_routes(db, [candidate("A", 600, "강남대로")], target+timedelta(days=1))
+
+
+def test_directional_matching_avoids_opposing_flow_penalty():
+    # 경로 A: 외곽 -> 도심 (유입, direction 1)
+    inbound_route = SimpleNamespace(
+        id="A", duration_sec=600,
+        steps=[SimpleNamespace(name="강남대로", duration_sec=600)],
+        coordinates=[(127.1, 37.4), (126.978, 37.5665)],
+    )
+    # 경로 B: 도심 -> 외곽 (유출, direction 2)
+    outbound_route = SimpleNamespace(
+        id="B", duration_sec=600,
+        steps=[SimpleNamespace(name="강남대로", duration_sec=600)],
+        coordinates=[(126.978, 37.5665), (127.1, 37.4)],
+    )
+    # 강남대로의 유입(1)은 원활(증가율 0%), 유출(2)은 혼잡(증가율 100%)
+    meta = [
+        {"spot_name": "강남대로", "direction_code": 1, "baseline": 100},
+        {"spot_name": "강남대로", "direction_code": 2, "baseline": 100},
+    ]
+    predictions = [100, 200]
+
+    result, ok = rank_candidates([inbound_route, outbound_route], predictions, meta)
+    assert ok
+    # 유입 경로 A는 direction 1을 매칭받아 패널티 0초
+    assert result[0]["id"] == "A"
+    assert result[0]["traffic_penalty_sec"] == 0
+    assert result[0]["predicted_volume"] == 100.0
+    # 유출 경로 B는 direction 2를 매칭받아 패널티 600초
+    assert result[1]["id"] == "B"
+    assert result[1]["traffic_penalty_sec"] == 600
+    assert result[1]["predicted_volume"] == 200.0
+

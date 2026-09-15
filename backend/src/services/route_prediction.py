@@ -246,6 +246,21 @@ def incident_penalty_multiplier(incident):
     return 0.2
 
 
+SEOUL_CENTER_LAT = 37.5665
+SEOUL_CENTER_LNG = 126.9780
+
+
+def determine_route_direction(coordinates):
+    """OSRM polyline 시작/끝 좌표로 도심 유입(1, Inbound) 또는 외곽 유출(2, Outbound)을 판정합니다."""
+    if not coordinates or len(coordinates) < 2:
+        return 1
+    start_lng, start_lat = coordinates[0]
+    end_lng, end_lat = coordinates[-1]
+    start_dist_sq = (start_lat - SEOUL_CENTER_LAT) ** 2 + (start_lng - SEOUL_CENTER_LNG) ** 2
+    end_dist_sq = (end_lat - SEOUL_CENTER_LAT) ** 2 + (end_lng - SEOUL_CENTER_LNG) ** 2
+    return 1 if end_dist_sq <= start_dist_sq else 2
+
+
 def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, departure_at=None, speeds_by_road=None):
     incidents_by_road = incidents_by_road or {}
     speeds_by_road = speeds_by_road or {}
@@ -257,10 +272,14 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
         if meta["baseline"] <= 0:
             continue
         roads.setdefault(road_key(meta["spot_name"]), []).append((
+        key = road_key(meta["spot_name"])
+        direction = int(meta.get("direction_code", 1))
+        roads.setdefault(key, {})[direction] = (
             max(0., float(prediction)),
             meta["baseline"],
             meta.get("typical_volume", meta["baseline"]),
         ))
+        )
     results = []
     for candidate in candidates:
         total = sum(s.duration_sec for s in candidate.steps)
@@ -271,6 +290,7 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
         speed_observed_at = []
         route_incidents = {}
         coordinates = getattr(candidate, "coordinates", [])
+        preferred_direction = determine_route_direction(coordinates)
         for step in candidate.steps:
             candidates_for_step = incidents_by_road.get(road_key(step.name), [])
             for incident in candidates_for_step:
@@ -292,6 +312,8 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
                 speed_penalty += max(0.0, observed_duration - step.duration_sec)
             observations = roads.get(road_key(step.name)) if step.name else None
             if not observations:
+            dir_map = roads.get(road_key(step.name)) if step.name else None
+            if not dir_map:
                 if step.name:
                     unmatched_road_names.append(step.name)
                 continue
@@ -301,6 +323,14 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
             forecast = sum(p for p, _, _ in observations)
             baseline = sum(b for _, b, _ in observations)
             normal = sum(t for _, _, t in observations)
+
+            # 양방향 합산(Pooling) 대신 주행 방향(preferred_direction) 관측값만 선택합니다.
+            if preferred_direction in dir_map:
+                forecast, baseline, normal = dir_map[preferred_direction]
+            else:
+                # 해당 방향이 없으면 가용한 관측 방향으로 fallback (단방향 유지)
+                forecast, baseline, normal = next(iter(dir_map.values()))
+
             growth = min(2., max(0., forecast / baseline - 1.))
             matched += step.duration_sec
             penalty += step.duration_sec * growth
