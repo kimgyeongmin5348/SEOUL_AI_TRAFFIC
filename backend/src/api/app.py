@@ -228,7 +228,7 @@ def get_traffic_analysis(
                 SELECT r.road_name, AVG(s.speed_kmh) AS avg_speed, COUNT(*) as cnt
                 FROM traffic_speed_measurements s
                 JOIN road_segments r ON r.link_id = s.link_id
-                WHERE s.measured_at = :latest_speed AND r.road_name IS NOT NULL AND r.road_name != ''
+                WHERE s.measured_at >= :latest_speed - INTERVAL 7 MINUTE AND r.road_name IS NOT NULL AND r.road_name != ''
                 GROUP BY r.road_name
                 ORDER BY cnt DESC, avg_speed ASC
                 LIMIT 15
