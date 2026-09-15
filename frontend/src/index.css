@@ -166,38 +166,16 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
-/* Route search gracefully makes room for the AI briefing after analysis. */
-.route-analysis-transition {
+/* The map owns the full canvas until route results make room for recommendations. */
+.route-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-  margin-bottom: 16px;
+  gap: 16px;
 }
 
-.route-search-panel {
+.route-recommendations {
+  display: none;
   min-width: 0;
-  transition: padding 500ms cubic-bezier(0.22, 1, 0.36, 1),
-              border-radius 500ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.route-search-desktop {
-  min-width: 0;
-}
-
-.route-quick-routes {
-  max-height: 48px;
-  opacity: 1;
-  transition: max-height 360ms ease, opacity 240ms ease, margin 360ms ease,
-              padding 360ms ease, border-color 240ms ease;
-}
-
-.route-quick-routes.is-collapsed {
-  max-height: 0;
-  margin-top: 0;
-  padding-top: 0;
-  border-color: transparent;
-  opacity: 0;
-  pointer-events: none;
 }
 
 .route-ai-brief {
@@ -358,50 +336,45 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @keyframes routeAiBriefIn {
-  from { opacity: 0; transform: translateX(22px) scale(0.985); }
+  from { opacity: 0; transform: translateX(-14px) scale(0.985); }
   to { opacity: 1; transform: translateX(0) scale(1); }
 }
 
-@media (min-width: 1180px) {
-  .route-analysis-transition {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0fr);
+@media (min-width: 1024px) {
+  .route-workspace {
+    grid-template-columns: minmax(0, 0fr) minmax(0, 1fr);
+    gap: 0;
     transition: grid-template-columns 620ms cubic-bezier(0.22, 1, 0.36, 1),
                 gap 620ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .route-analysis-transition.has-results {
-    grid-template-columns: minmax(430px, 0.92fr) minmax(0, 1.08fr);
+  .route-workspace.has-results {
+    grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
     gap: 16px;
   }
 
-  .route-search-desktop.is-compact {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    align-items: center;
+  .route-recommendations {
+    display: flex;
+    overflow: hidden;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(-16px);
+    transition: opacity 360ms ease 140ms, transform 520ms cubic-bezier(0.22, 1, 0.36, 1) 100ms,
+                visibility 0s linear 620ms;
   }
 
-  .route-search-desktop.is-compact > :nth-child(1) {
-    grid-column: 1 / -1;
+  .route-workspace.has-results .route-recommendations {
+    overflow: visible;
+    visibility: visible;
+    opacity: 1;
+    transform: translateX(0);
+    transition-delay: 160ms, 120ms, 0s;
   }
+}
 
-  .route-search-desktop.is-compact > :nth-child(2) {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .route-search-desktop.is-compact > :nth-child(3) {
-    grid-column: 3;
-    grid-row: 2;
-  }
-
-  .route-search-desktop.is-compact > :nth-child(4) {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .route-search-desktop.is-compact > :nth-child(5) {
-    grid-column: 1 / -1;
-    grid-row: 3;
+@media (max-width: 1023px) {
+  .route-workspace.has-results .route-recommendations {
+    display: flex;
   }
 }
 
@@ -421,9 +394,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .route-analysis-transition,
-  .route-search-panel,
-  .route-quick-routes,
+  .route-workspace,
+  .route-recommendations,
   .route-ai-brief {
     transition: none;
     animation: none;
