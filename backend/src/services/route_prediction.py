@@ -167,6 +167,79 @@ def load_active_incidents(db, departure_at):
     return by_road
 
 
+# OSRM step 대표점과 링크 시·종점 선분이 이 거리 이내일 때만 같은 도로로 간주합니다.
+STEP_LINK_MATCH_M = 60.0
+# 진행 방위와 링크 bearing 차이가 이 각도 이내면 같은 진행 방향으로 봅니다.
+DIRECTION_MATCH_DEG = 45.0
+
+
+def bearing_deg(start, end):
+    """WGS84 두 좌표(lng, lat)의 진행 방위를 0~360도로 반환합니다."""
+    lng1, lat1 = map(math.radians, start)
+    lng2, lat2 = map(math.radians, end)
+    delta = lng2 - lng1
+    x = math.sin(delta) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(delta)
+    return (math.degrees(math.atan2(x, y)) + 360) % 360
+
+
+def bearing_difference(a, b):
+    """두 방위의 최소 차이(0~180도)를 반환합니다."""
+    diff = abs(a - b) % 360
+    return min(diff, 360 - diff)
+
+
+def load_road_link_geometry(db):
+    """도로명별 링크 시·종점 좌표와 bearing을 읽어 step 방위 매칭에 사용합니다.
+
+    007 마이그레이션으로 적재한 road_segments 기하를 사용합니다. 기하가 없으면 빈 dict를
+    돌려주고 호출부는 방향 매칭을 '미적용'으로 표시합니다.
+    """
+    rows = db.execute(text("""
+        SELECT r.road_name, r.link_id, r.start_lng, r.start_lat, r.end_lng, r.end_lat, r.bearing_deg
+        FROM road_segments r
+        WHERE r.road_name IS NOT NULL AND r.road_name != ''
+          AND r.start_lat IS NOT NULL AND r.end_lat IS NOT NULL
+    """)).mappings()
+    by_road = {}
+    for row in rows:
+        start = (float(row["start_lng"]), float(row["start_lat"]))
+        end = (float(row["end_lng"]), float(row["end_lat"]))
+        by_road.setdefault(road_key(row["road_name"]), []).append({
+            "link_id": row["link_id"],
+            "segment": [start, end],
+            "bearing_deg": float(row["bearing_deg"]) if row["bearing_deg"] is not None else None,
+        })
+    return by_road
+
+
+def match_step_to_link(step, links):
+    """step 대표점에 가장 가까운 링크를 찾아 진행 방위 일치 여부를 계산합니다.
+
+    도로명은 후보를 좁히는 용도이며, 최종 연결은 좌표 거리로 판정합니다.
+    반환: 매칭 정보 dict, 또는 step 좌표가 없어 미적용이면 None.
+    """
+    coordinates = getattr(step, "coordinates", None)
+    if not coordinates or len(coordinates) < 2 or not links:
+        return None
+    middle = coordinates[len(coordinates) // 2]
+    nearest, nearest_distance = None, math.inf
+    for link in links:
+        distance = point_to_polyline_distance_m(middle[0], middle[1], link["segment"])
+        if distance is not None and distance < nearest_distance:
+            nearest, nearest_distance = link, distance
+    if nearest is None or nearest_distance > STEP_LINK_MATCH_M:
+        return {"link_id": None, "distance_m": round(nearest_distance, 1) if math.isfinite(nearest_distance) else None,
+                "bearing_diff_deg": None, "direction_match": None}
+    step_bearing = bearing_deg(coordinates[0], coordinates[-1])
+    if nearest["bearing_deg"] is None:
+        return {"link_id": nearest["link_id"], "distance_m": round(nearest_distance, 1),
+                "bearing_diff_deg": None, "direction_match": None}
+    diff = bearing_difference(step_bearing, nearest["bearing_deg"])
+    return {"link_id": nearest["link_id"], "distance_m": round(nearest_distance, 1),
+            "bearing_diff_deg": round(diff, 1), "direction_match": diff <= DIRECTION_MATCH_DEG}
+
+
 def point_to_polyline_distance_m(longitude, latitude, coordinates):
     """Approximate WGS84 point-to-polyline distance for Seoul-scale routes."""
     # 서울 범위에서는 위경도를 국소 미터 좌표로 바꿔 빠르게 계산합니다.
@@ -261,9 +334,13 @@ def determine_route_direction(coordinates):
     return 1 if end_dist_sq <= start_dist_sq else 2
 
 
-def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, departure_at=None, speeds_by_road=None):
+def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, departure_at=None, speeds_by_road=None, link_geometry=None):
     incidents_by_road = incidents_by_road or {}
     speeds_by_road = speeds_by_road or {}
+    link_geometry = link_geometry or {}
+    link_matched = {candidate.id: [] for candidate in candidates}
+    link_direction = {candidate.id: [] for candidate in candidates}
+    link_match_details = {candidate.id: [] for candidate in candidates}
     roads = {}
     for prediction, meta in zip(predictions, metadata, strict=True):
         if not math.isfinite(float(prediction)):
@@ -290,6 +367,20 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
         coordinates = getattr(candidate, "coordinates", [])
         preferred_direction = determine_route_direction(coordinates)
         for step in candidate.steps:
+            # 도로명 후보 링크 중 step 대표점에 가장 가까운 링크를 찾아 방위 일치를 판정합니다.
+            step_match = match_step_to_link(step, link_geometry.get(road_key(step.name), [])) if step.name else None
+            if step_match:
+                link_match_details[candidate.id].append({
+                    "name": step.name,
+                    "link_id": step_match["link_id"],
+                    "distance_m": step_match["distance_m"],
+                    "bearing_diff_deg": step_match["bearing_diff_deg"],
+                    "direction_match": step_match["direction_match"],
+                })
+                if step_match["link_id"]:
+                    link_matched[candidate.id].append(step.name)
+                if step_match["direction_match"] is not None:
+                    link_direction[candidate.id].append(step_match["direction_match"])
             candidates_for_step = incidents_by_road.get(road_key(step.name), [])
             for incident in candidates_for_step:
                 if coordinates and incident.get("longitude") is not None:
@@ -359,6 +450,11 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
                         "matched_road_names": list(dict.fromkeys(matched_road_names)),
                         "unmatched_road_names": list(dict.fromkeys(unmatched_road_names)),
                         "match_ratio": round(count / len(candidate.steps), 3) if candidate.steps else 0,
+                        "link_match_ratio": round(len(set(link_matched[candidate.id])) / len(candidate.steps), 3) if candidate.steps else 0,
+                        "link_matched_road_names": list(dict.fromkeys(link_matched[candidate.id])),
+                        "direction_match_ratio": round(sum(link_direction[candidate.id]) / len(link_direction[candidate.id]), 3) if link_direction[candidate.id] else None,
+                        "direction_matched_steps": len(link_direction[candidate.id]),
+                        "link_match_details": link_match_details[candidate.id],
                         "ai": False})
     # Incomplete candidates must not win simply because they have no penalty.
     # A low-coverage alternative should not, however, suppress a different
@@ -457,8 +553,10 @@ def predict_routes(db, candidates, now, departure_at=None):
         forecast_steps += 1
     incidents_by_road = load_active_incidents(db, target)
     speeds_by_road = load_latest_road_speeds(db, target)
+    # 링크 기하가 없으면 방향 매칭은 '미적용'으로 남고 교통량·돌발·속도 패널티만 적용합니다.
+    link_geometry = load_road_link_geometry(db)
     results, available = rank_candidates(
-        candidates, predictions, metadata, incidents_by_road, target_clock, speeds_by_road
+        candidates, predictions, metadata, incidents_by_road, target_clock, speeds_by_road, link_geometry
     )
     eligible_count = sum(route["coverage"] >= .5 for route in results)
     selected = next((route for route in results if route["ai"]), None)

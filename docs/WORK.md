@@ -187,13 +187,28 @@
 - 중복 제거 단위 테스트 1개를 추가했다.
 - 검증 결과: 백엔드 전체 단위 테스트 `57 passed`
 
+### OSRM step → 링크 기하 map-match 및 진행 방위 비교
+
+- `app.py` `RouteStep`에 `coordinates` 필드를 추가해 OSRM step 기하를 받도록 했다.
+- 프론트 `routing.ts`가 `step.geometry.coordinates`를 백엔드로 전달한다.
+- `route_prediction.py`에 링크 기하 기반 map-match를 구현했다.
+    - `bearing_deg`, `bearing_difference`로 진행 방위와 링크 `bearing_deg`를 직접 비교한다. `axis_direction`(상/하행)은 도심 유입/유출과 무관하므로 사용하지 않는다.
+    - `load_road_link_geometry`가 007로 적재한 `road_segments` 시·종점 좌표·bearing을 도로명별로 읽는다.
+    - `match_step_to_link`가 step 대표점(중간점)에서 60m 이내의 가장 가까운 링크를 찾고, 방위 차이 45도 이내면 방향 일치로 판정한다.
+    - 기하가 없거나 60m 밖이면 `link_id=None`, 방향 매칭은 '미적용'으로 남긴다.
+- `rank_candidates`가 `link_match_ratio`, `direction_match_ratio`, `direction_matched_steps`, `link_match_details`를 결과에 포함한다.
+- `predict_routes`가 링크 기하 인덱스를 로드해 `rank_candidates`에 전달한다.
+- 로그 저장: `008_add_route_request_link_match.sql`로 `route_request_candidates`에 `link_match_ratio`, `direction_match_ratio`, `direction_matched_steps`, `link_match_json` 컬럼을 추가하고 `route_request_log.py`가 후보별 매칭 결과를 저장한다.
+- 검증: 신규 방위·매칭 단위 테스트 7개 추가, 기존 `predict_routes` mock에 geometry 쿼리 반영.
+- 검증 결과: 백엔드 전체 단위 테스트 `64 passed`, 프론트엔드 빌드 성공
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
-2. [완료] 표준노드링크 기하를 확보해 `road_segments`에 시·종점 좌표 또는 geometry를 추가한다. (TOPIS 매핑표로 연결, RDS에 007 적용 후 `--load-db`로 5,061건 적재 완료)
-3. OSRM step 좌표를 링크 기하에 map-match하고 진행 방위와 링크 `bearing_deg`를 비교해 방향 일치 여부를 저장한다. (`axis_direction`은 유입/유출과 무관하므로 방위 직접 비교)
+2. [완료] 표준노드링크 기하를 확보해 `road_segments`에 시·종점 좌표 또는 geometry를 추가한다. (TOPIS 매핑표로 연결, 007 RDS 반영 완료)
+3. [완료] OSRM step 좌표를 링크 기하에 map-match하고 진행 방위와 링크 `bearing_deg`를 비교해 방향 일치 여부를 저장한다. (008 RDS 적용 완료)
 4. [완료] `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.
-5. 매칭 방법·거리·방향 일치율을 API 응답과 링크 데이터셋에 기록한다.
+5. [완료] 매칭 방법·거리·방향 일치율을 API 응답(`link_match_ratio`, `direction_match_ratio`)과 로그(`link_match_json`)에 기록한다.
 6. 매칭된 링크의 시간대별 `travel_time_sec`로 경로별 `actual_duration_sec`를 재구성하고 품질 등급을 저장한다.
 7. [완료] `/api/routes/predict` 요청 시 `route_request_id`와 후보 경로를 로그 테이블에 저장해 경로 학습 데이터셋 축적을 시작한다.
 8. Top-1 accuracy, pairwise ranking accuracy, regret 계산 스크립트를 추가한다.

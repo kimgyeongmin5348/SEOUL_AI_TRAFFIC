@@ -86,6 +86,9 @@ def build_candidate_rows(request_id, candidates, recommendation=None):
             "coverage": result.get("coverage"),
             "match_ratio": result.get("match_ratio"),
             "speed_match_ratio": result.get("speed_match_ratio"),
+            "link_match_ratio": result.get("link_match_ratio"),
+            "direction_match_ratio": result.get("direction_match_ratio"),
+            "direction_matched_steps": result.get("direction_matched_steps"),
             "incident_count": result.get("incident_count"),
             "predicted_volume": result.get("predicted_volume"),
             "typical_volume": result.get("typical_volume"),
@@ -96,6 +99,9 @@ def build_candidate_rows(request_id, candidates, recommendation=None):
                 ensure_ascii=False,
             ),
             "coordinates_json": json.dumps(candidate.coordinates) if candidate.coordinates else None,
+            # step별 링크 map-match 결과(매칭 link_id, 거리, 방위차, 방향 일치 여부)를 보존합니다.
+            "link_match_json": json.dumps(result.get("link_match_details"), ensure_ascii=False)
+            if result.get("link_match_details") else None,
         })
     return rows
 
@@ -118,13 +124,17 @@ INSERT_CANDIDATE = text("""
     INSERT INTO route_request_candidates (
         route_request_id, route_id, route_distance_m, osrm_duration_sec, segment_count, route_direction_code,
         score, traffic_penalty_sec, incident_penalty_sec, speed_penalty_sec,
-        coverage, match_ratio, speed_match_ratio, incident_count, predicted_volume, typical_volume,
-        ai_selected, steps_json, coordinates_json
+        coverage, match_ratio, speed_match_ratio, link_match_ratio,
+        direction_match_ratio, direction_matched_steps,
+        incident_count, predicted_volume, typical_volume,
+        ai_selected, steps_json, coordinates_json, link_match_json
     ) VALUES (
         :route_request_id, :route_id, :route_distance_m, :osrm_duration_sec, :segment_count, :route_direction_code,
         :score, :traffic_penalty_sec, :incident_penalty_sec, :speed_penalty_sec,
-        :coverage, :match_ratio, :speed_match_ratio, :incident_count, :predicted_volume, :typical_volume,
-        :ai_selected, :steps_json, :coordinates_json
+        :coverage, :match_ratio, :speed_match_ratio, :link_match_ratio,
+        :direction_match_ratio, :direction_matched_steps,
+        :incident_count, :predicted_volume, :typical_volume,
+        :ai_selected, :steps_json, :coordinates_json, :link_match_json
     )
 """)
 
