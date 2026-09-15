@@ -126,3 +126,6 @@
 8. Top-1 accuracy, pairwise ranking accuracy, regret 계산 스크립트를 추가한다.
 9. 화면에 AI 점수가 ETA가 아님을 명시한다.
 10. `inbbong` 브랜치를 `main`에 PR로 병합한다.
+11. 서울시 주요 출발·도착지(OD) 쌍 기반으로 과거 OSRM 후보 경로를 대량 시뮬레이션 생성하고 링크 관측과 결합해 `route_training_dataset.csv`를 일괄 구축한다. (Cold Start 해소)
+12. 경로 실제 소요시간(`actual_duration_sec`) 회귀 또는 후보 간 순위 학습(Pairwise Ranking) AI 모델을 학습하고 아티팩트(`ml/artifacts/ml_models`)를 생성한다.
+13. `route_prediction.py`의 휴리스틱 추천 방식을 신규 경로 AI 모델 추론으로 교체하고, 매칭 데이터 부족 시 기존 방식으로 안전하게 fallback하도록 연동한다.
