@@ -118,6 +118,54 @@ h1, h2, h3, h4, h5, h6 {
   animation: pulseDot 2s infinite;
 }
 
+/* Soft specular sweep across the shared RoadPulse logo. */
+.brand-logo-shine {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.brand-logo-shine > img {
+  border-radius: inherit;
+}
+
+.brand-logo-shine::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: -30%;
+  bottom: -30%;
+  left: -70%;
+  width: 34%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 22%,
+    rgba(255, 255, 255, 0.82) 50%,
+    rgba(173, 216, 255, 0.22) 72%,
+    transparent 100%
+  );
+  filter: blur(1px);
+  mix-blend-mode: screen;
+  transform: skewX(-18deg);
+  animation: brandLogoSweep 4.8s cubic-bezier(0.22, 0.75, 0.25, 1) infinite;
+  pointer-events: none;
+}
+
+@keyframes brandLogoSweep {
+  0%, 58% { left: -70%; opacity: 0; }
+  64% { opacity: 0.9; }
+  82% { left: 136%; opacity: 0.9; }
+  88%, 100% { left: 136%; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-logo-shine::after {
+    display: none;
+    animation: none;
+  }
+}
+
 .liquid-glass-nav {
   isolation: isolate;
   background: rgba(13, 22, 38, 0.65);
