@@ -1,5 +1,6 @@
 ﻿import { useState, useRef, useEffect } from "react"
 import { sendChatMessage, ChatMessage } from "../services/api"
+import ChatMessageContent from "./ChatMessageContent"
 
 const SUGGESTIONS = [
   "지금 올림픽대로 정체 심한가요?",
@@ -153,13 +154,17 @@ export default function ChatbotWidget() {
                   </details>
                 )}
                 <div
-                  className={`px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed max-w-[88%] break-words whitespace-pre-wrap ${
+                  className={`px-3.5 py-2.5 rounded-2xl max-w-[92%] min-w-0 overflow-hidden ${
                     m.role === "user"
-                      ? "bg-blue-600 text-white rounded-br-none shadow-md"
+                      ? "bg-blue-600 text-white rounded-br-none shadow-md text-xs leading-relaxed whitespace-pre-wrap"
                       : "bg-slate-800/80 text-slate-100 rounded-bl-none border border-white/10"
                   }`}
                 >
-                  {m.content}
+                  {m.role === "assistant" ? (
+                    <ChatMessageContent content={m.content} compact />
+                  ) : (
+                    m.content
+                  )}
                 </div>
               </div>
             ))}

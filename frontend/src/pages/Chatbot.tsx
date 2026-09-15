@@ -1,6 +1,7 @@
 ﻿import { useState, useRef, useEffect } from "react"
 import Sidebar from "../components/Sidebar"
 import SubpageBackground from "../components/SubpageBackground"
+import ChatMessageContent from "../components/ChatMessageContent"
 import { sendChatMessage, ChatMessage } from "../services/api"
 
 const SUGGESTIONS = [
@@ -134,13 +135,17 @@ export default function ChatbotPage() {
                 </details>
               )}
               <div
-                className={`px-4 py-3 rounded-2xl text-sm leading-relaxed max-w-[85%] md:max-w-2xl break-words whitespace-pre-wrap ${
+                className={`px-4 py-3 rounded-2xl max-w-[92%] md:max-w-2xl min-w-0 overflow-hidden ${
                   m.role === "user"
-                    ? "bg-blue-600 text-white rounded-br-none shadow-md"
+                    ? "bg-blue-600 text-white rounded-br-none shadow-md text-sm leading-relaxed whitespace-pre-wrap"
                     : "bg-slate-800/90 text-slate-100 rounded-bl-none border border-white/10 shadow-sm"
                 }`}
               >
-                {m.content}
+                {m.role === "assistant" ? (
+                  <ChatMessageContent content={m.content} />
+                ) : (
+                  m.content
+                )}
               </div>
             </div>
           ))}
