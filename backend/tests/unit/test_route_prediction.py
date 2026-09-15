@@ -9,7 +9,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.src.api.app import app
-from backend.src.services.route_prediction import best_saved_model, build_features, rank_candidates
+from backend.src.services.route_prediction import (
+    best_saved_model,
+    build_features,
+    incident_time_weight,
+    point_to_polyline_distance_m,
+    rank_candidates,
+)
 
 
 def candidate(id, duration, road):
@@ -40,6 +46,9 @@ def test_predictions_change_recommendation_and_incomplete_routes_are_excluded():
     assert result[0]["base_duration_sec"] == 600
     assert result[0]["traffic_penalty_sec"] == 600
     assert result[0]["traffic_penalty_percent"] == 100
+    assert result[0]["matched_road_names"] == ["강남대로"]
+    assert result[0]["unmatched_road_names"] == []
+    assert result[0]["match_ratio"] == 1
     result, ok = rank_candidates(routes, [100, 200], meta)
     assert ok and result[0]["ai"]
     result, ok = rank_candidates(routes, [200], meta[:1])
@@ -48,6 +57,85 @@ def test_predictions_change_recommendation_and_incomplete_routes_are_excluded():
     assert not ok and not result[0]["ai"]
     with pytest.raises(ValueError):
         rank_candidates(routes, [np.nan, 100], meta)
+
+
+def test_active_incident_changes_route_score_and_is_reported():
+    routes = [candidate("A", 600, "강남대로"), candidate("B", 600, "테헤란로")]
+    meta = [{"spot_name": "강남대로", "baseline": 100},
+            {"spot_name": "테헤란로", "baseline": 100}]
+    incidents = {
+        "강남대로": [{
+            "incident_id": "INC-1",
+            "incident_type": "사고",
+            "incident_detail_type": "추돌",
+            "description": "차량 사고",
+        }],
+    }
+
+    result, ok = rank_candidates(routes, [100, 100], meta, incidents)
+
+    assert ok and result[1]["ai"] and not result[0]["ai"]
+    assert result[0]["incident_count"] == 1
+    assert result[0]["incident_penalty_sec"] == 300
+    assert result[0]["incidents"][0]["incident_id"] == "INC-1"
+    assert result[0]["incidents"][0]["category"] == "accident"
+    assert result[0]["incidents"][0]["impact_radius_m"] == 180
+
+
+def test_incident_penalty_decreases_when_clear_time_is_during_route():
+    incident = {"incident_type": "A01", "expected_clear_at": datetime(2026, 9, 10, 9, 10)}
+    assert incident_time_weight(incident, datetime(2026, 9, 10, 9), 600) == 1
+    assert incident_time_weight(incident, datetime(2026, 9, 10, 9, 5), 600) == 0.5
+
+
+def test_current_speed_adds_only_positive_delay_penalty():
+    routes = [
+        SimpleNamespace(id="A", duration_sec=600, distance_m=10000,
+                        steps=[SimpleNamespace(name="강남대로", duration_sec=600, distance_m=10000)]),
+        SimpleNamespace(id="B", duration_sec=600, distance_m=10000,
+                        steps=[SimpleNamespace(name="테헤란로", duration_sec=600, distance_m=10000)]),
+    ]
+    meta = [{"spot_name": "강남대로", "baseline": 100},
+            {"spot_name": "테헤란로", "baseline": 100}]
+    result, _ = rank_candidates(
+        routes, [100, 100], meta,
+        speeds_by_road={"강남대로": {"speed_kmh": 30, "measured_at": datetime(2026, 9, 10, 8)}},
+    )
+    assert result[0]["speed_penalty_sec"] == pytest.approx(600)
+    assert result[1]["speed_penalty_sec"] == 0
+
+
+def test_incident_coordinates_filter_same_named_roads():
+    routes = [
+        SimpleNamespace(
+            id="A", duration_sec=600,
+            steps=[SimpleNamespace(name="강남대로", duration_sec=600)],
+            coordinates=[(127.0, 37.5), (127.01, 37.5)],
+        ),
+        SimpleNamespace(
+            id="B", duration_sec=600,
+            steps=[SimpleNamespace(name="강남대로", duration_sec=600)],
+            coordinates=[(127.0, 37.51), (127.01, 37.51)],
+        ),
+    ]
+    meta = [{"spot_name": "강남대로", "baseline": 100},
+            {"spot_name": "강남대로", "baseline": 100}]
+    incidents = {
+        "강남대로": [{
+            "incident_id": "INC-2",
+            "incident_type": "사고",
+            "incident_detail_type": "추돌",
+            "description": "경로 A 인접 사고",
+            "longitude": 127.005,
+            "latitude": 37.5,
+        }],
+    }
+
+    result, _ = rank_candidates(routes, [100, 100], meta, incidents)
+
+    assert point_to_polyline_distance_m(127.005, 37.5, routes[0].coordinates) < 1
+    assert result[0]["incident_count"] == 1
+    assert result[1]["incident_count"] == 0
 
 
 def test_features_use_exact_lags_and_do_not_mix_directions():
@@ -93,6 +181,17 @@ def test_features_fill_missing_recent_hour_from_30_day_hourly_profile():
     assert features.vol_lag_1h.tolist() == [101]
 
 
+def test_api_accepts_optional_route_coordinates():
+    item = dict(
+        id="A",
+        duration_sec=600,
+        coordinates=[[127.0, 37.5], [127.01, 37.5]],
+        steps=[dict(name="강남대로", duration_sec=600)],
+    )
+    response = TestClient(app).post("/api/routes/predict", json={"candidates": [item]})
+    assert response.status_code in {200, 503}
+
+
 def test_api_validates_duplicate_ids_and_durations():
     client = TestClient(app)
     item = dict(id="A", duration_sec=600, steps=[dict(name="강남대로", duration_sec=600)])
@@ -119,11 +218,13 @@ def test_real_model_with_delayed_observations_reaches_current_hour():
     weather = dict(temperature_c=20, rainfall_mm=0, humidity_pct=50, wind_speed_ms=2,
                    pressure_hpa=1000, observed_at=target-timedelta(hours=12))
     db = MagicMock()
-    spots, traffic, climate = MagicMock(), MagicMock(), MagicMock()
+    spots, traffic, climate, incidents, speeds = (MagicMock() for _ in range(5))
     spots.mappings.return_value = [{"spot_id": "A", "spot_name": "강남대로"}]
     traffic.mappings.return_value = history
     climate.mappings.return_value.first.return_value = weather
-    db.execute.side_effect = [spots, traffic, climate]
+    incidents.mappings.return_value = []
+    speeds.mappings.return_value = []
+    db.execute.side_effect = [spots, traffic, climate, incidents, speeds]
     result = predict_routes(db, [candidate("A", 600, "강남대로")], target)
     assert result["forecast_steps"] == 2
     assert result["target_at"] == "2026-09-10T09:00:00+09:00"
@@ -132,6 +233,39 @@ def test_real_model_with_delayed_observations_reaches_current_hour():
     assert result["target_context"]["weekday"] == "목요일"
     assert result["osrm_comparison"]["osrm_default_route_id"] == "A"
     assert result["osrm_comparison"]["estimated_minutes_saved"] == 0
-    db.execute.side_effect = [spots, traffic, climate]
+    db.execute.side_effect = [spots, traffic, climate, incidents, speeds]
     with pytest.raises(ValueError, match="지연"):
         predict_routes(db, [candidate("A", 600, "강남대로")], target+timedelta(days=1))
+
+
+def test_directional_matching_avoids_opposing_flow_penalty():
+    # 경로 A: 외곽 -> 도심 (유입, direction 1)
+    inbound_route = SimpleNamespace(
+        id="A", duration_sec=600,
+        steps=[SimpleNamespace(name="강남대로", duration_sec=600)],
+        coordinates=[(127.1, 37.4), (126.978, 37.5665)],
+    )
+    # 경로 B: 도심 -> 외곽 (유출, direction 2)
+    outbound_route = SimpleNamespace(
+        id="B", duration_sec=600,
+        steps=[SimpleNamespace(name="강남대로", duration_sec=600)],
+        coordinates=[(126.978, 37.5665), (127.1, 37.4)],
+    )
+    # 강남대로의 유입(1)은 원활(증가율 0%), 유출(2)은 혼잡(증가율 100%)
+    meta = [
+        {"spot_name": "강남대로", "direction_code": 1, "baseline": 100},
+        {"spot_name": "강남대로", "direction_code": 2, "baseline": 100},
+    ]
+    predictions = [100, 200]
+
+    result, ok = rank_candidates([inbound_route, outbound_route], predictions, meta)
+    assert ok
+    # 유입 경로 A는 direction 1을 매칭받아 패널티 0초
+    assert result[0]["id"] == "A"
+    assert result[0]["traffic_penalty_sec"] == 0
+    assert result[0]["predicted_volume"] == 100.0
+    # 유출 경로 B는 direction 2를 매칭받아 패널티 600초
+    assert result[1]["id"] == "B"
+    assert result[1]["traffic_penalty_sec"] == 600
+    assert result[1]["predicted_volume"] == 200.0
+

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RoadPulse AI 경로 추천 흐름</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #65708a;
+      --line: #cbd5e1;
+      --blue: #2563eb;
+      --cyan: #0891b2;
+      --amber: #d97706;
+      --red: #dc2626;
+      --green: #15803d;
+      --panel: #ffffff;
+      --bg: #eef3f8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: radial-gradient(circle at 10% 0%, #dbeafe, transparent 34%), var(--bg);
+      font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+    }
+    main { max-width: 1440px; margin: 0 auto; padding: 42px 28px 64px; }
+    header { max-width: 850px; margin-bottom: 30px; }
+    h1 { margin: 0 0 10px; font-size: clamp(28px, 4vw, 48px); letter-spacing: -0.04em; }
+    .lead { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.7; }
+    .legend { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+    .legend span { padding: 7px 11px; border-radius: 999px; background: #fff; border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+    .board { position: relative; overflow-x: auto; padding: 10px 0 26px; }
+    .flow { min-width: 1080px; position: relative; display: grid; grid-template-columns: 180px 180px 205px 205px 220px; grid-template-rows: repeat(5, 98px); gap: 22px 34px; align-items: center; }
+    .node { position: relative; z-index: 2; min-height: 70px; padding: 14px 15px; display: flex; flex-direction: column; justify-content: center; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: 0 9px 24px rgba(30, 64, 175, 0.08); }
+    .node strong { font-size: 14px; line-height: 1.35; }
+    .node small { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .source { border-color: #93c5fd; background: #eff6ff; }
+    .traffic { border-color: #67e8f9; background: #ecfeff; }
+    .incident { border-color: #fca5a5; background: #fff1f2; }
+    .speed { border-color: #fcd34d; background: #fffbeb; }
+    .score { border: 2px solid var(--blue); background: #eff6ff; }
+    .decision { border-color: #86efac; background: #f0fdf4; }
+    .fallback { border-color: #fca5a5; background: #fff7ed; }
+    .ui { border-color: #c4b5fd; background: #f5f3ff; }
+    .input { grid-column: 1; grid-row: 2; }
+    .osrm { grid-column: 2; grid-row: 2; }
+    .api { grid-column: 3; grid-row: 2; }
+    .traffic-data { grid-column: 1; grid-row: 4; }
+    .model { grid-column: 2; grid-row: 4; }
+    .traffic-penalty { grid-column: 3; grid-row: 4; }
+    .incident-data { grid-column: 1; grid-row: 5; }
+    .incident-match { grid-column: 2; grid-row: 5; }
+    .incident-penalty { grid-column: 3; grid-row: 5; }
+    .speed-data { grid-column: 1; grid-row: 3; }
+    .speed-penalty { grid-column: 2; grid-row: 3; }
+    .score { grid-column: 4; grid-row: 2 / span 3; min-height: 130px; }
+    .decision { grid-column: 5; grid-row: 2; }
+    .fallback { grid-column: 5; grid-row: 3; }
+    .ui { grid-column: 5; grid-row: 4; }
+    .arrow { position: absolute; z-index: 1; height: 2px; background: var(--line); transform-origin: left center; }
+    .arrow::after { content: ""; position: absolute; right: -1px; top: -4px; border-left: 8px solid var(--line); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+    .a1 { left: 180px; top: 242px; width: 34px; }
+    .a2 { left: 394px; top: 242px; width: 34px; }
+    .a3 { left: 633px; top: 242px; width: 34px; }
+    .a4 { left: 842px; top: 214px; width: 34px; transform: rotate(-13deg); }
+    .a5 { left: 842px; top: 270px; width: 34px; transform: rotate(13deg); }
+    .a6 { left: 842px; top: 326px; width: 34px; }
+    .a7 { left: 180px; top: 438px; width: 310px; transform: rotate(-38deg); }
+    .a8 { left: 394px; top: 438px; width: 100px; transform: rotate(-25deg); }
+    .a9 { left: 180px; top: 536px; width: 310px; transform: rotate(-19deg); }
+    .a10 { left: 394px; top: 536px; width: 100px; transform: rotate(-10deg); }
+    .a11 { left: 180px; top: 340px; width: 310px; transform: rotate(-14deg); }
+    .a12 { left: 394px; top: 340px; width: 100px; transform: rotate(-8deg); }
+    .subpanel { margin-top: 20px; padding: 22px; border: 1px solid #bfdbfe; border-radius: 18px; background: rgba(239, 246, 255, .76); }
+    .subpanel h2 { margin: 0 0 8px; font-size: 18px; }
+    .offline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: center; }
+    .offline div { padding: 14px; border-radius: 12px; background: #fff; border: 1px solid #bfdbfe; font-size: 13px; text-align: center; }
+    .offline b { display: block; margin-bottom: 5px; }
+    .note { margin: 22px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    @media (max-width: 760px) { main { padding: 28px 16px 48px; } .offline { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>RoadPulse AI 경로 추천 흐름</h1>
+      <p class="lead">현재 운영 중인 경로 추천은 ETA 모델이 아니라, 교통량 예측과 실시간 속도·돌발 패널티를 OSRM 후보 경로에 결합해 순위를 정하는 구조입니다.</p>
+      <div class="legend"><span>파랑: 기본 경로/API</span><span>청록: 교통량 예측</span><span>노랑: 속도 관측</span><span>분홍: 돌발상황</span><span>초록: 추천·fallback</span></div>
+    </header>
+
+    <section class="board" aria-label="AI 경로 추천 운영 흐름">
+      <div class="flow">
+        <div class="node source input"><strong>사용자 입력</strong><small>출발지 · 목적지</small></div>
+        <div class="node source osrm"><strong>OSRM 후보 경로</strong><small>최대 3개 · geometry · 도로명 · 거리 · 구간 시간</small></div>
+        <div class="node source api"><strong>POST /api/routes/predict</strong><small>경로 후보와 출발시각 전달</small></div>
+        <div class="node traffic traffic-data"><strong>교통량 이력</strong><small>최근 30일 · 지점·방향별 관측</small></div>
+        <div class="node traffic model"><strong>XGBoost</strong><small>traffic_xgb_baseline_v1<br>target_volume 예측</small></div>
+        <div class="node traffic traffic-penalty"><strong>교통량 패널티</strong><small>예측량 / 기준량 증가율</small></div>
+        <div class="node incident incident-data"><strong>활성 돌발 조회</strong><small>사고 · 공사 · 통제 · 고장</small></div>
+        <div class="node incident incident-match"><strong>공간 매칭</strong><small>GRS80 TM → WGS84<br>polyline · 영향 반경</small></div>
+        <div class="node incident incident-penalty"><strong>돌발 패널티</strong><small>유형 · 영향 반경 · 해제시각</small></div>
+        <div class="node speed speed-data"><strong>최근 속도 조회</strong><small>최근 3시간 도로별 관측</small></div>
+        <div class="node speed speed-penalty"><strong>속도 패널티</strong><small>OSRM보다 느린 양의 지연초</small></div>
+        <div class="node score"><strong>경로 추천 점수</strong><small>OSRM 시간<br>+ 교통량 패널티<br>+ 속도 패널티<br>+ 돌발 패널티</small></div>
+        <div class="node decision"><strong>AI 추천</strong><small>교통량 coverage ≥ 50%<br>점수 최저 후보</small></div>
+        <div class="node fallback"><strong>Fallback</strong><small>조건 미충족 시<br>OSRM 기본 경로</small></div>
+        <div class="node ui"><strong>화면 출력</strong><small>추천 경로 · 품질 정보<br>돌발·속도 상세</small></div>
+        <i class="arrow a1"></i><i class="arrow a2"></i><i class="arrow a3"></i><i class="arrow a4"></i><i class="arrow a5"></i><i class="arrow a6"></i><i class="arrow a7"></i><i class="arrow a8"></i><i class="arrow a9"></i><i class="arrow a10"></i><i class="arrow a11"></i><i class="arrow a12"></i>
+      </div>
+    </section>
+
+    <section class="subpanel">
+      <h2>오프라인 링크 모델 평가</h2>
+      <div class="offline">
+        <div><b>RDS 원본</b>속도 · 통행시간<br>날씨 · 돌발</div>
+        <div><b>link_training_dataset.csv</b>link_id 단위<br>다음 1시간 정답</div>
+        <div><b>시간순 holdout</b>미래 데이터 누수 방지</div>
+        <div><b>평가 리포트</b>속도·통행시간 MAE/RMSE/R²</div>
+      </div>
+      <p class="note">링크 모델은 현재 운영 추천에 직접 사용하지 않습니다. 방향 데이터와 충분한 관측 기간이 확보되기 전까지는 별도 성능 검증용으로 유지합니다.</p>
+    </section>
+  </main>
+</body>
+</html>

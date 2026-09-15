@@ -86,6 +86,13 @@ def test_road_segment_sync_deduplicates_links_shared_by_axes():
 
     assert collector.sync_road_segments() == 2
     assert db.execute.call_count == 2
+    executed_params = {call_args[0][1]["link_id"]: call_args[0][1] for call_args in db.execute.call_args_list}
+    assert executed_params["L1"]["axis_code"] == "205"
+    assert executed_params["L1"]["axis_direction"] == "하행"
+    assert executed_params["L1"]["link_sequence"] == 1
+    assert executed_params["L2"]["axis_code"] == "205"
+    assert executed_params["L2"]["axis_direction"] == "하행"
+    assert executed_params["L2"]["link_sequence"] == 2
     db.commit.assert_called_once()
 
 

@@ -1,8 +1,8 @@
 {
   "dataset_name": "seoul_ai_traffic_training_dataset",
-  "generated_at": "2026-09-04T17:49:28.316345",
-  "total_rows": 4872140,
-  "total_columns": 27,
+  "generated_at": "2026-09-14T16:44:09.570296",
+  "total_rows": 4882783,
+  "total_columns": 33,
   "target_column": "target_volume",
   "feature_columns": [
     "direction_code",
@@ -11,8 +11,13 @@
     "humidity_pct",
     "wind_speed_ms",
     "pressure_hpa",
+    "speed_lag_1h",
+    "travel_time_lag_1h",
+    "speed_data_available",
     "tm_x",
     "tm_y",
+    "weather_observed",
+    "weather_age_hours",
     "hour",
     "dayofweek",
     "is_weekend",
@@ -39,9 +44,15 @@
     "humidity_pct",
     "wind_speed_ms",
     "pressure_hpa",
+    "weather_source_datetime",
+    "speed_lag_1h",
+    "travel_time_lag_1h",
+    "speed_data_available",
     "spot_name",
     "tm_x",
     "tm_y",
+    "weather_observed",
+    "weather_age_hours",
     "hour",
     "dayofweek",
     "is_weekend",
@@ -59,8 +70,8 @@
     "vol_rolling_mean_24h"
   ],
   "date_range": {
-    "start": "2024-01-02 00:00:00",
-    "end": "2026-09-04 15:00:00"
+    "start": "2024-01-02 01:00:00",
+    "end": "2026-09-13 22:00:00"
   },
   "spots": [
     "A-01",

@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import time
+import uuid
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response
@@ -449,6 +450,7 @@ from pydantic import Field, model_validator
 
 from backend.src.llm.route_explainer import explain_route_recommendation
 from backend.src.services.route_prediction import predict_routes, predict_spot_series
+from backend.src.services.route_request_log import log_route_request
 
 PositiveSeconds = Annotated[float, Field(gt=0, le=604800, allow_inf_nan=False)]
 
@@ -456,6 +458,7 @@ PositiveSeconds = Annotated[float, Field(gt=0, le=604800, allow_inf_nan=False)]
 class RouteStep(BaseModel):
     name: str = Field(max_length=200)
     duration_sec: float = Field(ge=0, le=604800, allow_inf_nan=False)
+    distance_m: float | None = Field(default=None, ge=0, le=5_000_000, allow_inf_nan=False)
 
 
 class RouteCandidate(BaseModel):
@@ -463,6 +466,8 @@ class RouteCandidate(BaseModel):
     duration_sec: PositiveSeconds
     distance_m: float | None = Field(default=None, ge=0, le=5_000_000, allow_inf_nan=False)
     steps: list[RouteStep] = Field(min_length=1, max_length=2000)
+    # OSRM polyline을 돌발 좌표 공간 매칭에 사용합니다.
+    coordinates: list[tuple[float, float]] = Field(default_factory=list, max_length=10000)
 
     @model_validator(mode="after")
     def consistent_duration(self):
@@ -471,9 +476,18 @@ class RouteCandidate(BaseModel):
         return self
 
 
+class RoutePlace(BaseModel):
+    name: str | None = Field(default=None, max_length=200)
+    lat: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    lng: float = Field(ge=-180, le=180, allow_inf_nan=False)
+
+
 class RoutePredictionRequest(BaseModel):
     candidates: list[RouteCandidate] = Field(min_length=1, max_length=3)
     departure_at: datetime | None = None
+    # 요청 로그(경로 학습 데이터셋)에 남길 출발지·목적지. 없으면 polyline 양 끝 좌표로 대체합니다.
+    origin: RoutePlace | None = None
+    destination: RoutePlace | None = None
 
     @model_validator(mode="after")
     def unique_ids(self):
@@ -492,10 +506,19 @@ def predict_route_candidates(req: RoutePredictionRequest, db: Session = Depends(
         departure = departure.astimezone(KST)
         if departure < now - timedelta(minutes=5) or departure > now + timedelta(hours=3, minutes=5):
             raise HTTPException(422, "출발 시간은 지금부터 3시간 이내로 선택해 주세요.")
-        recommendation = predict_routes(db, req.candidates, now, departure)
+        # 요청 단위 식별자: 같은 요청의 후보들을 묶어 경로 순위 학습·평가에 사용합니다.
+        request_id = str(uuid.uuid4())
+        try:
+            recommendation = predict_routes(db, req.candidates, now, departure)
+        except ValueError as exc:
+            # AI 보류 요청도 후보 경로와 함께 기록해 '추천 불가 판정'을 나중에 평가할 수 있게 합니다.
+            log_route_request(db, request_id, req, now, departure, error=str(exc))
+            raise
+        recommendation["route_request_id"] = request_id
         recommendation["explanation"] = explain_route_recommendation(
             recommendation, req.candidates
         )
+        log_route_request(db, request_id, req, now, departure, recommendation)
         return recommendation
     except HTTPException:
         raise
