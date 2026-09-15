@@ -214,6 +214,17 @@
 - 검증: 재구성·품질 등급 단위 테스트 4개 추가.
 - 검증 결과: 백엔드 전체 단위 테스트 `68 passed`
 
+### 경로 후보 순위 평가 지표 (Top-1, pairwise, regret)
+
+- 문제 정의서 §7의 경로 추천 지표를 계산하는 `route_ranking_evaluation.py`를 추가했다.
+    - `top1_accuracy`: 요청별 점수 1위 후보가 실제 통행시간 1위인 비율. 후보 2개 미만 요청은 제외한다.
+    - `pairwise_ranking_accuracy`: 요청 내 모든 후보 쌍에서 점수 순서와 실제 순서가 일치하는 비율. 점수·실제가 동점인 쌍은 제외한다.
+    - `mean_regret`: 추천 경로와 실제 최적 경로의 통행시간 차이(초) 평균.
+    - `RouteRankingEvaluationService`가 `actual_duration_sec`·`score`가 채워진 후보를 요청 단위로 묶고, 품질 등급별 필터도 지원한다.
+- `scripts/evaluate_route_ranking.py` CLI를 추가해 overall과 high/medium/low 등급별 지표를 출력한다.
+- 검증: 순위 지표 단위 테스트 6개 추가.
+- 검증 결과: 백엔드 전체 단위 테스트 `74 passed`
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
@@ -223,7 +234,7 @@
 5. [완료] 매칭 방법·거리·방향 일치율을 API 응답(`link_match_ratio`, `direction_match_ratio`)과 로그(`link_match_json`)에 기록한다.
 6. [완료] 매칭된 링크의 시간대별 `travel_time_sec`로 경로별 `actual_duration_sec`를 재구성하고 품질 등급을 저장한다.
 7. [완료] `/api/routes/predict` 요청 시 `route_request_id`와 후보 경로를 로그 테이블에 저장해 경로 학습 데이터셋 축적을 시작한다.
-8. Top-1 accuracy, pairwise ranking accuracy, regret 계산 스크립트를 추가한다.
+8. [완료] Top-1 accuracy, pairwise ranking accuracy, regret 계산 스크립트를 추가한다.
 9. [완료] 화면에 AI 점수가 ETA가 아님을 명시한다.
 10. [진행 중] `inbbong` 브랜치를 `main`에 PR로 병합한다. (origin/main 병합·푸시 완료, PR 생성 대기)
 11. 서울시 주요 출발·도착지(OD) 쌍 기반으로 과거 OSRM 후보 경로를 대량 시뮬레이션 생성하고 링크 관측과 결합해 `route_training_dataset.csv`를 일괄 구축한다. (Cold Start 해소)
