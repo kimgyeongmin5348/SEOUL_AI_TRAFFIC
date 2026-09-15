@@ -1,6 +1,8 @@
 import { useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useAuth } from "../auth"
+import BrandLogo from "../components/BrandLogo"
+import SubpageBackground from "../components/SubpageBackground"
 
 export default function Login() {
   const navigate = useNavigate()
@@ -27,78 +29,29 @@ export default function Login() {
 
   return (
     <div
-      className="min-h-full flex items-center justify-center px-6"
-      style={{
-        background: "linear-gradient(160deg, #e8edf5 0%, #dce3f0 100%)",
-      }}
+      className="min-h-full flex items-center justify-center px-4 sm:px-6 py-6 relative"
+      style={{ minHeight: "100vh" }}
     >
-      {/* BG abstract */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-20">
-        <svg
-          viewBox="0 0 800 600"
-          className="w-full h-full"
-          preserveAspectRatio="xMidYMid slice"
-        >
-          {[80, 240, 400, 560, 720].map((x) => (
-            <line
-              key={x}
-              x1={x}
-              y1={0}
-              x2={x + 10}
-              y2={600}
-              stroke="#007aff"
-              strokeWidth="1"
-            />
-          ))}
-          {[80, 200, 320, 440].map((y) => (
-            <line
-              key={y}
-              x1={0}
-              y1={y}
-              x2={800}
-              y2={y + 5}
-              stroke="#5e5ce6"
-              strokeWidth="1"
-            />
-          ))}
-        </svg>
-      </div>
+      <SubpageBackground />
 
       <div className="relative w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div
-            className="w-14 h-14 mx-auto mb-4 flex items-center justify-center"
-            style={{
-              background: "linear-gradient(135deg, #007aff, #5e5ce6)",
-              borderRadius: 18,
-              boxShadow: "0 8px 32px rgba(0,122,255,0.4)",
-            }}
-          >
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <circle cx="14" cy="14" r="10" stroke="white" strokeWidth="1.8" />
-              <circle cx="14" cy="14" r="3" fill="white" />
-              <path
-                d="M14 7v3M14 18v3M7 14h3M18 14h3"
-                stroke="white"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
+          <BrandLogo priority className="w-28 h-[75px] sm:w-32 sm:h-[85px] mx-auto mb-3 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.35)]" />
           <h1
-            className="text-[#1a1a2e]"
+            className="text-white"
             style={{
               fontFamily: "var(--font-display)",
               fontWeight: 800,
               fontSize: 28,
               letterSpacing: "-0.02em",
+              textShadow: "0 2px 16px rgba(0,0,0,0.4)",
             }}
           >
             RoadPulse
           </h1>
           <p
-            className="text-[#6b6b8a] text-sm mt-1"
+            className="text-white/70 text-sm mt-1"
             style={{ fontFamily: "var(--font-body)" }}
           >
             도시의 흐름을 읽다
