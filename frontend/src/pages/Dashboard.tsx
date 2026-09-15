@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import Sidebar from "../components/Sidebar"
 import SubpageBackground from "../components/SubpageBackground"
 import MapPlaceholder from "../components/MapPlaceholder"
-import { fetchDashboardData, fetchFavoriteRoutes, FavoriteRouteItem } from "../services/api"
+import { fetchDashboardData, fetchFavoriteRoutes, FavoriteRouteItem, type RoadSpeedItem } from "../services/api"
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -14,9 +14,10 @@ export default function Dashboard() {
   const [data, setData] = useState({
     kpi: { avgSpeed: 0, avgSpeedDelta: 0, congested: 0, incidents: 0 },
     incidents: [] as Array<any>,
-    roadSpeeds: [] as Array<{ road: string; speed: number; avg: number; level: string }>,
+    roadSpeeds: [] as RoadSpeedItem[],
     latestAt: null as string | null,
     isFromDb: false,
+    trafficCoverage: { connectedRoads: 0, totalRoads: 0, sampleCount: 0 },
   })
 
   useEffect(() => {
@@ -28,17 +29,30 @@ export default function Dashboard() {
 
   useEffect(() => {
     let active = true
-    fetchDashboardData().then((res) => {
-      if (active) {
-        setData({
-          kpi: res.kpi,
-          incidents: res.incidents,
-          roadSpeeds: res.roadSpeeds,
-          latestAt: res.latestAt,
-          isFromDb: res.isFromDb,
-        })
+    let loading = false
+    const refreshDashboard = async () => {
+      if (loading || document.visibilityState === "hidden") return
+      loading = true
+      try {
+        const res = await fetchDashboardData()
+        if (active) {
+          setData({
+            kpi: res.kpi,
+            incidents: res.incidents,
+            roadSpeeds: res.roadSpeeds,
+            latestAt: res.latestAt,
+            isFromDb: res.isFromDb,
+            trafficCoverage: res.trafficCoverage,
+          })
+        }
+      } finally {
+        loading = false
       }
-    })
+    }
+    void refreshDashboard()
+    const refreshTimer = window.setInterval(() => void refreshDashboard(), 60_000)
+    const refreshOnFocus = () => void refreshDashboard()
+    window.addEventListener("focus", refreshOnFocus)
     fetchFavoriteRoutes().then((res) => {
       if (active && res.routes && res.routes.length > 0) {
         setFavoriteRoutes(res.routes)
@@ -46,8 +60,16 @@ export default function Dashboard() {
     })
     return () => {
       active = false
+      window.clearInterval(refreshTimer)
+      window.removeEventListener("focus", refreshOnFocus)
     }
   }, [])
+
+  const trafficAgeMs = data.latestAt ? Date.now() - new Date(data.latestAt).getTime() : Number.POSITIVE_INFINITY
+  const isTrafficFresh = data.trafficCoverage.sampleCount > 0 && trafficAgeMs <= 10 * 60_000
+  const trafficCoveragePercent = data.trafficCoverage.totalRoads > 0
+    ? Math.round((data.trafficCoverage.connectedRoads / data.trafficCoverage.totalRoads) * 100)
+    : 0
 
   const kpis = [
     {
@@ -131,18 +153,18 @@ export default function Dashboard() {
                 교통 대시보드
               </h1>
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                {data.isFromDb && (
+                {data.trafficCoverage.sampleCount > 0 && (
                   <span
                     className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium"
                     style={{
-                      background: "rgba(52,199,89,0.2)",
-                      color: "#34c759",
+                      background: isTrafficFresh ? "rgba(52,199,89,0.2)" : "rgba(255,149,0,0.2)",
+                      color: isTrafficFresh ? "#34c759" : "#ffb340",
                       fontFamily: "var(--font-body)",
-                      border: "1px solid rgba(52,199,89,0.3)",
+                      border: `1px solid ${isTrafficFresh ? "rgba(52,199,89,0.3)" : "rgba(255,149,0,0.35)"}`,
                     }}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#34c759] animate-pulse" />
-                    DB 실시간 연동
+                    <span className={`w-1.5 h-1.5 rounded-full ${isTrafficFresh ? "bg-[#34c759] animate-pulse" : "bg-[#ff9500]"}`} />
+                    {isTrafficFresh ? "실시간 속도 연동" : "속도 데이터 지연"}
                   </span>
                 )}
                 {data.latestAt && (
@@ -150,12 +172,18 @@ export default function Dashboard() {
                     className="text-xs text-white/70"
                     style={{ fontFamily: "var(--font-mono)" }}
                   >
-                    수집: {new Date(data.latestAt).toLocaleTimeString("ko-KR", {
+                    최신 수집: {new Date(data.latestAt).toLocaleDateString("ko-KR", {
+                      month: "numeric",
+                      day: "numeric",
+                    })} {new Date(data.latestAt).toLocaleTimeString("ko-KR", {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
                   </span>
                 )}
+                <span className="text-xs text-white/70" style={{ fontFamily: "var(--font-mono)" }}>
+                  지도 연결 {data.trafficCoverage.connectedRoads}/{data.trafficCoverage.totalRoads} ({trafficCoveragePercent}%) · 실시간 링크 {data.trafficCoverage.sampleCount}개
+                </span>
               </div>
             </div>
             <div className="text-right">
@@ -251,6 +279,7 @@ export default function Dashboard() {
               searchQuery={search}
               incidents={data.incidents}
               roadSpeeds={data.roadSpeeds}
+              enableParking={false}
               selectedIncidentId={selectedIncidentId}
               onSelectIncident={(inc) => setSelectedIncidentId(inc.id)}
             />

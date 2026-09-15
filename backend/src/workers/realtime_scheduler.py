@@ -6,6 +6,9 @@
 
 import logging
 
+from datetime import datetime
+from apscheduler.schedulers.base import BaseScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from backend.src.db.database import SessionLocal
@@ -47,11 +50,16 @@ def evaluate_completed_predictions(collector: DataCollectorService) -> dict[str,
     return {"actuals_attached": updated, "test_dataset": str(output)}
 
 
-def build_scheduler() -> BlockingScheduler:
-    scheduler = BlockingScheduler(timezone="Asia/Seoul")
+def build_scheduler(
+    scheduler_cls: type[BaseScheduler] = BlockingScheduler,
+    run_immediately: bool = True,
+) -> BaseScheduler:
+    scheduler = scheduler_cls(timezone="Asia/Seoul")
+    fast_next_run = datetime.now() if run_immediately else None
     scheduler.add_job(
         lambda: run_job("fast_collection", collect_fast),
         "interval", minutes=5, id="fast_collection", max_instances=1,
+        next_run_time=fast_next_run,
     )
     scheduler.add_job(
         lambda: run_job("hourly_collection", collect_hourly),
@@ -75,6 +83,13 @@ def build_scheduler() -> BlockingScheduler:
     return scheduler
 
 
+def start_background_scheduler() -> BackgroundScheduler:
+    scheduler = build_scheduler(scheduler_cls=BackgroundScheduler, run_immediately=True)
+    scheduler.start()
+    logger.info("RoadPulse background scheduler started in-process")
+    return scheduler
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -82,7 +97,7 @@ def main() -> None:
     )
     # Seoul OpenAPI keys are embedded in URL paths; never print request URLs.
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    scheduler = build_scheduler()
+    scheduler = build_scheduler(BlockingScheduler, run_immediately=True)
     logger.info("RoadPulse realtime scheduler started")
     try:
         scheduler.start()
