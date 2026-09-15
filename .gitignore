@@ -218,6 +218,11 @@ ml/artifacts/*
 !ml/artifacts/ml_models/*_metrics.json
 !ml/artifacts/reports/*.csv
 
+# Generated database exports and training datasets
+data/raw/*.csv
+data/processed/*.csv
+data/external/raw_road_segments.csv
+
 # PyPI configuration file
 .pypirc
 

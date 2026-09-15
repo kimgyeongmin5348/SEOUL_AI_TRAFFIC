@@ -33,7 +33,8 @@ def print_dataset_summary(csv_path: Path):
     print(f"  • 총 데이터 건수 (Rows)   : {len(df):,} 행")
     print(f"  • 총 특성 컬럼 수 (Cols)  : {len(df.columns)} 개")
     print(f"  • 수집 기간 (Date Range)  : {df['datetime'].min()} ~ {df['datetime'].max()}")
-    print(f"  • 대상 지점 (Spots)       : {list(df['spot_id'].unique())}")
+    identity_column = "spot_id" if "spot_id" in df else "link_id"
+    print(f"  • 대상 {identity_column} 수       : {df[identity_column].nunique():,}")
     print("-" * 60)
     print("📋 주요 특성 컬럼 목록:")
     for col in df.columns:
@@ -47,6 +48,10 @@ def print_dataset_summary(csv_path: Path):
         "datetime", "spot_id", "direction_code", "target_volume",
         "vol_lag_1h", "vol_lag_24h", "temperature_c", "rainfall_mm", "is_rush_hour"
     ]
+    cols_to_preview.extend([
+        "link_id", "speed_kmh", "speed_lag_1h", "target_speed_kmh",
+        "travel_time_lag_1h", "target_travel_time_sec", "active_incident_count",
+    ])
     avail_cols = [c for c in cols_to_preview if c in df.columns]
     print(df[avail_cols].head(3).to_string(index=False))
     print("\n")
@@ -66,6 +71,11 @@ def main():
         action="store_true",
         help="기존에 추출된 data/raw 파일들을 바탕으로 data/processed 생성만 수행합니다.",
     )
+    parser.add_argument(
+        "--link-only",
+        action="store_true",
+        help="도로 링크 단위 속도·통행시간 학습 데이터셋만 생성합니다.",
+    )
 
     args = parser.parse_args()
     pipeline = DataPipelineService()
@@ -77,6 +87,11 @@ def main():
             print("\n>>> DB 데이터 추출 완료!")
             for name, path in exported.items():
                 print(f"  • {name:<20} -> {path}")
+        elif args.link_only:
+            # 기존 지점 모델과 분리된 link_id 단위 데이터셋을 생성합니다.
+            print("\n>>> 도로 링크 단위 학습 데이터셋 생성 시작...\n")
+            out_path = pipeline.build_link_training_dataset()
+            print_dataset_summary(out_path)
         elif args.process_only:
             print("\n>>> [Step 2] data/raw -> data/processed 전처리 시작...\n")
             out_path = pipeline.build_training_dataset()

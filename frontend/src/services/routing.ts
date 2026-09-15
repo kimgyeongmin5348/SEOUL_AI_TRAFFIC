@@ -18,16 +18,33 @@ export interface RouteResult {
   modelVersion?: string
   coverage?: number
   predictedVolume?: number | null
+  score?: number
+  trafficPenaltySec?: number
+  incidentPenaltySec?: number
+  speedPenaltySec?: number
+  speedMatchRatio?: number
+  speedObservedAt?: string | null
+  incidentDetails?: RouteIncident[]
+}
+
+export interface RouteIncident {
+  incident_id: string
+  type: string
+  category: string
+  detail_type: string
+  description: string | null
+  impact_radius_m: number
 }
 
 interface OsrmRoute {
   distance: number
   duration: number
   geometry: { coordinates: [number, number][] }
-  legs: { steps: { name: string; duration: number }[] }[]
+  legs: { steps: { name: string; duration: number; distance: number }[] }[]
 }
 
 interface ModelRanking {
+  route_request_id?: string
   available: boolean
   model_version: string
   algorithm: string
@@ -45,6 +62,12 @@ interface ModelRanking {
     typical_volume: number | null
     predicted_vs_typical_percent: number | null
     distance_m: number | null
+    incident_count: number
+    incident_penalty_sec: number
+    speed_penalty_sec: number
+    speed_match_ratio: number
+    speed_observed_at: string | null
+    incidents: RouteIncident[]
   }[]
   explanation?: {
     selected_route_id: string | null
@@ -99,11 +122,23 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: AbortSignal.timeout(45000),
-      body: JSON.stringify({ departure_at: departureAt, candidates: candidates.map((r, i) => ({
+      body: JSON.stringify({
+        departure_at: departureAt,
+        // 요청 로그(경로 학습 데이터셋)에 출발지·목적지를 남기기 위해 전달합니다.
+        origin: { name: origin.name, lat: origin.lat, lng: origin.lng },
+        destination: { name: dest.name, lat: dest.lat, lng: dest.lng },
+        candidates: candidates.map((r, i) => ({
         id: String.fromCharCode(65 + i), duration_sec: r.duration,
         distance_m: r.distance,
-        steps: steps[i].map(step => ({ name: step.name || "", duration_sec: step.duration })),
-      })) }),
+        // 백엔드가 돌발 위치를 경로 polyline과 비교할 수 있게 전달합니다.
+        coordinates: r.geometry.coordinates,
+        steps: steps[i].map(step => ({
+          name: step.name || "",
+          duration_sec: step.duration,
+          distance_m: step.distance,
+        })),
+        })),
+      }),
     })
     const body = await result.json()
     if (!result.ok) throw new Error(typeof body.detail === "string" ? body.detail : "모델 추론 요청에 실패했습니다.")
@@ -123,7 +158,7 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       time: Math.max(1, Math.round(r.duration / 60)),
       distance: Number((r.distance / 1000).toFixed(1)),
       avgSpeed: Math.round(r.distance / r.duration * 3.6),
-      traffic: "원활", trafficLevel: "green", incidents: 0, weather: "미연동", delay: 0,
+      traffic: "원활", trafficLevel: "green", incidents: prediction?.incident_count || 0, weather: "미연동", delay: 0,
       ai,
       reason: ranking?.explanation?.selected_route_id === id
         ? ranking.explanation.text
@@ -131,6 +166,13 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       coordinates: r.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
       modelVersion: ranking?.model_version, coverage: prediction?.coverage,
       predictedVolume: prediction?.predicted_volume,
+      score: prediction?.score,
+      trafficPenaltySec: prediction?.traffic_penalty_sec,
+      incidentPenaltySec: prediction?.incident_penalty_sec,
+      speedPenaltySec: prediction?.speed_penalty_sec,
+      speedMatchRatio: prediction?.speed_match_ratio,
+      speedObservedAt: prediction?.speed_observed_at,
+      incidentDetails: prediction?.incidents,
     }
   })
   return { origin, dest, routes, predictionMessage }
