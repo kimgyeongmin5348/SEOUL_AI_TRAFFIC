@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import precisionRoadsData from "../data/seoul_roads.json"
 import seoulBoundaryData from "../data/seoulBoundary.json"
 import { loadKakaoMaps } from "../services/kakaoMaps"
 import { resolvePlace } from "../services/placeSearch"
@@ -123,19 +122,45 @@ export default function MapPlaceholder({
       sdk.maps.event.addListener(map, "click", () => {
         setInternalSelectedParkingCode(null)
       })
+      map.setMaxLevel(9)
       mapRef.current = map
-      const coordinates = seoulBoundaryData.features[0].geometry.coordinates as number[][][][]
-      boundaryOverlaysRef.current = coordinates.map((polygon) => new sdk.maps.Polygon({
+      // 서울시 외곽 영역 마스킹 (Inverted Mask with Hole: 서울시만 뚫어서 보여주고 외곽 전국 타일은 차단)
+      const outerBox = [
+        new sdk.maps.LatLng(39.0, 125.0),
+        new sdk.maps.LatLng(39.0, 129.0),
+        new sdk.maps.LatLng(36.0, 129.0),
+        new sdk.maps.LatLng(36.0, 125.0),
+      ]
+      const seoulRawCoords = (seoulBoundaryData.features[0].geometry.coordinates as any)[0][0] as [number, number][]
+      const seoulHolePath = seoulRawCoords
+        .slice()
+        .reverse()
+        .map(([lng, lat]) => new sdk.maps.LatLng(lat, lng))
+
+      // 1) 서울시 외곽 마스크: 서울시 바깥 영역을 짙은 네이비로 마스킹하여 서울시 내부만 스포트라이트 표출
+      const outerMaskPolygon = new sdk.maps.Polygon({
         map,
-        path: polygon.map((ring) => ring.map(([lng, lat]) => new sdk.maps.LatLng(lat, lng))),
-        strokeWeight: 3,
-        strokeColor: "#5e5ce6",
-        strokeOpacity: 0.82,
+        path: [outerBox, seoulHolePath],
+        strokeWeight: 0,
+        fillColor: "#0b0f19",
+        fillOpacity: 0.85,
+        zIndex: 2,
+      })
+
+      // 2) 서울시 경계선: 선명한 네온 블루 테두리로 서울시 영역 명확히 강조
+      const seoulBoundaryPolygon = new sdk.maps.Polygon({
+        map,
+        path: seoulRawCoords.map(([lng, lat]) => new sdk.maps.LatLng(lat, lng)),
+        strokeWeight: 2.5,
+        strokeColor: "#38bdf8",
+        strokeOpacity: 0.95,
         strokeStyle: "solid",
-        fillColor: "#5e5ce6",
-        fillOpacity: 0.025,
-        zIndex: 1,
-      }))
+        fillColor: "#38bdf8",
+        fillOpacity: 0.0,
+        zIndex: 3,
+      })
+
+      boundaryOverlaysRef.current = [outerMaskPolygon, seoulBoundaryPolygon]
       setMapReady(true)
       observer = new ResizeObserver(() => map.relayout())
       observer.observe(containerRef.current)
@@ -208,84 +233,44 @@ export default function MapPlaceholder({
     }
   }, [mapReady, parkingLots, fetchParkingForLocation, viewHasContext, enableParking])
 
-  // 1. 도로 폴리라인 렌더링 (돌발상황과 완전 분리)
+  // 0. 서울시 전역 실시간 소통정보 레이어 (카카오 교통정보 타일 연동)
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map) return
-    roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
-    roadOverlaysRef.current = []
+
+    const trafficMapType = window.kakao?.maps?.MapTypeId?.TRAFFIC
+    if (trafficMapType == null) return
 
     if (enableTraffic && showTrafficLines) {
-      precisionRoadsData.forEach((road) => {
-        const match = (roadSpeeds as RoadSpeedItem[]).find(
-          (speed) => speed.road.includes(road.name) || road.name.includes(speed.road),
-        )
-        const coords = road.coordinates as [number, number][]
-        const P = coords.length
-
-        // 1) 링크 구간별 속도 데이터가 존재하는 경우 (구간별 분할 렌더링)
-        if (match && match.links && match.links.length > 0 && P >= 2) {
-          const links = match.links
-          const L = links.length
-          for (let i = 0; i < L; i++) {
-            const startIdx = Math.floor((i * (P - 1)) / L)
-            const endIdx = Math.min(P - 1, Math.floor(((i + 1) * (P - 1)) / L))
-            if (endIdx <= startIdx && startIdx < P - 1) continue
-            const subCoords = coords.slice(startIdx, endIdx + 1)
-            if (subCoords.length < 2) continue
-
-            const linkData = links[i]
-            const color =
-              linkData.speed < 25 ? "#ff3b30" : linkData.speed < 50 ? "#ff9500" : "#34c759"
-            const path = subCoords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
-
-            const outline = new kakao.maps.Polyline({
-              map,
-              path,
-              strokeColor: "#ffffff",
-              strokeWeight: 7,
-              strokeOpacity: 0.88,
-              zIndex: 2,
-            })
-            const line = new kakao.maps.Polyline({
-              map,
-              path,
-              strokeColor: color,
-              strokeWeight: 4,
-              strokeOpacity: 0.95,
-              zIndex: 3,
-            })
-            roadOverlaysRef.current.push(outline, line)
-          }
-        } else if (match && typeof match.speed === "number" && P >= 2) {
-          // 2) 도로 단일 평균 속도만 존재하는 경우
-          const color = match.speed < 25 ? "#ff3b30" : match.speed < 50 ? "#ff9500" : "#34c759"
-          const path = coords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
-          const outline = new kakao.maps.Polyline({
-            map,
-            path,
-            strokeColor: "#ffffff",
-            strokeWeight: 7,
-            strokeOpacity: 0.88,
-            zIndex: 2,
-          })
-          const line = new kakao.maps.Polyline({
-            map,
-            path,
-            strokeColor: color,
-            strokeWeight: 4,
-            strokeOpacity: 0.92,
-            zIndex: 3,
-          })
-          roadOverlaysRef.current.push(outline, line)
-        }
-      })
+      try {
+        map.addOverlayMapTypeId(trafficMapType)
+      } catch (e) {
+        console.warn("Failed to add traffic overlay:", e)
+      }
+    } else {
+      try {
+        map.removeOverlayMapTypeId(trafficMapType)
+      } catch (e) {
+        console.warn("Failed to remove traffic overlay:", e)
+      }
     }
+
     return () => {
-      roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
-      roadOverlaysRef.current = []
+      if (map && trafficMapType != null) {
+        try {
+          map.removeOverlayMapTypeId(trafficMapType)
+        } catch {
+          // ignore
+        }
+      }
     }
-  }, [mapReady, enableTraffic, showTrafficLines, roadSpeeds])
+  }, [mapReady, enableTraffic, showTrafficLines])
+
+  // 1. 도로 폴리라인 정리 (실시간 교통정보 레이어와 중복 렌더링 방지)
+  useEffect(() => {
+    roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+    roadOverlaysRef.current = []
+  }, [mapReady])
 
   // 2. 돌발상황 마커 렌더링 (Diffing 방식: 이미 존재하는 마커는 유지하여 깜빡임 원천 제거)
   useEffect(() => {
@@ -789,7 +774,7 @@ export default function MapPlaceholder({
             {enableTraffic && (
               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
                 <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
-                  <span>🚦 실시간혼잡도</span>
+                  <span>🚦 실시간 혼잡도</span>
                   <span
                     className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
                       showTrafficLines

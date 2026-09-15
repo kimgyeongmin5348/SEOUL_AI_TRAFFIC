@@ -92,7 +92,7 @@ DATASETS = {
         ) recent ON recent.link_id=s.link_id AND recent.measured_at=s.measured_at
         JOIN road_segments r ON r.link_id=s.link_id
         WHERE r.road_name IS NOT NULL AND r.road_name != ''
-        ORDER BY r.road_name, COALESCE(r.link_sequence, 0), s.link_id LIMIT 1000
+        ORDER BY r.road_name, COALESCE(r.link_sequence, 0), s.link_id LIMIT 6000
     """),
     "weather": ("weather_measurements", "observed_at", """
         SELECT s.station_name, w.weather_station_id, w.observed_at, w.temperature_c,
@@ -245,7 +245,7 @@ def get_traffic_analysis(
                 WHERE s.measured_at >= :latest_speed - INTERVAL 7 MINUTE AND r.road_name IS NOT NULL AND r.road_name != ''
                 GROUP BY r.road_name
                 ORDER BY cnt DESC, avg_speed ASC
-                LIMIT 15
+                LIMIT 200
             """)
             speed_rows = db.execute(q_speed, {"latest_speed": latest_speed}).mappings().all()
             for r in speed_rows:
@@ -255,6 +255,7 @@ def get_traffic_analysis(
                     "speed": sp,
                     "avg": int(round(sp * 1.12)),
                     "level": "red" if sp < 25 else "yellow" if sp < 50 else "green",
+                    "links_count": int(r["cnt"] or 0),
                 })
 
         result = {
@@ -269,6 +270,62 @@ def get_traffic_analysis(
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(503, "교통 분석 데이터 조회에 실패했습니다.") from None
+
+
+@app.get("/api/v1/traffic/roads", tags=["traffic"])
+def get_all_road_speeds(
+    search: str | None = None,
+    limit: int = Query(default=300, ge=1, le=1000),
+    db: Session = Depends(get_db),
+):
+    """서울시 전체 도로의 최신 실시간 평균 속도 및 링크 통계를 조회합니다."""
+    try:
+        latest_speed = db.execute(text("SELECT MAX(measured_at) FROM traffic_speed_measurements")).scalar()
+        if not latest_speed:
+            return {"total": 0, "latestAt": None, "roads": []}
+
+        where_clauses = [
+            "s.measured_at >= :latest_speed - INTERVAL 15 MINUTE",
+            "r.road_name IS NOT NULL",
+            "r.road_name != ''",
+        ]
+        params: dict[str, Any] = {"latest_speed": latest_speed, "limit": limit}
+        if search:
+            where_clauses.append("r.road_name LIKE :search")
+            params["search"] = f"%{search.strip()}%"
+
+        where_sql = " AND ".join(where_clauses)
+        q = text(f"""
+            SELECT r.road_name,
+                   ROUND(AVG(s.speed_kmh), 1) AS avg_speed,
+                   ROUND(AVG(s.travel_time_sec), 0) AS avg_travel_time,
+                   COUNT(DISTINCT s.link_id) AS link_count
+            FROM traffic_speed_measurements s
+            JOIN road_segments r ON r.link_id = s.link_id
+            WHERE {where_sql}
+            GROUP BY r.road_name
+            ORDER BY link_count DESC, avg_speed ASC
+            LIMIT :limit
+        """)
+        rows = db.execute(q, params).mappings().all()
+        roads = [
+            {
+                "road": r["road_name"],
+                "speed": float(r["avg_speed"] or 0),
+                "travelTimeSec": int(r["avg_travel_time"] or 0),
+                "linkCount": int(r["link_count"] or 0),
+                "level": "red" if (r["avg_speed"] or 0) < 25 else "yellow" if (r["avg_speed"] or 0) < 50 else "green",
+            }
+            for r in rows
+        ]
+        return {
+            "total": len(roads),
+            "latestAt": serialize(latest_speed),
+            "roads": roads,
+        }
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(503, "전체 도로 속도 조회에 실패했습니다.") from None
 
 
 class AuthRequest(BaseModel):
