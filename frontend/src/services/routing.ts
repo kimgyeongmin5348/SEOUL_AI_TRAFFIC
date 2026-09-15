@@ -25,6 +25,8 @@ export interface RouteResult {
   speedMatchRatio?: number
   speedObservedAt?: string | null
   incidentDetails?: RouteIncident[]
+  linkMatchRatio?: number
+  directionMatchRatio?: number | null
 }
 
 export interface RouteIncident {
@@ -40,7 +42,7 @@ interface OsrmRoute {
   distance: number
   duration: number
   geometry: { coordinates: [number, number][] }
-  legs: { steps: { name: string; duration: number; distance: number }[] }[]
+  legs: { steps: { name: string; duration: number; distance: number; geometry?: { coordinates: [number, number][] } }[] }[]
 }
 
 interface ModelRanking {
@@ -66,6 +68,8 @@ interface ModelRanking {
     incident_penalty_sec: number
     speed_penalty_sec: number
     speed_match_ratio: number
+    link_match_ratio?: number
+    direction_match_ratio?: number | null
     speed_observed_at: string | null
     incidents: RouteIncident[]
   }[]
@@ -136,6 +140,8 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
           name: step.name || "",
           duration_sec: step.duration,
           distance_m: step.distance,
+          // OSRM step 기하를 전달해 백엔드가 링크 기하와 방위를 비교할 수 있게 합니다.
+          coordinates: step.geometry?.coordinates ?? [],
         })),
         })),
       }),
@@ -173,6 +179,8 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       speedMatchRatio: prediction?.speed_match_ratio,
       speedObservedAt: prediction?.speed_observed_at,
       incidentDetails: prediction?.incidents,
+      linkMatchRatio: prediction?.link_match_ratio,
+      directionMatchRatio: prediction?.direction_match_ratio,
     }
   })
   return { origin, dest, routes, predictionMessage }

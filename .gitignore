@@ -217,11 +217,20 @@ ml/artifacts/*
 !ml/artifacts/ml_models/*.joblib
 !ml/artifacts/ml_models/*_metrics.json
 !ml/artifacts/reports/*.csv
+# 경로 소요시간 모델은 교통량 leaderboard glob과 분리해 route_models/에 둡니다.
+!ml/artifacts/route_models/
+!ml/artifacts/route_models/*.joblib
+!ml/artifacts/route_models/*_report.csv
 
 # Generated database exports and training datasets
 data/raw/*.csv
 data/processed/*.csv
 data/external/raw_road_segments.csv
+# 국가 표준노드링크 shapefile(600MB, its.go.kr 다운로드)과 생성 산출물
+data/external/MOCT_LINK.*
+data/processed/*.json
+!data/processed/feature_meta.json
+!data/processed/link_feature_meta.json
 
 # PyPI configuration file
 .pypirc

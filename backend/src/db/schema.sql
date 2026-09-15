@@ -67,6 +67,18 @@ CREATE TABLE IF NOT EXISTS road_segments (
     axis_code VARCHAR(20) NULL,
     axis_direction VARCHAR(20) NULL,
     link_sequence INT NULL,
+    -- 서비스링크 선형(WGS84). scripts/build_link_geometry.py 로 표준노드링크에서 복원
+    start_lat DECIMAL(10, 7) NULL,
+    start_lng DECIMAL(10, 7) NULL,
+    end_lat DECIMAL(10, 7) NULL,
+    end_lng DECIMAL(10, 7) NULL,
+    bearing_deg DECIMAL(5, 1) NULL,
+    geometry_length_m DOUBLE NULL,
+    geometry_json JSON NULL,
+    geometry_source VARCHAR(50) NULL,
+    geometry_quality VARCHAR(20) NULL,
+    geometry_extended_head_m DOUBLE NULL,
+    geometry_extended_tail_m DOUBLE NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (link_id)
@@ -329,12 +341,16 @@ CREATE TABLE IF NOT EXISTS route_request_candidates (
     coverage DOUBLE NULL,
     match_ratio DOUBLE NULL,
     speed_match_ratio DOUBLE NULL,
+    link_match_ratio DOUBLE NULL,
+    direction_match_ratio DOUBLE NULL,
+    direction_matched_steps INT NULL,
     incident_count INT NULL,
     predicted_volume DOUBLE NULL,
     typical_volume DOUBLE NULL,
     ai_selected BOOLEAN NOT NULL DEFAULT FALSE,
     steps_json JSON NOT NULL,
     coordinates_json JSON NULL,
+    link_match_json JSON NULL,
     actual_duration_sec DOUBLE NULL,
     actual_duration_quality VARCHAR(20) NULL,
     actual_duration_computed_at DATETIME NULL,
@@ -342,6 +358,24 @@ CREATE TABLE IF NOT EXISTS route_request_candidates (
     CONSTRAINT uq_route_request_candidate UNIQUE (route_request_id, route_id),
     CONSTRAINT fk_route_request_candidate_request
         FOREIGN KEY (route_request_id) REFERENCES route_requests (route_request_id)
+        ON DELETE CASCADE
+) ENGINE = InnoDB
+  DEFAULT CHARACTER SET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- 서비스링크 → 표준노드링크 구성 순번 (선형 복원 근거)
+-- role: mapped(매핑 파일 수록) / gap_fill(매핑 링크 사이 최단경로 보충) / axis_extend(축 이웃 링크 사이 보충, 경계는 근사)
+--       / outlier(매핑 오류로 제외) / missing(표준노드링크에 없음)
+CREATE TABLE IF NOT EXISTS service_link_standard_links (
+    link_id VARCHAR(20) NOT NULL,
+    standard_link_id VARCHAR(20) NOT NULL,
+    sequence INT NULL,
+    in_moct_link BOOLEAN NOT NULL DEFAULT TRUE,
+    role VARCHAR(20) NOT NULL,
+    PRIMARY KEY (link_id, standard_link_id),
+    INDEX ix_service_link_standard_link (standard_link_id),
+    CONSTRAINT fk_service_link_standard_link
+        FOREIGN KEY (link_id) REFERENCES road_segments (link_id)
         ON DELETE CASCADE
 ) ENGINE = InnoDB
   DEFAULT CHARACTER SET = utf8mb4
