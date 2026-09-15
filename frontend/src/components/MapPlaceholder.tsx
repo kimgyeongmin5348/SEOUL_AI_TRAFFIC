@@ -31,7 +31,7 @@ interface MapProps {
   destPoint?: { name: string; lat: number; lng: number }
   parkingLots?: ParkingLotItem[]
   selectedParkingLotId?: string | null
-  onSelectParkingLot?: (lot: ParkingLotItem) => void
+  onSelectParkingLot?: (lot: ParkingLotItem | null) => void
   enableTraffic?: boolean
   enableIncidents?: boolean
   enableParking?: boolean
@@ -43,6 +43,35 @@ const EMPTY_INCIDENTS: IncidentItem[] = []
 const EMPTY_SPEEDS: RoadSpeedItem[] = []
 const EMPTY_PARKING: ParkingLotItem[] = []
 const wtmCoordCache = new Map<string, { lat: number; lng: number }>()
+
+function isPointInPolygon(lat: number, lng: number, polygon: [number, number][]): boolean {
+  let inside = false
+  const n = polygon.length
+  let j = n - 1
+  for (let i = 0; i < n; i++) {
+    const yi = polygon[i][0] // lng
+    const xi = polygon[i][1] // lat
+    const yj = polygon[j][0]
+    const xj = polygon[j][1]
+    const intersect = ((yi > lng) !== (yj > lng)) && (lat < ((xj - xi) * (lng - yi)) / (yj - yi) + xi)
+    if (intersect) inside = !inside
+    j = i
+  }
+  return inside
+}
+
+export function isLocationInSeoul(lat: number, lng: number): boolean {
+  // 1차 바운딩 박스 검사
+  if (lat < 37.41 || lat > 37.72 || lng < 126.73 || lng > 127.27) {
+    return false
+  }
+  try {
+    const rawCoords = (seoulBoundaryData.features[0].geometry.coordinates as any)[0][0] as [number, number][]
+    return isPointInPolygon(lat, lng, rawCoords)
+  } catch {
+    return true
+  }
+}
 
 function makePill(text: string, background: string) {
   const element = document.createElement("div")
@@ -73,7 +102,7 @@ export default function MapPlaceholder({
   originPoint,
   destPoint,
   parkingLots = EMPTY_PARKING,
-  selectedParkingLotId = null,
+  selectedParkingLotId,
   onSelectParkingLot,
   enableTraffic = true,
   enableIncidents = true,
@@ -101,12 +130,13 @@ export default function MapPlaceholder({
   const [showParking, setShowParking] = useState(true)
   const [internalParkingLots, setInternalParkingLots] = useState<ParkingLotItem[]>([])
   const [internalSelectedParkingCode, setInternalSelectedParkingCode] = useState<string | null>(null)
-  const activeSelectedParkingId = selectedParkingLotId !== undefined && selectedParkingLotId !== null
+  const activeSelectedParkingId = selectedParkingLotId !== undefined
     ? selectedParkingLotId
     : internalSelectedParkingCode
   const [locationStatus, setLocationStatus] = useState("현재 위치 확인 중…")
   const effectiveParkingLots = parkingLots && parkingLots.length > 0 ? parkingLots : internalParkingLots
   const viewHasContext = Boolean(searchQuery || routeCoordinates?.length || selectedIncidentId != null)
+  const [showSeoulOnlyAlert, setShowSeoulOnlyAlert] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -194,6 +224,14 @@ export default function MapPlaceholder({
     const watchId = navigator.geolocation.watchPosition(({ coords }) => {
       if (!active) return
       currentPosition.current = coords
+
+      if (!isLocationInSeoul(coords.latitude, coords.longitude)) {
+        locationOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+        locationOverlaysRef.current = []
+        setLocationStatus("서울 외 지역 감지 (서울 전용 지원)")
+        return
+      }
+
       const position = new kakao.maps.LatLng(coords.latitude, coords.longitude)
       locationOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
       const accuracy = new kakao.maps.Circle({
@@ -581,6 +619,7 @@ export default function MapPlaceholder({
           closeBtn.addEventListener("click", (e) => {
             e.stopPropagation()
             setInternalSelectedParkingCode(null)
+            onSelectParkingLot?.(null)
           })
         }
 
@@ -619,8 +658,14 @@ export default function MapPlaceholder({
 
       button.addEventListener("click", (e) => {
         e.stopPropagation()
-        setInternalSelectedParkingCode((prev) => (prev === lot.parking_code ? null : lot.parking_code))
-        onSelectParkingLot?.(lot)
+        if (activeSelectedParkingId === lot.parking_code) {
+          // 이미 선택된 주차장을 한 번 더 누르면 해제 (닫기)
+          setInternalSelectedParkingCode(null)
+          onSelectParkingLot?.(null)
+        } else {
+          setInternalSelectedParkingCode(lot.parking_code)
+          onSelectParkingLot?.(lot)
+        }
       })
 
       container.appendChild(button)
@@ -635,6 +680,20 @@ export default function MapPlaceholder({
       parkingOverlaysRef.current.push(overlay)
     })
   }, [mapReady, showParking, effectiveParkingLots, activeSelectedParkingId, onSelectParkingLot, enableParking])
+
+  // 지도 빈 공간 클릭 시 열려 있는 주차장 팝업 닫기
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map) return
+    const handleMapClick = () => {
+      setInternalSelectedParkingCode(null)
+      onSelectParkingLot?.(null)
+    }
+    kakao.maps.event.addListener(map, "click", handleMapClick)
+    return () => {
+      kakao.maps.event.removeListener(map, "click", handleMapClick)
+    }
+  }, [mapReady, onSelectParkingLot])
 
   // 선택된 주차장으로 부드럽게 시점 이동 (줌 레벨은 억지로 바꾸지 않고 중심만 이동)
   useEffect(() => {
@@ -674,14 +733,49 @@ export default function MapPlaceholder({
 
   const focusCurrentLocation = () => {
     const coords = currentPosition.current
-    if (!coords || !mapRef.current) {
-      setLocationStatus("기기의 위치 서비스를 켠 후 잠시 기다려 주세요.")
+    if (coords) {
+      if (!isLocationInSeoul(coords.latitude, coords.longitude)) {
+        setShowSeoulOnlyAlert(true)
+        setLocationStatus("서울 외 지역 감지 (서울 전용 지원)")
+        return
+      }
+      if (!mapRef.current) return
+      mapRef.current.panTo(new kakao.maps.LatLng(coords.latitude, coords.longitude))
+      mapRef.current.setLevel(4)
+      if (enableParking && (!parkingLots || parkingLots.length === 0)) {
+        fetchParkingForLocation(coords.latitude, coords.longitude)
+      }
       return
     }
-    mapRef.current.panTo(new kakao.maps.LatLng(coords.latitude, coords.longitude))
-    mapRef.current.setLevel(4)
-    if (enableParking && (!parkingLots || parkingLots.length === 0)) {
-      fetchParkingForLocation(coords.latitude, coords.longitude)
+
+    if (navigator.geolocation) {
+      setLocationStatus("현재 위치 확인 중…")
+      navigator.geolocation.getCurrentPosition(
+        ({ coords: newCoords }) => {
+          currentPosition.current = newCoords
+          if (!isLocationInSeoul(newCoords.latitude, newCoords.longitude)) {
+            setShowSeoulOnlyAlert(true)
+            setLocationStatus("서울 외 지역 감지 (서울 전용 지원)")
+            return
+          }
+          if (!mapRef.current) return
+          mapRef.current.panTo(new kakao.maps.LatLng(newCoords.latitude, newCoords.longitude))
+          mapRef.current.setLevel(4)
+          if (enableParking && (!parkingLots || parkingLots.length === 0)) {
+            fetchParkingForLocation(newCoords.latitude, newCoords.longitude)
+          }
+        },
+        (error) => {
+          setLocationStatus(
+            error.code === 1
+              ? "위치 권한이 꺼져 있습니다. 브라우저 설정에서 허용해 주세요."
+              : "현재 위치를 확인할 수 없습니다."
+          )
+        },
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 10000 }
+      )
+    } else {
+      setLocationStatus("기기의 위치 서비스를 켠 후 잠시 기다려 주세요.")
     }
   }
 
@@ -875,6 +969,42 @@ export default function MapPlaceholder({
             {mapError}
             <br />
             카카오 JavaScript 키와 등록 도메인을 확인해 주세요.
+          </div>
+        )}
+
+        {/* 서울 외 지역 제한 안내 팝업 모달 */}
+        {showSeoulOnlyAlert && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+            <div
+              className="glass p-6 max-w-sm w-full text-center flex flex-col items-center gap-3 border border-white/40 shadow-2xl"
+              style={{ borderRadius: 24, backgroundColor: "rgba(255, 255, 255, 0.96)" }}
+            >
+              <div className="w-12 h-12 rounded-full bg-[#ff9500]/15 border border-[#ff9500]/30 flex items-center justify-center text-2xl">
+                📍
+              </div>
+              <h3
+                className="text-[#1a1a2e] text-base font-bold"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                서울 지역 전용 서비스 안내
+              </h3>
+              <p
+                className="text-[#4a4a68] text-xs leading-relaxed"
+                style={{ fontFamily: "var(--font-body)" }}
+              >
+                현재 버전은 <strong className="text-[#007aff]">서울시</strong>만 지원하고 있습니다.
+                <br />
+                서울 외 지역에서는 현위치 기능을 사용할 수 없습니다.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowSeoulOnlyAlert(false)}
+                className="mt-2 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#007aff] to-[#38bdf8] shadow-md hover:brightness-105 active:scale-98 transition-all cursor-pointer"
+                style={{ fontFamily: "var(--font-body)" }}
+              >
+                확인
+              </button>
+            </div>
           </div>
         )}
 

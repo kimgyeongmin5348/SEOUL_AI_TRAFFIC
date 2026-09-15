@@ -15,6 +15,8 @@ export interface RouteResult {
   ai: boolean
   reason: string | null
   coordinates: [number, number][]
+  baseTime: number
+  delayMin: number
   modelVersion?: string
   coverage?: number
   predictedVolume?: number | null
@@ -158,19 +160,40 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
     const prediction = ranking?.routes.find(item => item.id === id)
     const ai = Boolean(ranking?.available && prediction?.ai)
     const names = [...new Set(steps[i].map(s => s.name).filter(Boolean))]
+
+    // 실시간 도로 속도(speed_penalty), AI 교통량 지연(traffic_penalty), 사고(incident_penalty)가 결합된 최종 소요시간
+    const baseDurationSec = r.duration
+    const effectiveDurationSec = prediction?.score && prediction.score > 0 ? prediction.score : baseDurationSec
+    const time = Math.max(1, Math.round(effectiveDurationSec / 60))
+    const baseTime = Math.max(1, Math.round(baseDurationSec / 60))
+    const delayMin = Math.max(0, Math.round((effectiveDurationSec - baseDurationSec) / 60))
+    const avgSpeed = Math.round((r.distance / Math.max(1, effectiveDurationSec)) * 3.6)
+
+    const trafficLevel: "green" | "yellow" | "red" =
+      avgSpeed < 25 ? "red" : avgSpeed < 45 ? "yellow" : "green"
+    const traffic: "원활" | "서행" | "혼잡" =
+      trafficLevel === "red" ? "혼잡" : trafficLevel === "yellow" ? "서행" : "원활"
+
     return {
       id, label: `Route ${id}${ai ? " (AI 추천)" : ""}`,
       via: names.slice(0, 4).join(" / ") || "도로명 정보 없음",
-      time: Math.max(1, Math.round(r.duration / 60)),
+      time,
+      baseTime,
       distance: Number((r.distance / 1000).toFixed(1)),
-      avgSpeed: Math.round(r.distance / r.duration * 3.6),
-      traffic: "원활", trafficLevel: "green", incidents: prediction?.incident_count || 0, weather: "미연동", delay: 0,
+      avgSpeed,
+      traffic,
+      trafficLevel,
+      incidents: prediction?.incident_count || 0,
+      weather: "미연동",
+      delay: delayMin,
+      delayMin,
       ai,
       reason: ranking?.explanation?.selected_route_id === id
         ? ranking.explanation.text
         : explainRouteChoice(prediction, ranking?.routes || [], names, ranking?.algorithm),
       coordinates: r.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
-      modelVersion: ranking?.model_version, coverage: prediction?.coverage,
+      modelVersion: ranking?.model_version,
+      coverage: prediction?.coverage,
       predictedVolume: prediction?.predicted_volume,
       score: prediction?.score,
       trafficPenaltySec: prediction?.traffic_penalty_sec,
