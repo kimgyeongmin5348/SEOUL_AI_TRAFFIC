@@ -47,6 +47,28 @@ def test_chatbot_returns_reply_and_thinking():
     assert res["grounding"]["sources"] == ["RoadPulse 학습 모델 교통량 예측"]
 
 
+def test_chatbot_prompt_prioritizes_historical_rain_evidence_over_current_null():
+    client = StubChatClient()
+    grounding = {
+        "grounded": True,
+        "weather": {"observed_at": "2026-09-15T13:00:00+09:00", "rainfall_mm": None},
+        "historical_rain_impact": {
+            "rainy_avg_volume": 812.3,
+            "dry_avg_volume": 846.1,
+            "average_change_pct": -4.0,
+        },
+        "sources": ["RoadPulse 2년치 교통량·기상 관측 이력"],
+        "warnings": [],
+    }
+    get_traffic_chat_reply(
+        [{"role": "user", "content": "강남대로 상황 어때?"}],
+        client=client,
+        grounding=grounding,
+    )
+    assert '"historical_rain_impact"' in client.system
+    assert "null만 보고 과거 강수 비교 데이터가 없다고 판단하지 마세요" in client.system
+
+
 def test_chatbot_gracefully_handles_failure():
     client = FailingChatClient()
     res = get_traffic_chat_reply([{"role": "user", "content": "강남대로 상황 어때?"}], client=client)
