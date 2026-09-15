@@ -249,6 +249,38 @@
 - 파이프라인 스모크 확인: 6행 강제 학습이 end-to-end로 동작(지표는 데이터 부족으로 무의미해 아티트 삭제).
 - 검증 결과: 백엔드 전체 단위 테스트 `87 passed`
 
+### 딥시크 작업 검토 및 라벨·map-match 수정
+
+검토 결과 구조(단계 3·4 골격, 순위 지표, 채택 원칙)는 타당했으나 라벨 계산에 실제 데이터로 확인되는 오류가 있어 수정했다.
+
+- **map-match 수정** (`route_prediction.py`)
+    - 링크 시·종점 직선 대신 `geometry_json` 폴리라인을 사용한다. 곡선 링크(순환로·램프)는 직선과 실제 도로가 60m 넘게 벌어져 매칭이 빠졌다.
+    - step 대표점(중간점) 1개 대신 폴리라인을 100m 간격으로 샘플링해 **링크 여러 개에 길이를 배분**한다(`match_step_to_links`). OSRM step은 1~2km라 링크 2~4개에 걸친다.
+    - 거리만으로 최근접 링크를 고르던 것을 **방위 일치(45° 이내) 링크 우선, 그 다음 거리**로 바꿨다. 양방향 도로는 상·하행 링크가 나란히 있어 반대 방향 링크가 더 가까운 경우가 있었다. 반대 방향 링크만 가까운 구간은 `opposite_m`으로 따로 세고 관측에 쓰지 않는다.
+    - 링크 방위는 전체 시·종점 방위가 아니라 **샘플점에 가장 가까운 선분의 방위**를 쓴다(곡선 링크 대응).
+    - `link_match_ratio`를 고유 도로명 수/step 수에서 **길이 기준**(정의서 `matched_length_ratio`)으로 바꿨다.
+- **actual_duration_sec 재구성 수정** (`route_duration_reconstruction.py`)
+    - 기존: 매칭 링크의 `travel_time_sec`를 step 시간으로 그대로 대체 → 1,935m step에 746m 링크의 86초가 들어가는 식으로 왜곡. 서울역→강남역 검증에서 OSRM 744초 / 기존 방식 1,235초 / 속도 스케일 1,522초로 값이 제각각이었다.
+    - 수정: step에 배분된 링크 길이 × 해당 링크 관측 속도(`speed_kmh`, 없으면 링크 통행시간/링크 길이)로 계산하고, 관측 없는 나머지 길이는 OSRM 시간을 길이 비례로 유지한다.
+    - 관측은 주행 중간 시각(출발 + OSRM 시간/2)에 가장 가까운 것을 ±60분 안에서 고른다.
+    - 품질 등급을 관측 설명 길이 비율로 정하고(high ≥0.8 / medium ≥0.5 / low ≥0.3), **0.3 미만이면 라벨을 만들지 않고 `unusable`**로 남겨 재처리하지 않는다. 기존에는 관측이 전혀 없어도 OSRM 시간이 라벨이 되고 `chosen_best`가 붙었다.
+- **경로 학습 데이터셋 피처 추가** (`route_training_dataset.py`)
+    - 출발 시각 이전 관측만 쓰는 `speed_lag_kmh`(길이 가중)·`speed_lag_coverage`, 매칭 링크 위 활성 돌발 `active_incident_count`·유형별 건수, 출발 이전 마지막 기상(108), `departure_hour`·`weekday`·`is_weekend`, `opposite_direction_ratio`, `observed_length_ratio`.
+    - OSRM 후보는 OD 쌍당 1회만 조회하고 출발 시각마다 관측만 바꿔 붙인다. OD 쌍을 5→15개로 늘렸다.
+    - 출발 시각은 하드코딩 대신 링크 관측이 2,000개 이상인 시간대를 DB에서 자동 선택한다(`observed_departures`). 속도 관측은 9/11~9/15 스케줄러 가동 시간대에만 있다.
+    - 라벨 없는 후보는 순위에서 제외하고 라벨 있는 후보가 2개 미만이면 `route_rank_actual`·`chosen_best`를 비운다.
+- **모델 학습 파이프라인** (`ml/src/models/route_duration_model.py`)
+    - 피처 6개 → 19개. 라벨 없는 행 제외. 속도·기상 결측은 NaN 유지, 비율·건수는 0 채움.
+    - 같은 holdout에서 **OSRM 순서 베이스라인**(Top-1·pairwise·regret·MAE)을 함께 계산하고, 정의서 §7대로 Top-1과 regret가 모두 개선되고 MAE가 낮을 때만 채택한다(`beats_baseline`).
+    - 아티팩트를 `ml/artifacts/ml_models/`·`reports/`에서 **`ml/artifacts/route_models/`로 분리**했다. 기존 위치는 교통량 모델 `best_saved_model`이 glob하므로 경로 모델 report가 섞이면 "모델 평가 구간이 달라" 오류로 추천이 중단된다.
+- 결과
+    - 서울역→강남역 A 경로: 링크 매칭 58%→85%, 매칭 링크 7→18개, 반대 방향 0%, 라벨 1,578초(10.7km, 일요일 18시).
+    - 데이터셋: 35개 출발 시각 × OD 15쌍 = 525요청 1,015행, 전부 라벨 있음(high 770 / medium 210 / low 35), 관측 설명 길이 중앙값 0.88, 반대 방향 비율 평균 0.03. OSRM 1순위가 실제 1순위와 일치하는 요청 65.3%.
+    - 시간순 holdout(165요청): 베이스라인 Top-1 68.2% / regret 178초 / MAE 1,831초 → 모델 **90.3% / 20초 / 319초**. 채택되어 `route_models/route_xgb_duration_v1.joblib` 생성.
+    - 한계: OD 15쌍이 train/holdout 양쪽에 있어 **새 OD로의 일반화는 미검증**. 라벨은 링크 관측 속도로 재구성한 값이라 모델이 속도 lag 피처로 유리한 구조다. 온라인 요청 로그의 `actual_duration_sec`는 아직 0건(008 이전 요청만 있음).
+- 기타: `.gitignore`에 `route_models/` 추적 규칙 추가, 문제 정의서의 "원천에 방향 없음" 문구 정정, 재구성·매칭·데이터셋·모델 테스트 재작성.
+- 검증 결과: 백엔드 전체 단위 테스트 `94 passed`, 프론트엔드 빌드 성공
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
@@ -264,3 +296,6 @@
 11. [완료] 서울시 주요 출발·도착지(OD) 쌍 기반으로 과거 OSRM 후보 경로를 대량 시뮬레이션 생성하고 링크 관측과 결합해 `route_training_dataset.csv`를 일괄 구축한다. (Cold Start 해소)
 12. [완료] 경로 실제 소요시간(`actual_duration_sec`) 회귀 또는 후보 간 순위 학습(Pairwise Ranking) AI 모델을 학습하고 아티팩트(`ml/artifacts/ml_models`)를 생성한다.
 13. `route_prediction.py`의 휴리스틱 추천 방식을 신규 경로 AI 모델 추론으로 교체하고, 매칭 데이터 부족 시 기존 방식으로 안전하게 fallback하도록 연동한다.
+14. OD 단위 holdout(학습에 없는 OD 쌍으로 검증)을 추가해 새 경로 일반화 성능을 측정한다. OD 쌍을 서울 전역으로 늘린다.
+15. 온라인 요청 로그에 `link_match_json`·`actual_duration_sec`가 쌓이기 시작하면 `evaluate_route_ranking.py`로 현재 휴리스틱 점수의 Top-1·regret를 측정해 오프라인 결과와 비교한다.
+16. `road_segments.axis_*` 컬럼을 채운다(`raw_axis_links.csv` 적재 또는 수집기 실행).

@@ -217,6 +217,10 @@ ml/artifacts/*
 !ml/artifacts/ml_models/*.joblib
 !ml/artifacts/ml_models/*_metrics.json
 !ml/artifacts/reports/*.csv
+# 경로 소요시간 모델은 교통량 leaderboard glob과 분리해 route_models/에 둡니다.
+!ml/artifacts/route_models/
+!ml/artifacts/route_models/*.joblib
+!ml/artifacts/route_models/*_report.csv
 
 # Generated database exports and training datasets
 data/raw/*.csv

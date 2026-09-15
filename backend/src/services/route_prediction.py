@@ -167,10 +167,13 @@ def load_active_incidents(db, departure_at):
     return by_road
 
 
-# OSRM step 대표점과 링크 시·종점 선분이 이 거리 이내일 때만 같은 도로로 간주합니다.
+# step 샘플점과 링크 폴리라인이 이 거리 이내일 때만 같은 도로로 간주합니다.
 STEP_LINK_MATCH_M = 60.0
 # 진행 방위와 링크 bearing 차이가 이 각도 이내면 같은 진행 방향으로 봅니다.
 DIRECTION_MATCH_DEG = 45.0
+# step 폴리라인을 이 간격으로 샘플링해 링크 여러 개에 길이를 배분합니다.
+# OSRM step은 1~2km라 링크(평균 500m) 여러 개에 걸치므로 대표점 하나로는 부족합니다.
+STEP_SAMPLE_M = 100.0
 
 
 def bearing_deg(start, end):
@@ -189,66 +192,145 @@ def bearing_difference(a, b):
     return min(diff, 360 - diff)
 
 
-def load_road_link_geometry(db):
-    """도로명별 링크 시·종점 좌표와 bearing을 읽어 step 방위 매칭에 사용합니다.
+def local_distance_m(a, b):
+    """서울 범위 WGS84 두 점(lng, lat) 사이 거리(m)."""
+    latitude_scale = 111_320.0
+    longitude_scale = latitude_scale * math.cos(math.radians((a[1] + b[1]) / 2))
+    return math.hypot((b[0] - a[0]) * longitude_scale, (b[1] - a[1]) * latitude_scale)
 
-    007 마이그레이션으로 적재한 road_segments 기하를 사용합니다. 기하가 없으면 빈 dict를
-    돌려주고 호출부는 방향 매칭을 '미적용'으로 표시합니다.
+
+def load_road_link_geometry(db):
+    """도로명별 링크 폴리라인·bearing·길이를 읽어 step map-match에 사용합니다.
+
+    007 마이그레이션으로 적재한 road_segments 기하를 사용합니다. 곡선 링크(순환로·램프)는
+    시·종점 직선과 실제 도로가 멀어지므로 geometry_json 폴리라인을 우선 씁니다.
+    기하가 없으면 빈 dict를 돌려주고 호출부는 방향 매칭을 '미적용'으로 표시합니다.
     """
     rows = db.execute(text("""
-        SELECT r.road_name, r.link_id, r.start_lng, r.start_lat, r.end_lng, r.end_lat, r.bearing_deg
+        SELECT r.road_name, r.link_id, r.geometry_json, r.geometry_length_m,
+               r.start_lng, r.start_lat, r.end_lng, r.end_lat, r.bearing_deg
         FROM road_segments r
         WHERE r.road_name IS NOT NULL AND r.road_name != ''
           AND r.start_lat IS NOT NULL AND r.end_lat IS NOT NULL
     """)).mappings()
     by_road = {}
     for row in rows:
-        start = (float(row["start_lng"]), float(row["start_lat"]))
-        end = (float(row["end_lng"]), float(row["end_lat"]))
+        polyline = row.get("geometry_json")
+        if isinstance(polyline, str):
+            polyline = json.loads(polyline)
+        if not polyline or len(polyline) < 2:
+            polyline = [(float(row["start_lng"]), float(row["start_lat"])),
+                        (float(row["end_lng"]), float(row["end_lat"]))]
         by_road.setdefault(road_key(row["road_name"]), []).append({
             "link_id": row["link_id"],
-            "segment": [start, end],
+            "polyline": [(float(lng), float(lat)) for lng, lat in polyline],
             "bearing_deg": float(row["bearing_deg"]) if row["bearing_deg"] is not None else None,
+            "length_m": float(row["geometry_length_m"]) if row.get("geometry_length_m") is not None else None,
         })
     return by_road
 
 
-def match_step_to_link(step, links):
-    """step 대표점에 가장 가까운 링크를 찾아 진행 방위 일치 여부를 계산합니다.
+def sample_step(coordinates, spacing_m=STEP_SAMPLE_M):
+    """step 폴리라인을 따라 (샘플점, 국소 진행 방위, 대표 길이 m)를 생성합니다."""
+    for start, end in zip(coordinates, coordinates[1:]):
+        length = local_distance_m(start, end)
+        if length <= 0:
+            continue
+        pieces = max(1, math.ceil(length / spacing_m))
+        bearing = bearing_deg(start, end)
+        for piece in range(pieces):
+            t = (piece + 0.5) / pieces
+            yield (start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t), bearing, length / pieces
 
-    도로명은 후보를 좁히는 용도이며, 최종 연결은 좌표 거리로 판정합니다.
-    반환: 매칭 정보 dict, 또는 step 좌표가 없어 미적용이면 None.
+
+def match_step_to_links(step, links):
+    """step 폴리라인을 샘플링해 링크 여러 개에 길이를 배분하고 진행 방향 일치를 판정합니다.
+
+    도로명은 후보를 좁히는 용도이며, 최종 연결은 샘플점-링크 폴리라인 거리로 판정합니다.
+    양방향 도로는 상·하행 링크가 나란히 있으므로 거리보다 방위 일치를 먼저 봅니다.
+    반대 방향 링크만 가까운 구간은 opposite_m으로 따로 세고 links에 넣지 않습니다.
+    반환: 매칭 정보 dict, 또는 step 좌표가 없거나 후보 링크가 없어 미적용이면 None.
     """
     coordinates = getattr(step, "coordinates", None)
     if not coordinates or len(coordinates) < 2 or not links:
         return None
-    middle = coordinates[len(coordinates) // 2]
-    nearest, nearest_distance = None, math.inf
-    for link in links:
-        distance = point_to_polyline_distance_m(middle[0], middle[1], link["segment"])
-        if distance is not None and distance < nearest_distance:
-            nearest, nearest_distance = link, distance
-    if nearest is None or nearest_distance > STEP_LINK_MATCH_M:
-        return {"link_id": None, "distance_m": round(nearest_distance, 1) if math.isfinite(nearest_distance) else None,
-                "bearing_diff_deg": None, "direction_match": None}
-    step_bearing = bearing_deg(coordinates[0], coordinates[-1])
-    if nearest["bearing_deg"] is None:
-        return {"link_id": nearest["link_id"], "distance_m": round(nearest_distance, 1),
-                "bearing_diff_deg": None, "direction_match": None}
-    diff = bearing_difference(step_bearing, nearest["bearing_deg"])
-    return {"link_id": nearest["link_id"], "distance_m": round(nearest_distance, 1),
-            "bearing_diff_deg": round(diff, 1), "direction_match": diff <= DIRECTION_MATCH_DEG}
+    per_link = {}
+    matched_m = opposite_m = unmatched_m = 0.0
+    for point, bearing, weight in sample_step(coordinates):
+        best, best_key, best_diff = None, None, None
+        for link in links:
+            distance, segment = nearest_polyline_segment(point[0], point[1], link["polyline"])
+            if distance is None or distance > STEP_LINK_MATCH_M:
+                continue
+            # 곡선 링크는 시·종점 방위와 국소 진행 방향이 크게 다르므로 가장 가까운 선분의 방위를 씁니다.
+            link_bearing = segment_bearing(link["polyline"], segment, link.get("bearing_deg"))
+            if link_bearing is None:
+                continue
+            diff = bearing_difference(bearing, link_bearing)
+            key = (0 if diff <= DIRECTION_MATCH_DEG else 1, distance)
+            if best_key is None or key < best_key:
+                best, best_key, best_diff = link, key, diff
+        if best is None:
+            unmatched_m += weight
+        elif best_key[0] == 1:
+            opposite_m += weight
+        else:
+            entry = per_link.setdefault(best["link_id"], {"link_id": best["link_id"], "length_m": 0.0,
+                                                          "_distance": 0.0, "_bearing": 0.0})
+            entry["length_m"] += weight
+            entry["_distance"] += best_key[1] * weight
+            entry["_bearing"] += best_diff * weight
+            matched_m += weight
+    total_m = matched_m + opposite_m + unmatched_m
+    parts = sorted(({"link_id": e["link_id"], "length_m": round(e["length_m"], 1),
+                     "distance_m": round(e["_distance"] / e["length_m"], 1),
+                     "bearing_diff_deg": round(e["_bearing"] / e["length_m"], 1)}
+                    for e in per_link.values()), key=lambda part: -part["length_m"])
+    dominant = parts[0] if parts else None
+    if matched_m > 0 and matched_m >= opposite_m:
+        direction_match = True
+    elif opposite_m > 0:
+        direction_match = False
+    else:
+        direction_match = None
+    return {
+        "link_id": dominant["link_id"] if dominant else None,
+        "links": parts,
+        "matched_m": round(matched_m, 1),
+        "opposite_m": round(opposite_m, 1),
+        "unmatched_m": round(unmatched_m, 1),
+        "total_m": round(total_m, 1),
+        "match_ratio": round(matched_m / total_m, 3) if total_m else 0.0,
+        "distance_m": dominant["distance_m"] if dominant else None,
+        "bearing_diff_deg": dominant["bearing_diff_deg"] if dominant else None,
+        "direction_match": direction_match,
+    }
+
+
+def segment_bearing(polyline, index, fallback=None):
+    """폴리라인 index번째 선분의 방위. 길이 0 선분이면 fallback(링크 전체 방위)."""
+    if index is None or index + 1 >= len(polyline):
+        return fallback
+    start, end = polyline[index], polyline[index + 1]
+    if start[0] == end[0] and start[1] == end[1]:
+        return fallback
+    return bearing_deg(start, end)
 
 
 def point_to_polyline_distance_m(longitude, latitude, coordinates):
     """Approximate WGS84 point-to-polyline distance for Seoul-scale routes."""
+    return nearest_polyline_segment(longitude, latitude, coordinates)[0]
+
+
+def nearest_polyline_segment(longitude, latitude, coordinates):
+    """점에서 가장 가까운 폴리라인 선분까지의 거리(m)와 그 선분 index. 계산 불가면 (None, None)."""
     # 서울 범위에서는 위경도를 국소 미터 좌표로 바꿔 빠르게 계산합니다.
     if longitude is None or latitude is None or len(coordinates) < 2:
-        return None
+        return None, None
     latitude_scale = 111_320.0
     longitude_scale = latitude_scale * math.cos(math.radians(latitude))
-    minimum = math.inf
-    for start, end in zip(coordinates, coordinates[1:]):
+    minimum, nearest = math.inf, None
+    for index, (start, end) in enumerate(zip(coordinates, coordinates[1:])):
         start_x = (start[0] - longitude) * longitude_scale
         start_y = (start[1] - latitude) * latitude_scale
         end_x = (end[0] - longitude) * longitude_scale
@@ -259,8 +341,9 @@ def point_to_polyline_distance_m(longitude, latitude, coordinates):
             0.0, min(1.0, -(start_x * dx + start_y * dy) / length_squared)
         )
         distance = math.hypot(start_x + projection * dx, start_y + projection * dy)
-        minimum = min(minimum, distance)
-    return minimum
+        if distance < minimum:
+            minimum, nearest = distance, index
+    return minimum, nearest
 
 
 def incident_matches_route(incident, coordinates):
@@ -338,7 +421,8 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
     incidents_by_road = incidents_by_road or {}
     speeds_by_road = speeds_by_road or {}
     link_geometry = link_geometry or {}
-    link_matched = {candidate.id: [] for candidate in candidates}
+    # 길이 기준 링크 매칭률(정의서 matched_length_ratio)과 step별 방향 판정을 모읍니다.
+    link_length = {candidate.id: {"matched": 0.0, "total": 0.0} for candidate in candidates}
     link_direction = {candidate.id: [] for candidate in candidates}
     link_match_details = {candidate.id: [] for candidate in candidates}
     roads = {}
@@ -367,22 +451,17 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
         coordinates = getattr(candidate, "coordinates", [])
         preferred_direction = determine_route_direction(coordinates)
         for index, step in enumerate(candidate.steps):
-            # 도로명 후보 링크 중 step 대표점에 가장 가까운 링크를 찾아 방위 일치를 판정합니다.
-            step_match = match_step_to_link(step, link_geometry.get(road_key(step.name), [])) if step.name else None
+            # 도로명 후보 링크에 step 폴리라인을 샘플링해 배분하고 방위 일치를 판정합니다.
+            step_match = match_step_to_links(step, link_geometry.get(road_key(step.name), [])) if step.name else None
             if step_match:
-                # 재구성 단계에서 steps_json과 순서를 맞출 수 있도록 step index를 함께 저장합니다.
-                link_match_details[candidate.id].append({
-                    "index": index,
-                    "name": step.name,
-                    "link_id": step_match["link_id"],
-                    "distance_m": step_match["distance_m"],
-                    "bearing_diff_deg": step_match["bearing_diff_deg"],
-                    "direction_match": step_match["direction_match"],
-                })
-                if step_match["link_id"]:
-                    link_matched[candidate.id].append(step.name)
+                link_match_details[candidate.id].append({"index": index, "name": step.name, **step_match})
+                link_length[candidate.id]["matched"] += step_match["matched_m"]
+                link_length[candidate.id]["total"] += step_match["total_m"]
                 if step_match["direction_match"] is not None:
                     link_direction[candidate.id].append(step_match["direction_match"])
+            else:
+                # 좌표가 없거나 도로명에 링크 기하가 없는 step은 미매칭 길이로 셉니다.
+                link_length[candidate.id]["total"] += float(getattr(step, "distance_m", None) or 0.0)
             candidates_for_step = incidents_by_road.get(road_key(step.name), [])
             for incident in candidates_for_step:
                 if coordinates and incident.get("longitude") is not None:
@@ -452,8 +531,8 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
                         "matched_road_names": list(dict.fromkeys(matched_road_names)),
                         "unmatched_road_names": list(dict.fromkeys(unmatched_road_names)),
                         "match_ratio": round(count / len(candidate.steps), 3) if candidate.steps else 0,
-                        "link_match_ratio": round(len(set(link_matched[candidate.id])) / len(candidate.steps), 3) if candidate.steps else 0,
-                        "link_matched_road_names": list(dict.fromkeys(link_matched[candidate.id])),
+                        "link_match_ratio": round(link_length[candidate.id]["matched"] / link_length[candidate.id]["total"], 3) if link_length[candidate.id]["total"] else 0,
+                        "link_matched_road_names": list(dict.fromkeys(d["name"] for d in link_match_details[candidate.id] if d["link_id"])),
                         "direction_match_ratio": round(sum(link_direction[candidate.id]) / len(link_direction[candidate.id]), 3) if link_direction[candidate.id] else None,
                         "direction_matched_steps": len(link_direction[candidate.id]),
                         "link_match_details": link_match_details[candidate.id],

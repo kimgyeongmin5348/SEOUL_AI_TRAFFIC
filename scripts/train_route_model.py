@@ -26,11 +26,15 @@ def main() -> None:
     args = parser.parse_args()
 
     result = train_route_model(args.input, args.artifacts, min_rows=args.min_rows, force=args.force)
-    if result["status"] == "trained":
+    if result["status"] in ("trained", "not_adopted"):
         print(f"model_version: {result['model_version']}")
-        print(f"rows: {result['rows']} (train {result['train_rows']} / holdout {result['holdout_rows']})")
-        print(f"MAE {result['mae']:.2f} RMSE {result['rmse']:.2f} R2 {result['r2']:.4f}")
-        print(f"Top-1 {result['top1_accuracy']} pairwise {result['pairwise_ranking_accuracy']} regret {result['mean_regret_sec']}")
+        print(f"rows: {result['rows']} (train {result['train_rows']} / holdout {result['holdout_rows']}, "
+              f"holdout requests {result['holdout_requests']})")
+        print(f"model    MAE {result['mae']:.2f} RMSE {result['rmse']:.2f} R2 {result['r2']:.4f} | "
+              f"Top-1 {result['top1_accuracy']} pairwise {result['pairwise_ranking_accuracy']} regret {result['mean_regret_sec']}")
+        print(f"baseline MAE {result['baseline_mae']:.2f} RMSE {result['baseline_rmse']:.2f} R2 {result['baseline_r2']:.4f} | "
+              f"Top-1 {result['baseline_top1_accuracy']} pairwise {result['baseline_pairwise_ranking_accuracy']} regret {result['baseline_mean_regret_sec']}")
+    if result["status"] == "trained":
         print(f"artifact: {result['artifact']}")
     else:
         print(f"[{result['status']}] {result['message']}")

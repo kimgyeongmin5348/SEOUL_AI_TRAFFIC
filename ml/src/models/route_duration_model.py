@@ -4,8 +4,10 @@
 시간순으로 분할해 actual_duration_sec를 예측하고, 회귀 지표(MAE/RMSE/R²)와 함께
 경로 추천 지표(Top-1, pairwise, regret)를 계산합니다.
 
-원칙: 데이터가 너무 적으면 아티팩트를 자동 채택하지 않습니다. 최소 행 수를 넘기고
-시간순 holdout에서 순위 지표가 산출될 때만 운영 아티팩트로 저장합니다.
+원칙
+- 같은 holdout에서 OSRM 순서(osrm_duration_sec 오름차순) 베이스라인과 반드시 비교합니다.
+  라벨의 미관측 구간이 OSRM 시간을 유지하므로 모델이 OSRM을 복제만 해도 지표가 좋아 보일 수 있습니다.
+- 학습 행이 부족하거나 베이스라인을 이기지 못하면 아티팩트를 채택하지 않습니다.
 """
 
 import json
@@ -22,33 +24,58 @@ from backend.src.services.route_ranking_evaluation import (
     top1_accuracy,
 )
 
-# 모델 입력으로 쓰는 수치형 Feature. direction_match_ratio는 결측 시 0으로 채웁니다.
+# 모델 입력 Feature. 모두 출발 시각 이전 정보만으로 계산됩니다.
 FEATURE_COLUMNS = [
     "route_distance_m",
     "osrm_duration_sec",
     "segment_count",
     "link_match_ratio",
     "direction_match_ratio",
+    "opposite_direction_ratio",
+    "speed_lag_kmh",
+    "speed_lag_coverage",
+    "active_incident_count",
+    "accident_count",
+    "construction_count",
+    "control_count",
+    "breakdown_count",
+    "weather_temperature_c",
+    "weather_rainfall_mm",
+    "weather_humidity_pct",
     "departure_hour",
+    "weekday",
+    "is_weekend",
+]
+# 결측을 0으로 채워도 의미가 유지되는 컬럼(비율·건수). 속도·기상 결측은 NaN으로 두어 모델이 구분합니다.
+ZERO_FILL_COLUMNS = [
+    "direction_match_ratio", "opposite_direction_ratio", "speed_lag_coverage",
+    "active_incident_count", "accident_count", "construction_count", "control_count", "breakdown_count",
 ]
 TARGET = "actual_duration_sec"
 MODEL_VERSION = "route_xgb_duration_v1"
-# 운영 아티팩트로 채택하기 위한 최소 학습 행 수(품질 등급 high/medium 권장).
+# 운영 아티팩트로 채택하기 위한 최소 학습 행 수(라벨 있는 행 기준).
 DEFAULT_MIN_ROWS = 50
 
 
 def prepare_dataset(frame):
-    """CSV를 Feature 행렬과 시간순 정렬된 프레임으로 변환합니다."""
+    """CSV를 시간순 정렬된 학습 프레임으로 변환합니다. 라벨 없는(unusable) 행은 제외합니다."""
     frame = frame.copy()
     frame["departure_at"] = pd.to_datetime(frame["departure_at"])
-    frame = frame.sort_values("departure_at").reset_index(drop=True)
+    frame = frame[frame[TARGET].notna()]
+    frame = frame.sort_values(["departure_at", "route_request_id", "route_id"]).reset_index(drop=True)
     frame["departure_hour"] = frame["departure_at"].dt.hour
-    frame["direction_match_ratio"] = frame["direction_match_ratio"].fillna(0.0)
+    frame["weekday"] = frame["departure_at"].dt.weekday
+    frame["is_weekend"] = (frame["weekday"] >= 5).astype(int)
+    for column in FEATURE_COLUMNS:
+        if column not in frame.columns:
+            frame[column] = float("nan")
+    for column in ZERO_FILL_COLUMNS:
+        frame[column] = frame[column].fillna(0.0)
     return frame
 
 
 def time_split(frame, ratio=0.7):
-    """시간순으로 train/holdout을 나눕니다."""
+    """시간순으로 train/holdout을 나눕니다. 같은 출발 시각(=같은 요청)은 한쪽에만 들어갑니다."""
     split_index = max(1, int(len(frame) * ratio))
     if split_index >= len(frame):
         return frame, frame.iloc[0:0]
@@ -88,14 +115,32 @@ def ranking_metrics(requests):
     }
 
 
+def baseline_metrics(test):
+    """OSRM 시간 그대로를 예측·점수로 쓴 베이스라인 지표."""
+    osrm = test["osrm_duration_sec"].to_numpy(dtype=float)
+    return {
+        **{f"baseline_{k}": v for k, v in regression_metrics(test[TARGET].to_numpy(), osrm).items()},
+        **{f"baseline_{k}": v for k, v in ranking_metrics(requests_from_predictions(test, osrm)).items()},
+    }
+
+
+def beats_baseline(metrics, baseline):
+    """정의서 §7: 순위 지표와 regret가 함께 개선돼야 채택합니다."""
+    top1, base_top1 = metrics.get("top1_accuracy"), baseline.get("baseline_top1_accuracy")
+    regret, base_regret = metrics.get("mean_regret_sec"), baseline.get("baseline_mean_regret_sec")
+    if top1 is None or base_top1 is None or regret is None or base_regret is None:
+        return False
+    return top1 >= base_top1 and regret <= base_regret and metrics["mae"] < baseline["baseline_mae"]
+
+
 def train_route_model(dataset_path: Path, artifacts_dir: Path, min_rows: int = DEFAULT_MIN_ROWS,
                       force: bool = False, ratio: float = 0.7):
-    """경로 소요시간 모델을 학습하고 (성공 시) 아티팩트와 리포트를 저장합니다."""
+    """경로 소요시간 모델을 학습하고, 베이스라인을 이기면 아티팩트와 리포트를 저장합니다."""
     frame = prepare_dataset(pd.read_csv(dataset_path))
     if len(frame) < min_rows and not force:
         return {
             "status": "insufficient_data", "rows": len(frame), "min_rows": min_rows,
-            "message": f"학습 행이 {min_rows}개 미만({len(frame)}개)이라 아티팩트를 채택하지 않았습니다. --force로 강제 학습할 수 있습니다.",
+            "message": f"라벨 있는 학습 행이 {min_rows}개 미만({len(frame)}개)이라 아티팩트를 채택하지 않았습니다. --force로 강제 학습할 수 있습니다.",
         }
 
     train, test = time_split(frame, ratio)
@@ -107,20 +152,28 @@ def train_route_model(dataset_path: Path, artifacts_dir: Path, min_rows: int = D
     model = xgb.XGBRegressor(n_estimators=300, max_depth=4, learning_rate=0.05, subsample=0.9)
     model.fit(train[FEATURE_COLUMNS], train[TARGET])
     predictions = model.predict(test[FEATURE_COLUMNS])
-    metrics = regression_metrics(test[TARGET].to_numpy(), predictions)
-    ranking = ranking_metrics(requests_from_predictions(test, predictions))
+    metrics = {**regression_metrics(test[TARGET].to_numpy(), predictions),
+               **ranking_metrics(requests_from_predictions(test, predictions))}
+    baseline = baseline_metrics(test)
+    adopted = beats_baseline(metrics, baseline) or force
 
-    artifact_path = artifacts_dir / "ml_models" / f"{MODEL_VERSION}.joblib"
-    report_path = artifacts_dir / "reports" / f"{MODEL_VERSION}_report.csv"
-    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"model": model, "feature_columns": FEATURE_COLUMNS, "target": TARGET}, artifact_path)
     report = {
         "model_version": MODEL_VERSION, "algorithm": "XGBoostRegressor",
         "trained_at": datetime.now().isoformat(timespec="seconds"),
         "rows": len(frame), "train_rows": len(train), "holdout_rows": len(test),
+        "holdout_requests": test["route_request_id"].nunique(),
         "feature_columns": json.dumps(FEATURE_COLUMNS, ensure_ascii=False),
-        **metrics, **ranking,
+        **metrics, **baseline, "adopted": adopted,
     }
+    if not adopted:
+        return {"status": "not_adopted", **report,
+                "message": "시간순 holdout에서 OSRM 순서 베이스라인을 이기지 못해 아티팩트를 채택하지 않았습니다."}
+
+    # ml_models/·reports/는 교통량 모델 leaderboard(best_saved_model)가 glob하므로 경로 모델은 따로 둡니다.
+    artifact_path = artifacts_dir / "route_models" / f"{MODEL_VERSION}.joblib"
+    report_path = artifacts_dir / "route_models" / f"{MODEL_VERSION}_report.csv"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump({"model": model, "feature_columns": FEATURE_COLUMNS, "target": TARGET}, artifact_path)
     pd.DataFrame([report]).to_csv(report_path, index=False, encoding="utf-8-sig")
     return {"status": "trained", "artifact": str(artifact_path), "report": str(report_path), **report}
