@@ -622,7 +622,6 @@ export default function Route() {
                     color: "#5e5ce6",
                   },
                   {
-                    label: "도로별 예측 교통량 (양방향)",
                     label: "도로별 예측 교통량 (진행 방향)",
                     value: selectedRoute.predictedVolume == null ? "예측 없음" : `${selectedRoute.predictedVolume}대/시간`,
                     color: "#007aff",

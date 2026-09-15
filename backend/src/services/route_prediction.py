@@ -271,14 +271,12 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
         # A zero previous-day count cannot support a meaningful growth ratio.
         if meta["baseline"] <= 0:
             continue
-        roads.setdefault(road_key(meta["spot_name"]), []).append((
         key = road_key(meta["spot_name"])
         direction = int(meta.get("direction_code", 1))
         roads.setdefault(key, {})[direction] = (
             max(0., float(prediction)),
             meta["baseline"],
             meta.get("typical_volume", meta["baseline"]),
-        ))
         )
     results = []
     for candidate in candidates:
@@ -310,8 +308,6 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
                 # 관측 속도가 OSRM보다 느릴 때만 추가 지연을 부과합니다.
                 observed_duration = step.distance_m / (float(speed["speed_kmh"]) / 3.6)
                 speed_penalty += max(0.0, observed_duration - step.duration_sec)
-            observations = roads.get(road_key(step.name)) if step.name else None
-            if not observations:
             dir_map = roads.get(road_key(step.name)) if step.name else None
             if not dir_map:
                 if step.name:
@@ -319,10 +315,6 @@ def rank_candidates(candidates, predictions, metadata, incidents_by_road=None, d
                 continue
             if step.name:
                 matched_road_names.append(step.name)
-            # Both measured directions are pooled: this is a road-level proxy.
-            forecast = sum(p for p, _, _ in observations)
-            baseline = sum(b for _, b, _ in observations)
-            normal = sum(t for _, _, t in observations)
 
             # 양방향 합산(Pooling) 대신 주행 방향(preferred_direction) 관측값만 선택합니다.
             if preferred_direction in dir_map:

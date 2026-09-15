@@ -136,7 +136,6 @@
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
 2. 표준노드링크 기하를 확보해 `road_segments`에 시·종점 좌표 또는 geometry를 추가한다. RDS `link_id`와 표준링크 ID 일치율을 먼저 샘플로 검증한다.
 3. OSRM step 좌표를 링크 기하에 map-match하고 진행 방위와 `axis_direction`을 비교해 방향 일치 여부를 저장한다.
-4. `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.
 4. [완료] `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.
 5. 매칭 방법·거리·방향 일치율을 API 응답과 링크 데이터셋에 기록한다.
 6. 매칭된 링크의 시간대별 `travel_time_sec`로 경로별 `actual_duration_sec`를 재구성하고 품질 등급을 저장한다.
