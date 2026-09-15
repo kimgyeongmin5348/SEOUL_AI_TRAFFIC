@@ -44,6 +44,7 @@ interface OsrmRoute {
 }
 
 interface ModelRanking {
+  route_request_id?: string
   available: boolean
   model_version: string
   algorithm: string
@@ -121,7 +122,12 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: AbortSignal.timeout(45000),
-      body: JSON.stringify({ departure_at: departureAt, candidates: candidates.map((r, i) => ({
+      body: JSON.stringify({
+        departure_at: departureAt,
+        // 요청 로그(경로 학습 데이터셋)에 출발지·목적지를 남기기 위해 전달합니다.
+        origin: { name: origin.name, lat: origin.lat, lng: origin.lng },
+        destination: { name: dest.name, lat: dest.lat, lng: dest.lng },
+        candidates: candidates.map((r, i) => ({
         id: String.fromCharCode(65 + i), duration_sec: r.duration,
         distance_m: r.distance,
         // 백엔드가 돌발 위치를 경로 polyline과 비교할 수 있게 전달합니다.
@@ -131,7 +137,8 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
           duration_sec: step.duration,
           distance_m: step.distance,
         })),
-      })) }),
+        })),
+      }),
     })
     const body = await result.json()
     if (!result.ok) throw new Error(typeof body.detail === "string" ? body.detail : "모델 추론 요청에 실패했습니다.")

@@ -139,6 +139,25 @@
 - 프론트엔드 `RouteResult` 타입 및 `routing.ts` 매핑에 `score`, `trafficPenaltySec`, `incidentPenaltySec`를 연결했다.
 - 검증 결과: 백엔드 전체 단위 테스트 `36 passed`, 프론트엔드 빌드 성공
 
+### origin/main 병합
+
+- 팀원 챗봇·UI·로고 작업(origin/main 21커밋)을 `inbbong`에 병합했다.
+- `frontend/src/pages/Route.tsx` 충돌은 main의 반응형 레이아웃을 유지하고 inbbong의 AI 점수 배너·돌발·속도·진행 방향 항목을 반영해 해결했다.
+- 프론트는 pnpm 레이아웃이라 `react-markdown`, `remark-gfm`은 `pnpm@12.4.1`로 설치했다.
+- 검증 결과: 백엔드 전체 단위 테스트 `45 passed`, 프론트엔드 빌드 성공
+- `origin/inbbong` 푸시 완료, main 대상 PR 생성 대기
+
+### 경로 추천 요청 로그 테이블 (경로 학습 데이터셋 축적 시작)
+
+- `route_requests`(요청 1행)·`route_request_candidates`(후보 1행) 테이블을 추가했다. (`006_add_route_request_logs.sql`, `schema.sql`)
+    - 요청: `route_request_id`(uuid4), 요청·출발·목표 시각, 출발지·목적지 이름/좌표, 상태(`ok`/`unavailable`)와 사유, 모델 버전, AI 선택·OSRM 기본 경로 ID, 교통량·기상 관측 시각, 순차 예측 단계 수
+    - 후보: OSRM 거리·시간·구간 수, 주행 방향 코드, 점수와 교통량·돌발·속도 패널티, coverage·매칭률, 돌발 건수, 예측·평상 교통량, AI 선택 여부, 원본 `steps_json`·`coordinates_json`, 이후 채울 `actual_duration_sec`·품질 등급 컬럼
+- `/api/routes/predict`가 요청마다 `route_request_id`를 발급해 응답에 포함하고, 추천 성공과 보류(`ValueError`) 모두 후보 경로와 함께 저장한다. 로그 저장 실패는 경고만 남기고 추천 응답에 영향을 주지 않는다.
+- 요청 스키마에 선택적 `origin`·`destination`(이름·좌표)을 추가했고, 프론트 `routing.ts`가 `PlaceSuggestion`을 전달한다. 없으면 polyline 양 끝 좌표로 대체한다.
+- 응답 message의 `도로명 기준 양방향 합산` 문구를 `도로명·진행 방향 기준 교통량 매칭`으로 정정했다.
+- RDS에 005(`road_segments` 축·방향 컬럼)와 006 마이그레이션을 적용했다. 실제 세션으로 성공·보류 요청 각 1건을 INSERT해 JSON 컬럼과 FK CASCADE를 확인한 뒤 검증 행은 삭제했다.
+- 검증 결과: 백엔드 전체 단위 테스트 `51 passed`, 프론트엔드 빌드 성공
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
@@ -147,10 +166,10 @@
 4. [완료] `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.
 5. 매칭 방법·거리·방향 일치율을 API 응답과 링크 데이터셋에 기록한다.
 6. 매칭된 링크의 시간대별 `travel_time_sec`로 경로별 `actual_duration_sec`를 재구성하고 품질 등급을 저장한다.
-7. `/api/routes/predict` 요청 시 `route_request_id`와 후보 경로를 로그 테이블에 저장해 경로 학습 데이터셋 축적을 시작한다.
+7. [완료] `/api/routes/predict` 요청 시 `route_request_id`와 후보 경로를 로그 테이블에 저장해 경로 학습 데이터셋 축적을 시작한다.
 8. Top-1 accuracy, pairwise ranking accuracy, regret 계산 스크립트를 추가한다.
 9. [완료] 화면에 AI 점수가 ETA가 아님을 명시한다.
-10. `inbbong` 브랜치를 `main`에 PR로 병합한다.
+10. [진행 중] `inbbong` 브랜치를 `main`에 PR로 병합한다. (origin/main 병합·푸시 완료, PR 생성 대기)
 11. 서울시 주요 출발·도착지(OD) 쌍 기반으로 과거 OSRM 후보 경로를 대량 시뮬레이션 생성하고 링크 관측과 결합해 `route_training_dataset.csv`를 일괄 구축한다. (Cold Start 해소)
 12. 경로 실제 소요시간(`actual_duration_sec`) 회귀 또는 후보 간 순위 학습(Pairwise Ranking) AI 모델을 학습하고 아티팩트(`ml/artifacts/ml_models`)를 생성한다.
 13. `route_prediction.py`의 휴리스틱 추천 방식을 신규 경로 AI 모델 추론으로 교체하고, 매칭 데이터 부족 시 기존 방식으로 안전하게 fallback하도록 연동한다.
