@@ -158,11 +158,26 @@
 - RDS에 005(`road_segments` 축·방향 컬럼)와 006 마이그레이션을 적용했다. 실제 세션으로 성공·보류 요청 각 1건을 INSERT해 JSON 컬럼과 FK CASCADE를 확인한 뒤 검증 행은 삭제했다.
 - 검증 결과: 백엔드 전체 단위 테스트 `51 passed`, 프론트엔드 빌드 성공
 
+### 서비스링크 선형 복원 (표준노드링크 기하 확보)
+
+- TOPIS `2026-03 서울시 표준링크 매핑정보`(서비스링크→표준링크아이디, 11,572행)와 국가 표준노드링크 `MOCT_LINK` shapefile(156만 링크, EPSG:5186)을 `data/external/`에 확보했다. shp는 600MB라 `.gitignore` 처리했다.
+- 서비스링크 ID(`road_segments.link_id`)는 국가 표준링크 ID와 **다른 체계**이며 매핑표로만 연결된다. 어제 "형식이 같다"고 적은 것은 형식만 같은 것이었다.
+- `scripts/build_link_geometry.py`를 추가했다. 처리 순서:
+    1. 매핑 표준링크 중 500m 이상 떨어진 군집은 매핑 오류로 제외 (DB `road_name` 일치 군집 우선). 155개 서비스링크에서 206개 제외.
+    2. `F_NODE→T_NODE` 체인으로 순서 복원. 교차로 내부 링크가 매핑에 없어 끊긴 조각은 끝점 거리로 연결.
+    3. 매핑이 구성 표준링크를 일부만 주므로, 매핑 링크 사이 빈 구간을 서울 범위 표준링크 그래프(107,588개) 방향 최단경로로 보충. 2,354개 링크에 7,494개 보충.
+    4. 서울시 `LinkWithLoad` 축·방향·순번(`data/external/raw_axis_links.csv`, 532축 5,337링크)으로 이웃 서비스링크 사이 빈 구간을 보충해 양 끝 잘림을 보정. 길이 절반씩 배분하므로 경계는 근사이며 `role=axis_extend`로 구분.
+- 결과: 5,341개 중 `complete` 4,667 / `partial` 394(표준링크 일부가 shp에 없음) / `unmapped` 229 / `missing` 51. 도로명 일치 97.3%, 축 이웃 링크 간격 ≤100m 3,966/4,014쌍, DB `length_m` 보유 158개 대비 복원 길이 중앙값 0.965.
+- 방향 검증: 같은 축의 상행·하행 평균 방위가 372축 중 99.7%에서 150° 이상 차이 → 선형·순번·방향 정합. 단 **상행/하행은 도심 유입/유출과 무관**(상행 링크의 47%만 시청 방향)하므로 `determine_route_direction`을 `axis_direction`으로 대응시킬 수 없다. 이후 방향 매칭은 링크 `bearing_deg`와 OSRM 구간 방위를 직접 비교한다.
+- `007_add_road_segments_geometry.sql`: `road_segments`에 시·종점 좌표, `bearing_deg`, `geometry_length_m`, `geometry_json`, 출처·품질·확장 길이 컬럼 추가, `service_link_standard_links`(구성 표준링크 순번·role) 테이블 추가.
+- `pyshp` 의존성 추가. 합성 그래프 단위 테스트 5개 추가.
+- 검증 결과: 백엔드 전체 단위 테스트 `56 passed`
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
-2. 표준노드링크 기하를 확보해 `road_segments`에 시·종점 좌표 또는 geometry를 추가한다. RDS `link_id`와 표준링크 ID 일치율을 먼저 샘플로 검증한다.
-3. OSRM step 좌표를 링크 기하에 map-match하고 진행 방위와 `axis_direction`을 비교해 방향 일치 여부를 저장한다.
+2. [완료] 표준노드링크 기하를 확보해 `road_segments`에 시·종점 좌표 또는 geometry를 추가한다. (TOPIS 매핑표로 연결, RDS 반영은 007 적용 후 `--load-db`)
+3. OSRM step 좌표를 링크 기하에 map-match하고 진행 방위와 링크 `bearing_deg`를 비교해 방향 일치 여부를 저장한다. (`axis_direction`은 유입/유출과 무관하므로 방위 직접 비교)
 4. [완료] `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.
 5. 매칭 방법·거리·방향 일치율을 API 응답과 링크 데이터셋에 기록한다.
 6. 매칭된 링크의 시간대별 `travel_time_sec`로 경로별 `actual_duration_sec`를 재구성하고 품질 등급을 저장한다.
