@@ -455,6 +455,7 @@ export default function Route() {
                           {r.time}
                         </span>
                         <span className="text-sm text-[#6b6b8a] ml-1">분</span>
+                        <span className="text-[10px] text-[#6b6b8a] ml-1.5 px-1.5 py-0.5 rounded bg-black/5 font-normal">OSRM 기준</span>
                       </div>
                       <div
                         className="text-sm text-[#6b6b8a] pb-1"
@@ -594,12 +595,27 @@ export default function Route() {
               >
                 {selectedRoute?.label} 주행 상세 분석
               </h3>
+
+              {/* ETA 오해 방지 명시 배너 */}
+              <div className="mb-4 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/60 flex items-start gap-2.5 text-xs text-[#2c3e50] leading-relaxed">
+                <span className="text-base shrink-0 mt-0.5">ℹ️</span>
+                <div>
+                  <span className="font-semibold text-[#007aff]">AI 추천 점수 안내:</span>
+                  {" "}AI 추천은 OSRM 기준 소요시간에 교통량 증가율, 실시간 관측 속도 지연, 돌발상황(사고·공사·통제) 패널티를 종합한 <strong className="text-[#1a1a2e]">후보 간 비교 순위용 비용 점수(Cost)</strong>이며, 실제 주행 도착시간(ETA)이 아닙니다.
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   {
-                    label: "OSRM 예상 소요 시간",
+                    label: "OSRM 기준 소요 시간",
                     value: `${selectedRoute?.time}분`,
                     color: "#007aff",
+                  },
+                  {
+                    label: "AI 비교 추천 점수",
+                    value: selectedRoute.score ? `${Math.round(selectedRoute.score)}점 (비용)` : "미적용",
+                    color: "#5e5ce6",
                   },
                   {
                     label: "실제 주행 거리",

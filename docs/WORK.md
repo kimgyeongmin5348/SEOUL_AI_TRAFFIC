@@ -131,6 +131,14 @@
 - 방향 매칭 및 반대 차선 정체 비간섭 검증 단위 테스트를 추가했다.
 - 검증 결과: 백엔드 전체 단위 테스트 `36 passed`, 프론트엔드 빌드 성공
 
+### 화면 AI 추천 점수·비용 성격 명시 (ETA 오해 방지)
+
+- 경로 목록 카드의 시간 옆에 `OSRM 기준` 뱃지를 추가하여 AI가 예측한 도착시간(ETA)으로 오인되지 않도록 했다.
+- 경로 주행 상세 분석 상단에 안내 배너를 추가하여, AI 추천 점수가 OSRM 기준시간에 교통량·속도·돌발 패널티를 종합한 "비교 순위용 비용 점수(Cost)"이며 실제 도착시간이 아님을 명시했다.
+- 상세 분석 그리드에 `AI 비교 추천 점수` 항목을 추가해 OSRM 기준 소요시간과 종합 비용 점수를 명확히 분리하여 표시했다.
+- 프론트엔드 `RouteResult` 타입 및 `routing.ts` 매핑에 `score`, `trafficPenaltySec`, `incidentPenaltySec`를 연결했다.
+- 검증 결과: 백엔드 전체 단위 테스트 `36 passed`, 프론트엔드 빌드 성공
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
@@ -141,7 +149,7 @@
 6. 매칭된 링크의 시간대별 `travel_time_sec`로 경로별 `actual_duration_sec`를 재구성하고 품질 등급을 저장한다.
 7. `/api/routes/predict` 요청 시 `route_request_id`와 후보 경로를 로그 테이블에 저장해 경로 학습 데이터셋 축적을 시작한다.
 8. Top-1 accuracy, pairwise ranking accuracy, regret 계산 스크립트를 추가한다.
-9. 화면에 AI 점수가 ETA가 아님을 명시한다.
+9. [완료] 화면에 AI 점수가 ETA가 아님을 명시한다.
 10. `inbbong` 브랜치를 `main`에 PR로 병합한다.
 11. 서울시 주요 출발·도착지(OD) 쌍 기반으로 과거 OSRM 후보 경로를 대량 시뮬레이션 생성하고 링크 관측과 결합해 `route_training_dataset.csv`를 일괄 구축한다. (Cold Start 해소)
 12. 경로 실제 소요시간(`actual_duration_sec`) 회귀 또는 후보 간 순위 학습(Pairwise Ranking) AI 모델을 학습하고 아티팩트(`ml/artifacts/ml_models`)를 생성한다.

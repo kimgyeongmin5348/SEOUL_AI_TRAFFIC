@@ -18,6 +18,9 @@ export interface RouteResult {
   modelVersion?: string
   coverage?: number
   predictedVolume?: number | null
+  score?: number
+  trafficPenaltySec?: number
+  incidentPenaltySec?: number
   speedPenaltySec?: number
   speedMatchRatio?: number
   speedObservedAt?: string | null
@@ -156,6 +159,9 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       coordinates: r.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
       modelVersion: ranking?.model_version, coverage: prediction?.coverage,
       predictedVolume: prediction?.predicted_volume,
+      score: prediction?.score,
+      trafficPenaltySec: prediction?.traffic_penalty_sec,
+      incidentPenaltySec: prediction?.incident_penalty_sec,
       speedPenaltySec: prediction?.speed_penalty_sec,
       speedMatchRatio: prediction?.speed_match_ratio,
       speedObservedAt: prediction?.speed_observed_at,
