@@ -114,9 +114,17 @@
 - `traffic_volume_measurements`는 `direction_code`, `lane_no`를 보유한다. 추천 단계 `route_prediction.py`가 양방향을 합산하는 것이 문제이며 데이터 부재가 아니다.
 - 이 PC에서 RDS 접속이 timeout돼 DB 직접 조회는 못 했다. 위 내용은 `schema.sql`, `data/external/raw_spot_road_maps.csv`, 수집 코드 기준이다.
 
+### 도로 링크 축·방향 컬럼 추가 및 수집기 연동
+
+- `road_segments` 테이블에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가했다. (`005_add_road_segments_axis_direction.sql`, `schema.sql`)
+- 서울시 `LinkWithLoad` API에서 제공하는 도로 축 코드, 주행 방향(상행/하행), 링크 순번을 `collector_service.sync_road_segments`가 DB에 누락 없이 저장하도록 수정했다.
+- 링크 중복 시 최신 축·방향 정보로 업데이트(`ON DUPLICATE KEY UPDATE`)되도록 반영했다.
+- 단위 테스트에 축·방향·순번 파라미터 전달 검증을 추가했다.
+- 검증 결과: 백엔드 전체 단위 테스트 `35 passed`, 프론트엔드 빌드 성공
+
 ### 다음 작업
 
-1. `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
+1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
 2. 표준노드링크 기하를 확보해 `road_segments`에 시·종점 좌표 또는 geometry를 추가한다. RDS `link_id`와 표준링크 ID 일치율을 먼저 샘플로 검증한다.
 3. OSRM step 좌표를 링크 기하에 map-match하고 진행 방위와 `axis_direction`을 비교해 방향 일치 여부를 저장한다.
 4. `route_prediction.py`의 양방향 합산을 제거하고 `direction_code`와 링크 방향의 대응 규칙을 실제 데이터로 확인한다.

@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS road_segments (
     end_node_name VARCHAR(150) NULL,
     length_m INT NULL,
     region_code VARCHAR(20) NULL,
+    axis_code VARCHAR(20) NULL,
+    axis_direction VARCHAR(20) NULL,
+    link_sequence INT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (link_id)

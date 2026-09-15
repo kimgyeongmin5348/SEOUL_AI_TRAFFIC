@@ -125,10 +125,21 @@ class DataCollectorService:
             for axis in self.seoul_client.get_road_axes(road_div_code):
                 for road_link in self.seoul_client.get_road_links(axis["axis_code"]):
                     link_id = road_link["link_id"]
+                    link_seq_raw = road_link.get("link_sequence")
+                    link_seq = None
+                    if link_seq_raw is not None and str(link_seq_raw).strip() != "":
+                        try:
+                            link_seq = int(link_seq_raw)
+                        except (ValueError, TypeError):
+                            link_seq = None
+
                     links[link_id] = {
                         "link_id": link_id,
                         "road_name": axis.get("axis_name") or f"링크_{link_id}",
                         "region_code": road_div_code,
+                        "axis_code": road_link.get("axis_code") or axis.get("axis_code"),
+                        "axis_direction": road_link.get("axis_direction") or None,
+                        "link_sequence": link_seq,
                     }
 
         if not links:
@@ -136,11 +147,18 @@ class DataCollectorService:
             return 0
 
         sql = text("""
-            INSERT INTO road_segments (link_id, road_name, region_code)
-            VALUES (:link_id, :road_name, :region_code)
+            INSERT INTO road_segments (
+                link_id, road_name, region_code, axis_code, axis_direction, link_sequence
+            )
+            VALUES (
+                :link_id, :road_name, :region_code, :axis_code, :axis_direction, :link_sequence
+            )
             ON DUPLICATE KEY UPDATE
                 road_name = COALESCE(VALUES(road_name), road_name),
                 region_code = COALESCE(VALUES(region_code), region_code),
+                axis_code = COALESCE(VALUES(axis_code), axis_code),
+                axis_direction = COALESCE(VALUES(axis_direction), axis_direction),
+                link_sequence = COALESCE(VALUES(link_sequence), link_sequence),
                 updated_at = CURRENT_TIMESTAMP
         """)
         for road_link in links.values():
