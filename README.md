@@ -220,6 +220,8 @@ npm run dev
 빈 DB와 연결 실패를 별도로 표시하며, 예측·경로·날씨 예보를 가상값으로 채우지 않습니다.
 
 오늘 재수집: `uv run python scripts/collect_data.py --all`.
+실시간 데이터 수집은 웹 API 프로세스와 분리된 `roadpulse-worker` 한 곳에서만 실행합니다. 로컬에서는 `python -m backend.src.workers.realtime_scheduler`를 별도 프로세스로 실행합니다. 웹 프로세스에서 같은 스케줄러를 함께 실행하면 중복 API 호출과 DB 쓰기 경합이 발생하므로 사용하지 않습니다.
+
 ASOS 날씨 기본 조회는 한국시간 어제 00~23시입니다. 전일 자료 공개가 지연되면 다시 수집해야 합니다.
 기상청 안내: https://data.kma.go.kr/data/grnd/selectAsosRltmList.do?pgmNo=36
 

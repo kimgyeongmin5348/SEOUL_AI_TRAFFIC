@@ -9,7 +9,6 @@ import re
 import secrets
 import time
 import uuid
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response
@@ -26,27 +25,10 @@ from backend.src.services.parking_service import ParkingApiError, SeoulParkingSe
 
 logger = logging.getLogger(__name__)
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    scheduler = None
-    start_scheduler = os.environ.get("START_SCHEDULER_IN_PROCESS", "true").lower() in ("true", "1", "yes")
-    if start_scheduler and os.environ.get("APP_ROLE", "web") != "worker":
-        try:
-            from backend.src.workers.realtime_scheduler import start_background_scheduler
-            scheduler = start_background_scheduler()
-            logger.info("In-process background scheduler started successfully")
-        except Exception as e:
-            logger.warning("Failed to start in-process scheduler: %s", e)
-    yield
-    if scheduler:
-        try:
-            scheduler.shutdown(wait=False)
-        except Exception:
-            pass
-
-
-app = FastAPI(title="RoadPulse", lifespan=lifespan)
+# Collection is owned exclusively by backend.src.workers.realtime_scheduler.
+# Keeping it out of the API process prevents every web replica/restart from
+# starting another 5,000-link collection job and competing with user queries.
+app = FastAPI(title="RoadPulse")
 KST = timezone(timedelta(hours=9))
 SESSION_COOKIE = "roadpulse_session"
 SESSION_DAYS = 30
@@ -104,7 +86,7 @@ DATASETS = {
         FROM traffic_speed_measurements s 
         JOIN (
             SELECT link_id, MAX(measured_at) AS measured_at
-            FROM traffic_speed_measurements
+            FROM traffic_speed_measurements FORCE INDEX (idx_speed_measured_link)
             WHERE measured_at >= DATE_SUB(:latest, INTERVAL 15 MINUTE)
             GROUP BY link_id
         ) recent ON recent.link_id=s.link_id AND recent.measured_at=s.measured_at
@@ -145,7 +127,7 @@ def serialize(value, tz=KST):
 
 
 _DATASET_CACHE: dict[str, tuple[float, dict]] = {}
-_CACHE_TTL_SEC = 15.0
+_CACHE_TTL_SEC = 60.0
 
 
 @app.get("/api/data/{dataset}")
