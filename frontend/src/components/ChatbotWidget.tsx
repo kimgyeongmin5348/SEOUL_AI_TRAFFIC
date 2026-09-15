@@ -49,6 +49,7 @@ export default function ChatbotWidget() {
           role: "assistant",
           content: res.reply,
           thinking: res.thinking,
+          grounding: res.grounding,
         },
       ])
     } catch (err) {
@@ -161,7 +162,7 @@ export default function ChatbotWidget() {
                   }`}
                 >
                   {m.role === "assistant" ? (
-                    <ChatMessageContent content={m.content} compact />
+                    <ChatMessageContent content={m.content} compact grounding={m.grounding} />
                   ) : (
                     m.content
                   )}

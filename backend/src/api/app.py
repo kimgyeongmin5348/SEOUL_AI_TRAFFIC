@@ -534,6 +534,7 @@ def prediction_for_road(spot_id: str, db: Session = Depends(get_db)):
 
 
 from backend.src.llm.chatbot import get_traffic_chat_reply
+from backend.src.services.chat_grounding import build_chat_grounding
 
 
 class ChatMessageItem(BaseModel):
@@ -546,10 +547,11 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/api/chat")
-def chat_endpoint(req: ChatRequest):
+def chat_endpoint(req: ChatRequest, db: Session = Depends(get_db)):
     """Conversational endpoint with Thinking model integration for Seoul traffic."""
     dict_messages = [{"role": m.role, "content": m.content} for m in req.messages]
-    return get_traffic_chat_reply(dict_messages)
+    grounding = build_chat_grounding(db, dict_messages)
+    return get_traffic_chat_reply(dict_messages, grounding=grounding)
 
 
 # Production serves the Vite build from the API origin so HttpOnly login
