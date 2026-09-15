@@ -166,6 +166,270 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
+/* Route search gracefully makes room for the AI briefing after analysis. */
+.route-analysis-transition {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin-bottom: 16px;
+}
+
+.route-search-panel {
+  min-width: 0;
+  transition: padding 500ms cubic-bezier(0.22, 1, 0.36, 1),
+              border-radius 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.route-search-desktop {
+  min-width: 0;
+}
+
+.route-quick-routes {
+  max-height: 48px;
+  opacity: 1;
+  transition: max-height 360ms ease, opacity 240ms ease, margin 360ms ease,
+              padding 360ms ease, border-color 240ms ease;
+}
+
+.route-quick-routes.is-collapsed {
+  max-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  border-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.route-ai-brief {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid rgba(196, 218, 255, 0.78);
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(248, 252, 255, 0.97), rgba(233, 239, 255, 0.94));
+  box-shadow: 0 18px 44px rgba(8, 24, 56, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  animation: routeAiBriefIn 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.route-ai-brief__glow {
+  position: absolute;
+  width: 170px;
+  height: 170px;
+  top: -100px;
+  right: -45px;
+  border-radius: 50%;
+  background: rgba(0, 122, 255, 0.2);
+  filter: blur(28px);
+  pointer-events: none;
+}
+
+.route-ai-brief__header,
+.route-ai-brief__metrics,
+.route-ai-brief__reason,
+.route-ai-brief__footer {
+  position: relative;
+  z-index: 1;
+}
+
+.route-ai-brief__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.route-ai-brief__eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: #2563eb;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+}
+
+.route-ai-brief h2 {
+  color: #15213a;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: -0.035em;
+}
+
+.route-ai-brief__status {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.route-ai-brief__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.route-ai-brief__metrics > div {
+  padding: 10px 11px;
+  border: 1px solid rgba(37, 99, 235, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.route-ai-brief__metrics span {
+  display: block;
+  margin-bottom: 3px;
+  color: #718096;
+  font-size: 11px;
+}
+
+.route-ai-brief__metrics strong {
+  display: block;
+  color: #1d4ed8;
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+
+.route-ai-brief__reason {
+  margin-top: 14px;
+}
+
+.route-ai-brief__reason-label {
+  margin-bottom: 7px;
+  color: #44516a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.route-ai-brief__reason ol {
+  display: grid;
+  gap: 6px;
+}
+
+.route-ai-brief__reason li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+}
+
+.route-ai-brief__reason li > span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #2563eb, #6366f1);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.route-ai-brief__reason li > p {
+  color: #34425b;
+  font-size: 13px;
+  line-height: 1.55;
+  word-break: keep-all;
+}
+
+.route-ai-brief__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(37, 99, 235, 0.1);
+  color: #718096;
+  font-size: 10px;
+}
+
+.route-ai-brief__footer span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes routeAiBriefIn {
+  from { opacity: 0; transform: translateX(22px) scale(0.985); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@media (min-width: 1180px) {
+  .route-analysis-transition {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0fr);
+    transition: grid-template-columns 620ms cubic-bezier(0.22, 1, 0.36, 1),
+                gap 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .route-analysis-transition.has-results {
+    grid-template-columns: minmax(430px, 0.92fr) minmax(0, 1.08fr);
+    gap: 16px;
+  }
+
+  .route-search-desktop.is-compact {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+  }
+
+  .route-search-desktop.is-compact > :nth-child(1) {
+    grid-column: 1 / -1;
+  }
+
+  .route-search-desktop.is-compact > :nth-child(2) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .route-search-desktop.is-compact > :nth-child(3) {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .route-search-desktop.is-compact > :nth-child(4) {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .route-search-desktop.is-compact > :nth-child(5) {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+}
+
+@media (max-width: 639px) {
+  .route-ai-brief {
+    padding: 16px;
+  }
+
+  .route-ai-brief h2 {
+    font-size: 18px;
+  }
+
+  .route-ai-brief__footer {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-analysis-transition,
+  .route-search-panel,
+  .route-quick-routes,
+  .route-ai-brief {
+    transition: none;
+    animation: none;
+  }
+}
+
 .liquid-glass-nav {
   isolation: isolate;
   background: rgba(13, 22, 38, 0.65);
