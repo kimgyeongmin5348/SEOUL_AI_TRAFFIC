@@ -1,13 +1,18 @@
 """Apply one checked-in SQL migration using the configured DATABASE_URL."""
 import argparse
+import sys
 from pathlib import Path
 
 from sqlalchemy import text
 
-from backend.src.db.database import engine
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.src.db.database import engine  # noqa: E402
 
 
-MIGRATIONS = (Path(__file__).resolve().parents[1] / "backend" / "src" / "db" / "migrations").resolve()
+MIGRATIONS = (PROJECT_ROOT / "backend" / "src" / "db" / "migrations").resolve()
 
 
 def main() -> None:

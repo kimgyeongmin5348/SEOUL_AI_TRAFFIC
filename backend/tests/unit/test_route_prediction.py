@@ -218,13 +218,14 @@ def test_real_model_with_delayed_observations_reaches_current_hour():
     weather = dict(temperature_c=20, rainfall_mm=0, humidity_pct=50, wind_speed_ms=2,
                    pressure_hpa=1000, observed_at=target-timedelta(hours=12))
     db = MagicMock()
-    spots, traffic, climate, incidents, speeds = (MagicMock() for _ in range(5))
+    spots, traffic, climate, incidents, speeds, geometry = (MagicMock() for _ in range(6))
     spots.mappings.return_value = [{"spot_id": "A", "spot_name": "강남대로"}]
     traffic.mappings.return_value = history
     climate.mappings.return_value.first.return_value = weather
     incidents.mappings.return_value = []
     speeds.mappings.return_value = []
-    db.execute.side_effect = [spots, traffic, climate, incidents, speeds]
+    geometry.mappings.return_value = []
+    db.execute.side_effect = [spots, traffic, climate, incidents, speeds, geometry]
     result = predict_routes(db, [candidate("A", 600, "강남대로")], target)
     assert result["forecast_steps"] == 2
     assert result["target_at"] == "2026-09-10T09:00:00+09:00"
@@ -233,7 +234,7 @@ def test_real_model_with_delayed_observations_reaches_current_hour():
     assert result["target_context"]["weekday"] == "목요일"
     assert result["osrm_comparison"]["osrm_default_route_id"] == "A"
     assert result["osrm_comparison"]["estimated_minutes_saved"] == 0
-    db.execute.side_effect = [spots, traffic, climate, incidents, speeds]
+    db.execute.side_effect = [spots, traffic, climate, incidents, speeds, geometry]
     with pytest.raises(ValueError, match="지연"):
         predict_routes(db, [candidate("A", 600, "강남대로")], target+timedelta(days=1))
 
