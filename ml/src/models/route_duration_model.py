@@ -24,32 +24,25 @@ from backend.src.services.route_ranking_evaluation import (
     top1_accuracy,
 )
 
-# 모델 입력 Feature. 모두 출발 시각 이전 정보만으로 계산됩니다.
+# 모델 입력 Feature. 모두 출발 시각 이전 정보만으로 계산됩니다(정의서 §6, check_route_dataset.py로 검증).
 FEATURE_COLUMNS = [
-    "route_distance_m",
-    "osrm_duration_sec",
-    "segment_count",
-    "link_match_ratio",
-    "direction_match_ratio",
-    "opposite_direction_ratio",
-    "speed_lag_kmh",
-    "speed_lag_coverage",
-    "active_incident_count",
-    "accident_count",
-    "construction_count",
-    "control_count",
-    "breakdown_count",
-    "weather_temperature_c",
-    "weather_rainfall_mm",
-    "weather_humidity_pct",
-    "departure_hour",
-    "weekday",
-    "is_weekend",
-]
-# 결측을 0으로 채워도 의미가 유지되는 컬럼(비율·건수). 속도·기상 결측은 NaN으로 두어 모델이 구분합니다.
-ZERO_FILL_COLUMNS = [
-    "direction_match_ratio", "opposite_direction_ratio", "speed_lag_coverage",
+    "route_distance_m", "osrm_duration_sec", "segment_count",
+    "link_match_ratio", "direction_match_ratio", "opposite_direction_ratio",
+    "speed_lag_kmh", "speed_lag_min_kmh", "speed_lag_travel_time_sec", "speed_lag_coverage", "speed_lag_age_min",
+    "speed_data_available",
+    "volume_lag_vph_mean", "volume_lag_vph_max", "volume_lag_coverage", "volume_lag_age_hours",
     "active_incident_count", "accident_count", "construction_count", "control_count", "breakdown_count",
+    "control_length_m", "blocked_length_m", "incident_severity_max", "incident_impact_score",
+    "incident_clear_overlap_sec", "incident_match_ratio", "incident_data_age_sec",
+    "weather_temperature_c", "weather_rainfall_mm", "weather_humidity_pct", "weather_age_hours",
+    "departure_hour", "weekday", "is_weekend",
+]
+# 결측을 0으로 채워도 의미가 유지되는 컬럼(비율·건수·길이). 속도·교통량·기상 결측은 NaN으로 두어 모델이 구분합니다.
+ZERO_FILL_COLUMNS = [
+    "direction_match_ratio", "opposite_direction_ratio", "speed_lag_coverage", "volume_lag_coverage", "speed_data_available",
+    "active_incident_count", "accident_count", "construction_count", "control_count", "breakdown_count",
+    "control_length_m", "blocked_length_m", "incident_severity_max", "incident_impact_score",
+    "incident_clear_overlap_sec", "incident_match_ratio",
 ]
 TARGET = "actual_duration_sec"
 MODEL_VERSION = "route_xgb_duration_v1"
@@ -83,6 +76,20 @@ def time_split(frame, ratio=0.7):
     train = frame[frame["departure_at"] < cutoff]
     test = frame[frame["departure_at"] >= cutoff]
     return train, test
+
+
+def od_split(frame, holdout_ratio=0.25, seed=42):
+    """OD 쌍(출발지→목적지) 기준으로 train/holdout을 나눕니다. 학습에 없는 경로로의 일반화를 측정합니다."""
+    pairs = sorted(frame[["origin_name", "destination_name"]].drop_duplicates().itertuples(index=False, name=None))
+    if len(pairs) < 2:
+        return frame, frame.iloc[0:0]
+    import random
+    shuffled = pairs[:]
+    random.Random(seed).shuffle(shuffled)
+    holdout = set(shuffled[:max(1, int(len(shuffled) * holdout_ratio))])
+    mask = [(o, d) in holdout for o, d in zip(frame["origin_name"], frame["destination_name"])]
+    mask = pd.Series(mask, index=frame.index)
+    return frame[~mask], frame[mask]
 
 
 def regression_metrics(y_true, y_pred):
@@ -133,9 +140,25 @@ def beats_baseline(metrics, baseline):
     return top1 >= base_top1 and regret <= base_regret and metrics["mae"] < baseline["baseline_mae"]
 
 
+def fit_and_evaluate(train, test):
+    """train으로 학습하고 test에서 모델·베이스라인 지표를 계산합니다."""
+    import xgboost as xgb
+
+    model = xgb.XGBRegressor(n_estimators=300, max_depth=4, learning_rate=0.05, subsample=0.9)
+    model.fit(train[FEATURE_COLUMNS], train[TARGET])
+    predictions = model.predict(test[FEATURE_COLUMNS])
+    metrics = {**regression_metrics(test[TARGET].to_numpy(), predictions),
+               **ranking_metrics(requests_from_predictions(test, predictions))}
+    return model, metrics, baseline_metrics(test)
+
+
 def train_route_model(dataset_path: Path, artifacts_dir: Path, min_rows: int = DEFAULT_MIN_ROWS,
                       force: bool = False, ratio: float = 0.7):
-    """경로 소요시간 모델을 학습하고, 베이스라인을 이기면 아티팩트와 리포트를 저장합니다."""
+    """경로 소요시간 모델을 학습하고, 베이스라인을 이기면 아티팩트와 리포트를 저장합니다.
+
+    채택 기준은 정의서 §7의 시간순 holdout이며, OD holdout(학습에 없는 출발·목적지) 지표는
+    일반화 참고값으로 함께 기록합니다.
+    """
     frame = prepare_dataset(pd.read_csv(dataset_path))
     if len(frame) < min_rows and not force:
         return {
@@ -146,16 +169,20 @@ def train_route_model(dataset_path: Path, artifacts_dir: Path, min_rows: int = D
     train, test = time_split(frame, ratio)
     if train.empty or test.empty:
         return {"status": "insufficient_data", "rows": len(frame), "message": "시간순 분할에 실패했습니다."}
-
-    import xgboost as xgb
-
-    model = xgb.XGBRegressor(n_estimators=300, max_depth=4, learning_rate=0.05, subsample=0.9)
-    model.fit(train[FEATURE_COLUMNS], train[TARGET])
-    predictions = model.predict(test[FEATURE_COLUMNS])
-    metrics = {**regression_metrics(test[TARGET].to_numpy(), predictions),
-               **ranking_metrics(requests_from_predictions(test, predictions))}
-    baseline = baseline_metrics(test)
+    model, metrics, baseline = fit_and_evaluate(train, test)
     adopted = beats_baseline(metrics, baseline) or force
+
+    od_report = {}
+    od_train, od_test = od_split(frame)
+    if not od_train.empty and not od_test.empty:
+        _, od_metrics, od_baseline = fit_and_evaluate(od_train, od_test)
+        od_report = {
+            "od_holdout_pairs": int(od_test[["origin_name", "destination_name"]].drop_duplicates().shape[0]),
+            "od_holdout_rows": len(od_test),
+            **{f"od_{k}": v for k, v in od_metrics.items()},
+            **{f"od_{k}": v for k, v in od_baseline.items()},
+            "od_generalizes": beats_baseline(od_metrics, od_baseline),
+        }
 
     report = {
         "model_version": MODEL_VERSION, "algorithm": "XGBoostRegressor",
@@ -163,7 +190,7 @@ def train_route_model(dataset_path: Path, artifacts_dir: Path, min_rows: int = D
         "rows": len(frame), "train_rows": len(train), "holdout_rows": len(test),
         "holdout_requests": test["route_request_id"].nunique(),
         "feature_columns": json.dumps(FEATURE_COLUMNS, ensure_ascii=False),
-        **metrics, **baseline, "adopted": adopted,
+        **metrics, **baseline, **od_report, "adopted": adopted,
     }
     if not adopted:
         return {"status": "not_adopted", **report,
@@ -174,6 +201,7 @@ def train_route_model(dataset_path: Path, artifacts_dir: Path, min_rows: int = D
     report_path = artifacts_dir / "route_models" / f"{MODEL_VERSION}_report.csv"
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.parent.mkdir(parents=True, exist_ok=True)
+    # 운영 아티팩트는 전체 시간순 train으로 학습한 모델입니다(OD 분할 모델은 평가 전용).
     joblib.dump({"model": model, "feature_columns": FEATURE_COLUMNS, "target": TARGET}, artifact_path)
     pd.DataFrame([report]).to_csv(report_path, index=False, encoding="utf-8-sig")
     return {"status": "trained", "artifact": str(artifact_path), "report": str(report_path), **report}

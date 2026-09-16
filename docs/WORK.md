@@ -290,6 +290,32 @@
 - 기타 확인: 기상은 ASOS 확정자료 특성상 항상 전일까지만 있으며(설계), `traffic_speed_measurements.measured_at`은 KST, `collected_at`은 UTC로 섞여 있다(정의서 단계 1 "타임존 통일" 미해결).
 - 검증 결과: 백엔드 전체 단위 테스트 `96 passed`, 프론트엔드 빌드 성공
 
+## 2026-09-16
+
+### Render worker 24시간 가동 확인
+
+- 9/15 16:12 이후 속도 수집이 20분 이상 끊긴 구간 없음, 9/16 0~17시 전 시간대 수집(링크 5,202개). Render worker가 상시 가동 중이다.
+- 온라인 요청 로그: 9/16 00:13 이후 요청에 `link_match_json`이 기록되고 있으며 링크 매칭률 0.75~0.99, 방향 일치 0.88~1.0.
+- 팀원 커밋 "시간계산 수정"(#30)이 경로 카드의 소요시간을 OSRM 대신 `score`(비교 비용)로 표시한다. #9와 상충하므로 #13에서 모델 예측 ETA로 교체하기로 조율 필요.
+
+### 경로 학습 데이터셋 완성 (정의서 §5.2·§6 충족)
+
+- **피처 보강** (`route_training_dataset.py`)
+    - 속도: `speed_lag_kmh`(길이 가중), `speed_lag_min_kmh`(병목), `speed_lag_travel_time_sec`, `speed_lag_coverage`, `speed_lag_age_min`, `speed_data_available`
+    - 교통량: 매칭 링크→측정지점(`traffic_spot_road_maps`)의 출발 전 수집분(`collected_at` UTC 기준) 최신 시간 교통량 `volume_lag_vph_mean`·`volume_lag_vph_max`·`volume_lag_coverage`·`volume_lag_age_hours`. 지점→링크 매핑이 방향을 구분하지 않아 지점 양방향 합계이며 메타데이터에 한계로 명시.
+    - 돌발(정의서 5.2 전체): 유형별 건수, `control_length_m`, `blocked_length_m`(전면·차단 표기), `incident_severity_max`(통제 3/사고 2/공사·고장 1), `incident_impact_score`(Σ 심각도×영향 길이 비율×해제 겹침 비율), `incident_clear_overlap_sec`, `incident_match_ratio`, `incident_data_age_sec`. 출발 전에 수집된 활성 돌발만 사용.
+    - 기상 `weather_observed_at`, 라벨 관측 시각 `label_observed_at_min/max` 등 누수 검사용 시각 컬럼 추가.
+- **누수 자동 검사** `scripts/check_route_dataset.py`: 피처 관측 시각 ≤ 출발 시각, 라벨 관측이 주행 시간대인지, unusable↔라벨 일관성, 요청 단위 순위 1..N·`chosen_best` 1개·1순위=최소 통행시간을 검사하고 위반 시 종료 코드 1.
+- **메타데이터** `data/processed/route_feature_meta.json`: 단위·라벨 정의·누수 규칙·알려진 한계·컬럼 역할(identity/feature/timestamp/label/quality)·생성 통계.
+- OD 쌍 15→30, 출발 시각은 링크 관측 ≥2,000개인 시간대 자동 선택(최근 14일). `observed_departures` 쿼리가 전체 테이블 GROUP BY로 timeout이 나서 14일로 제한.
+- **생성 결과**: 56개 출발 시각(9/11 17시~9/16 18시) × 30쌍 = 1,680요청 **3,136행**, 전부 라벨 있음(high 2,520 / medium 560 / low 56), 순위 있는 요청 1,456. 검사 결과 누수 0행, 위반 0건. 결측: 속도 lag 13%, 교통량 lag 32%.
+- **모델 재학습** (`route_duration_model.py`): 피처 35개, `od_split` 추가.
+    - 시간순 holdout(510요청): 베이스라인 Top-1 55.7% / regret 271초 / MAE 1,622초 → 모델 **88.0% / 24초 / 176초**
+    - **OD holdout(학습에 없는 7쌍, 672행)**: 베이스라인 68.2% / 245초 → 모델 **82.5% / 55초** → 새 OD로 일반화됨(`od_generalizes=True`)
+    - 채택되어 `route_models/route_xgb_duration_v1.joblib` 갱신
+- 재생성 절차: `build_route_training_dataset.py` → `check_route_dataset.py` → `train_route_model.py`
+- 검증 결과: 백엔드 전체 단위 테스트 `98 passed`
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
@@ -301,12 +327,12 @@
 7. [완료] `/api/routes/predict` 요청 시 `route_request_id`와 후보 경로를 로그 테이블에 저장해 경로 학습 데이터셋 축적을 시작한다.
 8. [완료] Top-1 accuracy, pairwise ranking accuracy, regret 계산 스크립트를 추가한다.
 9. [완료] 화면에 AI 점수가 ETA가 아님을 명시한다.
-10. [진행 중] `inbbong` 브랜치를 `main`에 PR로 병합한다. (origin/main 병합·푸시 완료, PR 생성 대기)
+10. [완료] `inbbong` 브랜치를 `main`에 PR로 병합한다. (반복 병합 중; 라벨 job 커밋은 PR 대기)
 11. [완료] 서울시 주요 출발·도착지(OD) 쌍 기반으로 과거 OSRM 후보 경로를 대량 시뮬레이션 생성하고 링크 관측과 결합해 `route_training_dataset.csv`를 일괄 구축한다. (Cold Start 해소)
-12. [완료] 경로 실제 소요시간(`actual_duration_sec`) 회귀 또는 후보 간 순위 학습(Pairwise Ranking) AI 모델을 학습하고 아티팩트(`ml/artifacts/ml_models`)를 생성한다.
+12. [완료] 경로 실제 소요시간(`actual_duration_sec`) 회귀 모델을 학습하고 아티팩트(`ml/artifacts/route_models`)를 생성한다.
 13. `route_prediction.py`의 휴리스틱 추천 방식을 신규 경로 AI 모델 추론으로 교체하고, 매칭 데이터 부족 시 기존 방식으로 안전하게 fallback하도록 연동한다.
-14. OD 단위 holdout(학습에 없는 OD 쌍으로 검증)을 추가해 새 경로 일반화 성능을 측정한다. OD 쌍을 서울 전역으로 늘린다.
+14. [완료] OD 단위 holdout(학습에 없는 OD 쌍으로 검증)을 추가해 새 경로 일반화 성능을 측정한다. (30쌍, holdout 7쌍 Top-1 82.5%)
 15. 온라인 요청 로그에 `link_match_json`·`actual_duration_sec`가 쌓이기 시작하면 `evaluate_route_ranking.py`로 현재 휴리스틱 점수의 Top-1·regret를 측정해 오프라인 결과와 비교한다.
 16. [배포 후 자동] `road_segments.axis_*` 컬럼을 채운다 — `master_sync`가 시작 직후 실행되도록 변경.
-17. 9/16 아침 속도 수집 커버리지(0~9시)로 Render worker 24시간 가동 여부를 확인한다.
+17. [완료] Render worker 24시간 가동 확인.
 18. `measured_at`(KST)·`collected_at`(UTC) 타임존 혼재를 정리한다.

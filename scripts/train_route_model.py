@@ -34,6 +34,11 @@ def main() -> None:
               f"Top-1 {result['top1_accuracy']} pairwise {result['pairwise_ranking_accuracy']} regret {result['mean_regret_sec']}")
         print(f"baseline MAE {result['baseline_mae']:.2f} RMSE {result['baseline_rmse']:.2f} R2 {result['baseline_r2']:.4f} | "
               f"Top-1 {result['baseline_top1_accuracy']} pairwise {result['baseline_pairwise_ranking_accuracy']} regret {result['baseline_mean_regret_sec']}")
+        if "od_top1_accuracy" in result:
+            print(f"OD holdout ({result['od_holdout_pairs']} pairs, {result['od_holdout_rows']} rows): "
+                  f"model Top-1 {result['od_top1_accuracy']} regret {result['od_mean_regret_sec']} MAE {result['od_mae']:.2f} | "
+                  f"baseline Top-1 {result['od_baseline_top1_accuracy']} regret {result['od_baseline_mean_regret_sec']} "
+                  f"MAE {result['od_baseline_mae']:.2f} | generalizes={result['od_generalizes']}")
     if result["status"] == "trained":
         print(f"artifact: {result['artifact']}")
     else:
