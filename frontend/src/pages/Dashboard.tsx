@@ -182,7 +182,7 @@ export default function Dashboard() {
                   </span>
                 )}
                 <span className="text-xs text-white/70" style={{ fontFamily: "var(--font-mono)" }}>
-                  지도 연결 {data.trafficCoverage.connectedRoads}/{data.trafficCoverage.totalRoads} ({trafficCoveragePercent}%) · 실시간 링크 {data.trafficCoverage.sampleCount}개
+                  실시간 도로 속도 {data.trafficCoverage.connectedRoads}개 도로 · {data.trafficCoverage.sampleCount.toLocaleString()}개 링크 연동
                 </span>
               </div>
             </div>

@@ -28,6 +28,8 @@ export default function Traffic() {
   const [loading, setLoading] = useState(true)
   const [selectedPeriod, setSelectedPeriod] = useState<TrafficPeriod>("today")
   const [selectedRoad, setSelectedRoad] = useState("")
+  const [roadSearch, setRoadSearch] = useState("")
+  const [speedSort, setSpeedSort] = useState<"congested" | "name">("congested")
   const [trafficData, setTrafficData] = useState<TrafficAnalysisResult>({
     timeData: [],
     roadSpeeds: [],
@@ -71,8 +73,17 @@ export default function Traffic() {
 
   const roadSpeedData = trafficData.roadSpeeds
   const trafficTimeData = trafficData.timeData
+
+  const filteredRoadSpeeds = roadSpeedData
+    .filter((r) => !roadSearch || r.road.toLowerCase().includes(roadSearch.toLowerCase()))
+    .sort((a, b) => {
+      if (speedSort === "congested") return a.speed - b.speed
+      return a.road.localeCompare(b.road, "ko")
+    })
+
   const road =
     roadSpeedData.find((r) => r.road === selectedRoad) ||
+    filteredRoadSpeeds[0] ||
     roadSpeedData[0] ||
     null
 
@@ -118,7 +129,7 @@ export default function Traffic() {
                 }}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-[#34c759] animate-pulse" />
-                DB 실시간 연동
+                DB 실시간 연동 ({roadSpeedData.length}개 도로)
               </span>
             )}
             {trafficData.latestAt && (
@@ -141,7 +152,7 @@ export default function Traffic() {
         </div>
 
         {/* Liquid Glass Filter Capsule */}
-        <div className="liquid-glass-capsule animate-slide-up-delay-1 flex-nowrap mb-5 max-w-full overflow-x-auto no-scrollbar py-1 px-1.5">
+        <div className="liquid-glass-capsule animate-slide-up-delay-1 flex-nowrap mb-3 max-w-full overflow-x-auto no-scrollbar py-1 px-1.5">
           {PERIOD_OPTIONS.map((t) => {
             const isActive = selectedPeriod === t.key
             return (
@@ -155,7 +166,7 @@ export default function Traffic() {
             )
           })}
           {roadSpeedData.length > 0 && <div className="liquid-glass-divider" />}
-          {roadSpeedData.slice(0, 8).map((r) => {
+          {filteredRoadSpeeds.slice(0, 8).map((r) => {
             const isSelected = selectedRoad === r.road
             return (
               <button
@@ -164,10 +175,71 @@ export default function Traffic() {
                 className={`liquid-glass-pill ${isSelected ? "is-active" : ""}`}
               >
                 {r.road}
+                <span
+                  className="ml-1 text-[10px] opacity-80"
+                  style={{
+                    color: r.speed < 25 ? "#ff453a" : r.speed < 50 ? "#ffd60a" : "#30d158",
+                  }}
+                >
+                  {r.speed}km/h
+                </span>
               </button>
             )
           })}
         </div>
+
+        {/* 전체 도로 검색 & 정렬 바 */}
+        {roadSpeedData.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-5 px-1">
+            <div className="flex items-center gap-2 flex-1 min-w-[240px] max-w-md">
+              <div className="relative w-full">
+                <input
+                  type="text"
+                  placeholder={`서울시 전체 도로 검색 (총 ${roadSpeedData.length}개 도로 실시간 수집 중)...`}
+                  value={roadSearch}
+                  onChange={(e) => setRoadSearch(e.target.value)}
+                  className="w-full pl-8 pr-7 py-1.5 text-xs rounded-xl bg-white/10 border border-white/20 text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-[#007aff]"
+                  style={{ fontFamily: "var(--font-body)" }}
+                />
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40 text-xs">🔍</span>
+                {roadSearch && (
+                  <button
+                    onClick={() => setRoadSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/50 text-[10px] hover:text-white"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/70">정렬:</span>
+              <button
+                onClick={() => setSpeedSort("congested")}
+                className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
+                  speedSort === "congested"
+                    ? "bg-[#ff3b30]/20 text-[#ff3b30] border border-[#ff3b30]/30 font-semibold"
+                    : "bg-white/5 text-white/60 hover:text-white"
+                }`}
+              >
+                혼잡순
+              </button>
+              <button
+                onClick={() => setSpeedSort("name")}
+                className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${
+                  speedSort === "name"
+                    ? "bg-[#007aff]/20 text-[#38bdf8] border border-[#007aff]/30 font-semibold"
+                    : "bg-white/5 text-white/60 hover:text-white"
+                }`}
+              >
+                가나다순
+              </button>
+              <span className="text-xs text-white/50 ml-2 font-mono">
+                {filteredRoadSpeeds.length}개 도로 표시
+              </span>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div

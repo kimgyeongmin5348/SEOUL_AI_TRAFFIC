@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import precisionRoadsData from "../data/seoul_roads.json"
 import seoulBoundaryData from "../data/seoulBoundary.json"
 import { loadKakaoMaps } from "../services/kakaoMaps"
 import { resolvePlace } from "../services/placeSearch"
@@ -32,7 +31,7 @@ interface MapProps {
   destPoint?: { name: string; lat: number; lng: number }
   parkingLots?: ParkingLotItem[]
   selectedParkingLotId?: string | null
-  onSelectParkingLot?: (lot: ParkingLotItem) => void
+  onSelectParkingLot?: (lot: ParkingLotItem | null) => void
   enableTraffic?: boolean
   enableIncidents?: boolean
   enableParking?: boolean
@@ -44,6 +43,35 @@ const EMPTY_INCIDENTS: IncidentItem[] = []
 const EMPTY_SPEEDS: RoadSpeedItem[] = []
 const EMPTY_PARKING: ParkingLotItem[] = []
 const wtmCoordCache = new Map<string, { lat: number; lng: number }>()
+
+function isPointInPolygon(lat: number, lng: number, polygon: [number, number][]): boolean {
+  let inside = false
+  const n = polygon.length
+  let j = n - 1
+  for (let i = 0; i < n; i++) {
+    const yi = polygon[i][0] // lng
+    const xi = polygon[i][1] // lat
+    const yj = polygon[j][0]
+    const xj = polygon[j][1]
+    const intersect = ((yi > lng) !== (yj > lng)) && (lat < ((xj - xi) * (lng - yi)) / (yj - yi) + xi)
+    if (intersect) inside = !inside
+    j = i
+  }
+  return inside
+}
+
+export function isLocationInSeoul(lat: number, lng: number): boolean {
+  // 1차 바운딩 박스 검사
+  if (lat < 37.41 || lat > 37.72 || lng < 126.73 || lng > 127.27) {
+    return false
+  }
+  try {
+    const rawCoords = (seoulBoundaryData.features[0].geometry.coordinates as any)[0][0] as [number, number][]
+    return isPointInPolygon(lat, lng, rawCoords)
+  } catch {
+    return true
+  }
+}
 
 function makePill(text: string, background: string) {
   const element = document.createElement("div")
@@ -74,7 +102,7 @@ export default function MapPlaceholder({
   originPoint,
   destPoint,
   parkingLots = EMPTY_PARKING,
-  selectedParkingLotId = null,
+  selectedParkingLotId,
   onSelectParkingLot,
   enableTraffic = true,
   enableIncidents = true,
@@ -102,12 +130,13 @@ export default function MapPlaceholder({
   const [showParking, setShowParking] = useState(true)
   const [internalParkingLots, setInternalParkingLots] = useState<ParkingLotItem[]>([])
   const [internalSelectedParkingCode, setInternalSelectedParkingCode] = useState<string | null>(null)
-  const activeSelectedParkingId = selectedParkingLotId !== undefined && selectedParkingLotId !== null
+  const activeSelectedParkingId = selectedParkingLotId !== undefined
     ? selectedParkingLotId
     : internalSelectedParkingCode
   const [locationStatus, setLocationStatus] = useState("현재 위치 확인 중…")
   const effectiveParkingLots = parkingLots && parkingLots.length > 0 ? parkingLots : internalParkingLots
   const viewHasContext = Boolean(searchQuery || routeCoordinates?.length || selectedIncidentId != null)
+  const [showSeoulOnlyAlert, setShowSeoulOnlyAlert] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -123,19 +152,45 @@ export default function MapPlaceholder({
       sdk.maps.event.addListener(map, "click", () => {
         setInternalSelectedParkingCode(null)
       })
+      map.setMaxLevel(9)
       mapRef.current = map
-      const coordinates = seoulBoundaryData.features[0].geometry.coordinates as number[][][][]
-      boundaryOverlaysRef.current = coordinates.map((polygon) => new sdk.maps.Polygon({
+      // 서울시 외곽 영역 마스킹 (Inverted Mask with Hole: 서울시만 뚫어서 보여주고 외곽 전국 타일은 차단)
+      const outerBox = [
+        new sdk.maps.LatLng(39.0, 125.0),
+        new sdk.maps.LatLng(39.0, 129.0),
+        new sdk.maps.LatLng(36.0, 129.0),
+        new sdk.maps.LatLng(36.0, 125.0),
+      ]
+      const seoulRawCoords = (seoulBoundaryData.features[0].geometry.coordinates as any)[0][0] as [number, number][]
+      const seoulHolePath = seoulRawCoords
+        .slice()
+        .reverse()
+        .map(([lng, lat]) => new sdk.maps.LatLng(lat, lng))
+
+      // 1) 서울시 외곽 마스크: 서울시 바깥 영역을 짙은 네이비로 마스킹하여 서울시 내부만 스포트라이트 표출
+      const outerMaskPolygon = new sdk.maps.Polygon({
         map,
-        path: polygon.map((ring) => ring.map(([lng, lat]) => new sdk.maps.LatLng(lat, lng))),
-        strokeWeight: 3,
-        strokeColor: "#5e5ce6",
-        strokeOpacity: 0.82,
+        path: [outerBox, seoulHolePath],
+        strokeWeight: 0,
+        fillColor: "#0b0f19",
+        fillOpacity: 0.85,
+        zIndex: 2,
+      })
+
+      // 2) 서울시 경계선: 선명한 네온 블루 테두리로 서울시 영역 명확히 강조
+      const seoulBoundaryPolygon = new sdk.maps.Polygon({
+        map,
+        path: seoulRawCoords.map(([lng, lat]) => new sdk.maps.LatLng(lat, lng)),
+        strokeWeight: 2.5,
+        strokeColor: "#38bdf8",
+        strokeOpacity: 0.95,
         strokeStyle: "solid",
-        fillColor: "#5e5ce6",
-        fillOpacity: 0.025,
-        zIndex: 1,
-      }))
+        fillColor: "#38bdf8",
+        fillOpacity: 0.0,
+        zIndex: 3,
+      })
+
+      boundaryOverlaysRef.current = [outerMaskPolygon, seoulBoundaryPolygon]
       setMapReady(true)
       observer = new ResizeObserver(() => map.relayout())
       observer.observe(containerRef.current)
@@ -169,6 +224,14 @@ export default function MapPlaceholder({
     const watchId = navigator.geolocation.watchPosition(({ coords }) => {
       if (!active) return
       currentPosition.current = coords
+
+      if (!isLocationInSeoul(coords.latitude, coords.longitude)) {
+        locationOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+        locationOverlaysRef.current = []
+        setLocationStatus("서울 외 지역 감지 (서울 전용 지원)")
+        return
+      }
+
       const position = new kakao.maps.LatLng(coords.latitude, coords.longitude)
       locationOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
       const accuracy = new kakao.maps.Circle({
@@ -208,104 +271,44 @@ export default function MapPlaceholder({
     }
   }, [mapReady, parkingLots, fetchParkingForLocation, viewHasContext, enableParking])
 
-  // 1. 도로 폴리라인 렌더링 (돌발상황과 완전 분리)
+  // 0. 서울시 전역 실시간 소통정보 레이어 (카카오 교통정보 타일 연동)
   useEffect(() => {
     const map = mapRef.current
     if (!mapReady || !map) return
-    roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
-    roadOverlaysRef.current = []
+
+    const trafficMapType = window.kakao?.maps?.MapTypeId?.TRAFFIC
+    if (trafficMapType == null) return
 
     if (enableTraffic && showTrafficLines) {
-      precisionRoadsData.forEach((road) => {
-        const match = (roadSpeeds as RoadSpeedItem[]).find(
-          (speed) => speed.road.includes(road.name) || road.name.includes(speed.road),
-        )
-        const coords = road.coordinates as [number, number][]
-        const P = coords.length
-
-        // 1) 링크 구간별 속도 데이터가 존재하는 경우 (구간별 분할 렌더링)
-        if (match && match.links && match.links.length > 0 && P >= 2) {
-          const links = match.links
-          const L = links.length
-          for (let i = 0; i < L; i++) {
-            const startIdx = Math.floor((i * (P - 1)) / L)
-            const endIdx = Math.min(P - 1, Math.floor(((i + 1) * (P - 1)) / L))
-            if (endIdx <= startIdx && startIdx < P - 1) continue
-            const subCoords = coords.slice(startIdx, endIdx + 1)
-            if (subCoords.length < 2) continue
-
-            const linkData = links[i]
-            const color =
-              linkData.speed < 25 ? "#ff3b30" : linkData.speed < 50 ? "#ff9500" : "#34c759"
-            const path = subCoords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
-
-            const outline = new kakao.maps.Polyline({
-              map,
-              path,
-              strokeColor: "#ffffff",
-              strokeWeight: 7,
-              strokeOpacity: 0.88,
-              zIndex: 2,
-            })
-            const line = new kakao.maps.Polyline({
-              map,
-              path,
-              strokeColor: color,
-              strokeWeight: 4,
-              strokeOpacity: 0.95,
-              zIndex: 3,
-            })
-            roadOverlaysRef.current.push(outline, line)
-          }
-        } else if (match && typeof match.speed === "number" && P >= 2) {
-          // 2) 도로 단일 평균 속도만 존재하는 경우
-          const color = match.speed < 25 ? "#ff3b30" : match.speed < 50 ? "#ff9500" : "#34c759"
-          const path = coords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
-          const outline = new kakao.maps.Polyline({
-            map,
-            path,
-            strokeColor: "#ffffff",
-            strokeWeight: 7,
-            strokeOpacity: 0.88,
-            zIndex: 2,
-          })
-          const line = new kakao.maps.Polyline({
-            map,
-            path,
-            strokeColor: color,
-            strokeWeight: 4,
-            strokeOpacity: 0.92,
-            zIndex: 3,
-          })
-          roadOverlaysRef.current.push(outline, line)
-        } else if (P >= 2) {
-          // 3) 실시간 데이터가 없는 도로는 회색 '정보 없음' (#94a3b8)
-          const path = coords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng))
-          const outline = new kakao.maps.Polyline({
-            map,
-            path,
-            strokeColor: "#ffffff",
-            strokeWeight: 6,
-            strokeOpacity: 0.6,
-            zIndex: 2,
-          })
-          const line = new kakao.maps.Polyline({
-            map,
-            path,
-            strokeColor: "#94a3b8",
-            strokeWeight: 4,
-            strokeOpacity: 0.75,
-            zIndex: 3,
-          })
-          roadOverlaysRef.current.push(outline, line)
-        }
-      })
+      try {
+        map.addOverlayMapTypeId(trafficMapType)
+      } catch (e) {
+        console.warn("Failed to add traffic overlay:", e)
+      }
+    } else {
+      try {
+        map.removeOverlayMapTypeId(trafficMapType)
+      } catch (e) {
+        console.warn("Failed to remove traffic overlay:", e)
+      }
     }
+
     return () => {
-      roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
-      roadOverlaysRef.current = []
+      if (map && trafficMapType != null) {
+        try {
+          map.removeOverlayMapTypeId(trafficMapType)
+        } catch {
+          // ignore
+        }
+      }
     }
-  }, [mapReady, enableTraffic, showTrafficLines, roadSpeeds])
+  }, [mapReady, enableTraffic, showTrafficLines])
+
+  // 1. 도로 폴리라인 정리 (실시간 교통정보 레이어와 중복 렌더링 방지)
+  useEffect(() => {
+    roadOverlaysRef.current.forEach((overlay) => overlay.setMap(null))
+    roadOverlaysRef.current = []
+  }, [mapReady])
 
   // 2. 돌발상황 마커 렌더링 (Diffing 방식: 이미 존재하는 마커는 유지하여 깜빡임 원천 제거)
   useEffect(() => {
@@ -616,6 +619,7 @@ export default function MapPlaceholder({
           closeBtn.addEventListener("click", (e) => {
             e.stopPropagation()
             setInternalSelectedParkingCode(null)
+            onSelectParkingLot?.(null)
           })
         }
 
@@ -654,8 +658,14 @@ export default function MapPlaceholder({
 
       button.addEventListener("click", (e) => {
         e.stopPropagation()
-        setInternalSelectedParkingCode((prev) => (prev === lot.parking_code ? null : lot.parking_code))
-        onSelectParkingLot?.(lot)
+        if (activeSelectedParkingId === lot.parking_code) {
+          // 이미 선택된 주차장을 한 번 더 누르면 해제 (닫기)
+          setInternalSelectedParkingCode(null)
+          onSelectParkingLot?.(null)
+        } else {
+          setInternalSelectedParkingCode(lot.parking_code)
+          onSelectParkingLot?.(lot)
+        }
       })
 
       container.appendChild(button)
@@ -670,6 +680,20 @@ export default function MapPlaceholder({
       parkingOverlaysRef.current.push(overlay)
     })
   }, [mapReady, showParking, effectiveParkingLots, activeSelectedParkingId, onSelectParkingLot, enableParking])
+
+  // 지도 빈 공간 클릭 시 열려 있는 주차장 팝업 닫기
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map) return
+    const handleMapClick = () => {
+      setInternalSelectedParkingCode(null)
+      onSelectParkingLot?.(null)
+    }
+    kakao.maps.event.addListener(map, "click", handleMapClick)
+    return () => {
+      kakao.maps.event.removeListener(map, "click", handleMapClick)
+    }
+  }, [mapReady, onSelectParkingLot])
 
   // 선택된 주차장으로 부드럽게 시점 이동 (줌 레벨은 억지로 바꾸지 않고 중심만 이동)
   useEffect(() => {
@@ -709,14 +733,49 @@ export default function MapPlaceholder({
 
   const focusCurrentLocation = () => {
     const coords = currentPosition.current
-    if (!coords || !mapRef.current) {
-      setLocationStatus("기기의 위치 서비스를 켠 후 잠시 기다려 주세요.")
+    if (coords) {
+      if (!isLocationInSeoul(coords.latitude, coords.longitude)) {
+        setShowSeoulOnlyAlert(true)
+        setLocationStatus("서울 외 지역 감지 (서울 전용 지원)")
+        return
+      }
+      if (!mapRef.current) return
+      mapRef.current.panTo(new kakao.maps.LatLng(coords.latitude, coords.longitude))
+      mapRef.current.setLevel(4)
+      if (enableParking && (!parkingLots || parkingLots.length === 0)) {
+        fetchParkingForLocation(coords.latitude, coords.longitude)
+      }
       return
     }
-    mapRef.current.panTo(new kakao.maps.LatLng(coords.latitude, coords.longitude))
-    mapRef.current.setLevel(4)
-    if (enableParking && (!parkingLots || parkingLots.length === 0)) {
-      fetchParkingForLocation(coords.latitude, coords.longitude)
+
+    if (navigator.geolocation) {
+      setLocationStatus("현재 위치 확인 중…")
+      navigator.geolocation.getCurrentPosition(
+        ({ coords: newCoords }) => {
+          currentPosition.current = newCoords
+          if (!isLocationInSeoul(newCoords.latitude, newCoords.longitude)) {
+            setShowSeoulOnlyAlert(true)
+            setLocationStatus("서울 외 지역 감지 (서울 전용 지원)")
+            return
+          }
+          if (!mapRef.current) return
+          mapRef.current.panTo(new kakao.maps.LatLng(newCoords.latitude, newCoords.longitude))
+          mapRef.current.setLevel(4)
+          if (enableParking && (!parkingLots || parkingLots.length === 0)) {
+            fetchParkingForLocation(newCoords.latitude, newCoords.longitude)
+          }
+        },
+        (error) => {
+          setLocationStatus(
+            error.code === 1
+              ? "위치 권한이 꺼져 있습니다. 브라우저 설정에서 허용해 주세요."
+              : "현재 위치를 확인할 수 없습니다."
+          )
+        },
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 10000 }
+      )
+    } else {
+      setLocationStatus("기기의 위치 서비스를 켠 후 잠시 기다려 주세요.")
     }
   }
 
@@ -809,7 +868,7 @@ export default function MapPlaceholder({
             {enableTraffic && (
               <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
                 <span className="text-[11px] font-medium text-white/90 flex items-center gap-1 select-none">
-                  <span>🚦 실시간혼잡도</span>
+                  <span>🚦 실시간 혼잡도</span>
                   <span
                     className={`text-[9px] font-bold px-1 py-0.2 rounded transition-colors ${
                       showTrafficLines
@@ -913,6 +972,42 @@ export default function MapPlaceholder({
           </div>
         )}
 
+        {/* 서울 외 지역 제한 안내 팝업 모달 */}
+        {showSeoulOnlyAlert && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+            <div
+              className="glass p-6 max-w-sm w-full text-center flex flex-col items-center gap-3 border border-white/40 shadow-2xl"
+              style={{ borderRadius: 24, backgroundColor: "rgba(255, 255, 255, 0.96)" }}
+            >
+              <div className="w-12 h-12 rounded-full bg-[#ff9500]/15 border border-[#ff9500]/30 flex items-center justify-center text-2xl">
+                📍
+              </div>
+              <h3
+                className="text-[#1a1a2e] text-base font-bold"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                서울 지역 전용 서비스 안내
+              </h3>
+              <p
+                className="text-[#4a4a68] text-xs leading-relaxed"
+                style={{ fontFamily: "var(--font-body)" }}
+              >
+                현재 버전은 <strong className="text-[#007aff]">서울시</strong>만 지원하고 있습니다.
+                <br />
+                서울 외 지역에서는 현위치 기능을 사용할 수 없습니다.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowSeoulOnlyAlert(false)}
+                className="mt-2 w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#007aff] to-[#38bdf8] shadow-md hover:brightness-105 active:scale-98 transition-all cursor-pointer"
+                style={{ fontFamily: "var(--font-body)" }}
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 하단 범례 캡슐 (활성화된 레이어만 표시) */}
         {((enableTraffic && showTrafficLines) ||
           (enableIncidents && showIncidents) ||
@@ -927,7 +1022,6 @@ export default function MapPlaceholder({
                 { color: "#34c759", label: "원활 (≥50km/h)" },
                 { color: "#ff9500", label: "서행 (25~49km/h)" },
                 { color: "#ff3b30", label: "혼잡 (<25km/h)" },
-                { color: "#94a3b8", label: "정보 없음" },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-1.5">
                   <div

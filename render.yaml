@@ -19,8 +19,6 @@ services:
         sync: false
       - key: VITE_KAKAO_MAP_JS_KEY
         sync: false
-      - key: START_SCHEDULER_IN_PROCESS
-        value: "true"
 
   - type: worker
     name: roadpulse-worker
@@ -33,8 +31,6 @@ services:
         value: production
       - key: APP_ROLE
         value: worker
-      - key: START_SCHEDULER_IN_PROCESS
-        value: "false"
       - key: DATABASE_URL
         sync: false
       - key: SEOUL_TRAFFIC_API_KEY

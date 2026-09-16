@@ -1,6 +1,38 @@
 # 🚦 RoadPulse - 서울시 AI 실시간 교통량 예측 시스템
 
-RoadPulse는 서울시 주요 139개 도로 검지기 지점의 2년 치 교통량 빅데이터와 기상청 기상 관측 데이터를 결합하여 미래 교통량을 예측하는 머신러닝 기반 지능형 교통 시스템입니다
+RoadPulse는 서울시 주요 139개 도로 검지기 지점의 2년 치 교통량 빅데이터와 기상청 기상 관측 데이터를 결합하여 미래 교통량을 예측하는 머신러닝 기반 지능형 교통 시스템입니다.
+
+---
+
+## 🧠 AI 기반 최적 경로 탐색 아키텍처 (Smart Route Recommendation)
+
+RoadPulse는 기존 내비게이션의 정적 최단 거리 방식(OSRM)에 머무르지 않고, **서울시 전역 5,200여 개 도로 링크의 실시간 속도와 머신러닝 기반 미래 교통량 예측, 실시간 돌발상황(사고·공사)을 결합하여 실제로 시간이 가장 덜 걸리는 최적의 경로를 동적으로 산출**합니다.
+
+```mermaid
+flowchart TD
+    Start["출발지 / 도착지 / 출발 예정 시각 입력"] --> S1["1단계: OSRM 물리 도로망 탐색<br/>(통행 가능한 복수 대안 경로 후보군 추출)"]
+    S1 --> S2["2단계: 서울시 실시간 도로 속도 매핑<br/>(traffic_speed_measurements 5,200개 링크 실측 속도 반영)"]
+    S2 --> S3["3단계: AI 미래 교통량 예측 + 실시간 돌발상황 결합<br/>(LightGBM 시계열 예측 모델 + 사고/공사 잔여시간 페널티)"]
+    S3 --> S4["최종 종합 소요비용(Score) 계산 및 랭킹<br/>가장 빠르고 쾌적한 경로에 'AI 추천' 부여"]
+```
+
+### [3단계 경로 최적화 프로세스]
+
+1. **1단계: 도로망 후보 경로 추출 (OSRM Multi-Route Generation)**
+   - 출발지와 도착지 좌표를 기반으로 물리적 도로 네트워크에서 주행 가능한 복수의 대안 경로 후보(Alternative Routes)를 생성합니다.
+   - 경로별 통과 도로명, 세부 구간(step) 거리($\text{m}$), 법정 제한속도 기준 기본 소요시간($\text{duration\_sec}$)을 분해합니다.
+
+2. **2단계: 서울시 실시간 도로 속도 즉시 반영 (`traffic_speed_measurements`)**
+   - OSRM의 이상적인 도로 기준속도 대신, **우리 DB에 실시간(5분 주기)으로 수집되는 5,202개 도로 링크의 실측 속도($\text{speed\_kmh}$)**를 각 구간에 매핑합니다.
+   $$\text{Observed Duration} = \frac{\text{Step Distance (m)}}{\text{Realtime Speed (m/s)}}$$
+   - 도로가 정체되어 기준속도보다 느려진 경우 지연 페널티($\text{speed\_penalty}$)가 가산되며, **거리가 다소 우회하더라도 실시간 속도가 60~70km/h로 원활한 도로가 훨씬 유리하게 평가**됩니다.
+
+3. **3단계: AI 미래 교통량 예측 및 돌발상황(사고·공사) 결합 최종 판정**
+   - **머신러닝 미래 교통량 예측**: 출발 시각(현재 또는 1~2시간 뒤 미래 출발)에 해당 도로의 교통량이 평소 대비 급증할지 AI 모델(LightGBM)이 시계열 예측하여 미래 혼잡 페널티($\text{traffic\_penalty}$)를 부과합니다.
+   - **실시간 돌발상황 연동**: 경로 상에 발생한 사고(A01)나 도로 공사(A04)의 영향 반경과 예상 종료 시각을 고려해 돌발 페널티($\text{incident\_penalty}$)를 추가합니다.
+   - **종합 최적 비용(Score) 산출**:
+   $$\text{Total Score} = \text{Base Duration} + \text{Speed Penalty} + \text{AI Traffic Penalty} + \text{Incident Penalty}$$
+   - 종합 점수(Score)가 가장 낮아 **실제로 정체를 피하고 가장 신속하게 도착할 수 있는 경로**에 `AI 추천` 뱃지를 부여하고 1순위로 안내합니다.
 
 ---
 
@@ -220,6 +252,8 @@ npm run dev
 빈 DB와 연결 실패를 별도로 표시하며, 예측·경로·날씨 예보를 가상값으로 채우지 않습니다.
 
 오늘 재수집: `uv run python scripts/collect_data.py --all`.
+실시간 데이터 수집은 웹 API 프로세스와 분리된 `roadpulse-worker` 한 곳에서만 실행합니다. 로컬에서는 `python -m backend.src.workers.realtime_scheduler`를 별도 프로세스로 실행합니다. 웹 프로세스에서 같은 스케줄러를 함께 실행하면 중복 API 호출과 DB 쓰기 경합이 발생하므로 사용하지 않습니다.
+
 ASOS 날씨 기본 조회는 한국시간 어제 00~23시입니다. 전일 자료 공개가 지연되면 다시 수집해야 합니다.
 기상청 안내: https://data.kma.go.kr/data/grnd/selectAsosRltmList.do?pgmNo=36
 
