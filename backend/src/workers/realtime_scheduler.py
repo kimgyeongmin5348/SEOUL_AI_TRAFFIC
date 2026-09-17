@@ -6,7 +6,7 @@
 
 import logging
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.base import BaseScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -14,8 +14,14 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from backend.src.db.database import SessionLocal
 from backend.src.services.collector_service import DataCollectorService
 from backend.src.services.realtime_evaluation import RealtimeEvaluationService
+from backend.src.services.route_duration_reconstruction import RouteDurationReconstructionService
 
 logger = logging.getLogger(__name__)
+
+KST = timezone(timedelta(hours=9))
+# 출발 후 이 시간이 지난 요청만 라벨을 만듭니다. 주행 시간대 관측이 모두 들어온 뒤에 재구성해야
+# 출발 전 관측만으로 라벨이 만들어지는 것을 막을 수 있습니다.
+ROUTE_LABEL_DELAY = timedelta(minutes=90)
 
 
 def run_job(job_name: str, callback) -> None:
@@ -50,6 +56,14 @@ def evaluate_completed_predictions(collector: DataCollectorService) -> dict[str,
     return {"actuals_attached": updated, "test_dataset": str(output)}
 
 
+def reconstruct_route_labels(collector: DataCollectorService) -> dict[str, int]:
+    """경로 요청 로그의 후보에 링크 관측 기반 actual_duration_sec를 채웁니다 (경로 학습 라벨)."""
+    # route_requests.departure_at은 KST naive이고 서버 시계는 UTC일 수 있으므로 KST로 비교합니다.
+    cutoff = datetime.now(KST).replace(tzinfo=None) - ROUTE_LABEL_DELAY
+    updated = RouteDurationReconstructionService(collector.db).reconstruct(now=cutoff)
+    return {"route_candidates_labelled": updated}
+
+
 def build_scheduler(
     scheduler_cls: type[BaseScheduler] = BlockingScheduler,
     run_immediately: bool = True,
@@ -70,6 +84,11 @@ def build_scheduler(
         "interval", hours=1, id="prediction_evaluation", max_instances=1,
     )
     scheduler.add_job(
+        lambda: run_job("route_label_reconstruction", reconstruct_route_labels),
+        "interval", hours=1, id="route_label_reconstruction", max_instances=1,
+        next_run_time=fast_next_run,
+    )
+    scheduler.add_job(
         lambda: run_job(
             "master_sync",
             lambda collector: {
@@ -78,7 +97,9 @@ def build_scheduler(
                 "weather_stations": collector.sync_weather_stations(),
             },
         ),
+        # 기준정보(축·방향 포함)는 시작 직후 한 번 맞추고 이후 하루에 한 번 갱신합니다.
         "interval", days=1, id="master_sync", max_instances=1,
+        next_run_time=fast_next_run,
     )
     return scheduler
 

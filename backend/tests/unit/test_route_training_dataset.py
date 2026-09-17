@@ -11,6 +11,7 @@ from backend.src.services.route_training_dataset import (
     match_candidate,
     parse_osrm_routes,
     speed_lag_features,
+    volume_lag_features,
     write_csv,
 )
 
@@ -89,21 +90,48 @@ def test_speed_lag_features_use_only_observations_before_departure():
         "L2": [{"measured_at": departure - timedelta(hours=3), "speed_kmh": 50.0}],   # 창 밖
     }
     features = speed_lag_features(matches, by_link, departure, timedelta(minutes=60))
-    assert features == {"speed_lag_kmh": 30.0, "speed_lag_coverage": 0.6}
+    assert features["speed_lag_kmh"] == 30.0 and features["speed_lag_min_kmh"] == 30.0
+    assert features["speed_lag_coverage"] == 0.6 and features["speed_data_available"] == 1
+    assert features["speed_lag_travel_time_sec"] == 72.0  # 600m @ 30km/h
+    assert features["speed_lag_age_min"] == 10.0
+    assert features["speed_lag_observed_at"] == departure - timedelta(minutes=10)
 
 
-def test_incident_features_count_active_incidents_on_matched_links_by_category():
-    matches = [{"links": [{"link_id": "L1", "length_m": 100}, {"link_id": "L2", "length_m": 100}]}]
+def test_volume_lag_features_weight_spot_volume_by_matched_length():
+    departure = datetime(2026, 9, 13, 18, 0)
+    matches = [{"total_m": 1000, "links": [{"link_id": "L1", "length_m": 600}, {"link_id": "L2", "length_m": 200}]}]
+    volumes = {"L1": {"measured_at": departure - timedelta(hours=2), "volume": 1000.0}}
+    features = volume_lag_features(matches, volumes, departure)
+    assert features["volume_lag_vph_mean"] == 1000.0 and features["volume_lag_vph_max"] == 1000.0
+    assert features["volume_lag_coverage"] == 0.6 and features["volume_lag_age_hours"] == 2.0
+    assert volume_lag_features(matches, {}, departure)["volume_lag_vph_mean"] is None
+
+
+def test_incident_features_count_severity_length_and_clear_overlap():
+    departure = datetime(2026, 9, 13, 18, 0)
+    matches = [{"total_m": 1000, "links": [{"link_id": "L1", "length_m": 600}, {"link_id": "L2", "length_m": 400}]}]
     incidents = {
-        "L1": [{"incident_id": "i1", "incident_type": "A01", "incident_detail_type": ""},
-               {"incident_id": "i2", "incident_type": "A04", "incident_detail_type": ""}],
-        "L2": [{"incident_id": "i2", "incident_type": "A04", "incident_detail_type": ""}],  # 같은 돌발 중복
-        "L9": [{"incident_id": "i3", "incident_type": "A08", "incident_detail_type": ""}],  # 경로 밖
+        "L1": [{"incident_id": "i1", "incident_type": "A01", "incident_detail_type": "", "description": "",
+                "expected_clear_at": departure + timedelta(minutes=5)},      # 사고, 주행 1,000초 중 300초 겹침
+               {"incident_id": "i2", "incident_type": "A04", "incident_detail_type": "", "description": "",
+                "expected_clear_at": departure + timedelta(hours=5)}],       # 공사, 전체 겹침
+        "L2": [{"incident_id": "i2", "incident_type": "A04", "incident_detail_type": "", "description": "",
+                "expected_clear_at": departure + timedelta(hours=5)},        # 같은 돌발 중복
+               {"incident_id": "i3", "incident_type": "A08", "incident_detail_type": "전면통제", "description": "",
+                "expected_clear_at": departure + timedelta(hours=1)}],       # 통제(전면) → blocked
+        "L9": [{"incident_id": "i4", "incident_type": "A08", "incident_detail_type": "", "description": "",
+                "expected_clear_at": None}],                                  # 경로 밖
     }
-    features = incident_features(matches, incidents)
-    assert features["active_incident_count"] == 2
-    assert features["accident_count"] == 1 and features["construction_count"] == 1
-    assert features["control_count"] == 0 and features["breakdown_count"] == 0
+    features = incident_features(matches, incidents, departure, 1000, 1000, data_age_sec=120)
+    assert features["active_incident_count"] == 3
+    assert features["accident_count"] == 1 and features["construction_count"] == 1 and features["control_count"] == 1
+    assert features["breakdown_count"] == 0
+    assert features["control_length_m"] == 400 and features["blocked_length_m"] == 400
+    assert features["incident_severity_max"] == 3
+    assert features["incident_clear_overlap_sec"] == 1000
+    # 사고 2×0.6×0.3 + 공사 1×0.6×1 + 통제 3×0.4×1 = 0.36 + 0.6 + 1.2
+    assert features["incident_impact_score"] == pytest.approx(2.16)
+    assert features["incident_match_ratio"] == 1.0 and features["incident_data_age_sec"] == 120
 
 
 def test_write_csv_writes_header_and_rows(tmp_path):

@@ -4,6 +4,7 @@ import pandas as pd
 from ml.src.models.route_duration_model import (
     baseline_metrics,
     beats_baseline,
+    od_split,
     prepare_dataset,
     ranking_metrics,
     regression_metrics,
@@ -14,9 +15,10 @@ from ml.src.models.route_duration_model import (
 
 
 def _row(request_id, route_id, departure, actual, distance=1000.0, osrm=100.0,
-         segments=5, link_ratio=0.8, direction=None):
+         segments=5, link_ratio=0.8, direction=None, origin="서울역", destination="강남역"):
     return {
         "route_request_id": request_id, "route_id": route_id,
+        "origin_name": origin, "destination_name": destination,
         "departure_at": departure, "route_distance_m": distance,
         "osrm_duration_sec": osrm, "segment_count": segments,
         "link_match_ratio": link_ratio, "direction_match_ratio": direction,
@@ -96,3 +98,16 @@ def test_baseline_metrics_and_adoption_rule():
     assert beats_baseline(better, baseline) is True
     assert beats_baseline(worse, baseline) is False
     assert beats_baseline({"mae": 10.0, "top1_accuracy": None, "mean_regret_sec": None}, baseline) is False
+
+
+def test_od_split_keeps_whole_od_pairs_on_one_side():
+    rows = []
+    for index, (o, d) in enumerate([("서울역", "강남역"), ("잠실", "광화문"), ("홍대", "여의도"), ("노원", "서울역")]):
+        for route_id in "AB":
+            rows.append(_row(f"r{index}", route_id, "2026-09-13T08:00:00", 100.0, origin=o, destination=d))
+    frame = prepare_dataset(pd.DataFrame(rows))
+    train, test = od_split(frame, holdout_ratio=0.25)
+    assert len(test) == 2 and len(train) == 6
+    train_pairs = set(zip(train["origin_name"], train["destination_name"]))
+    test_pairs = set(zip(test["origin_name"], test["destination_name"]))
+    assert train_pairs.isdisjoint(test_pairs)

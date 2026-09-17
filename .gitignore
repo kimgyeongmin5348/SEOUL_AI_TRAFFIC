@@ -231,6 +231,7 @@ data/external/MOCT_LINK.*
 data/processed/*.json
 !data/processed/feature_meta.json
 !data/processed/link_feature_meta.json
+!data/processed/route_feature_meta.json
 
 # PyPI configuration file
 .pypirc
