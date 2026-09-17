@@ -117,8 +117,9 @@ def matched_length_by_link(matches):
 
 def route_total_m(candidate, matches):
     matched_indexes = {m["index"] for m in matches}
+    # 온라인 요청의 step distance_m은 선택 필드라 None일 수 있습니다.
     return sum(m["total_m"] for m in matches) + sum(
-        s.distance_m for i, s in enumerate(candidate["steps"]) if i not in matched_indexes
+        float(s.distance_m or 0.0) for i, s in enumerate(candidate["steps"]) if i not in matched_indexes
     )
 
 
@@ -290,6 +291,98 @@ def incident_features(matches, incidents_by_link, departure_at, osrm_duration_se
     }
 
 
+def load_spot_links(db):
+    """{link_id: spot_id} — 교통량 측정지점이 연결된 링크만."""
+    rows = db.execute(text("SELECT link_id, spot_id FROM traffic_spot_road_maps")).fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+def load_active_incidents_by_link(db, link_ids, departure_at):
+    """출발 시각에 활성이고, 출발 전에 수집된(collected_at UTC) 돌발만. {link_id: [돌발...]}"""
+    if not link_ids:
+        return {}
+    rows = db.execute(text("""
+        SELECT incident_id, link_id, incident_type, incident_detail_type, description,
+               occurred_at, expected_clear_at
+        FROM incidents
+        WHERE link_id IN :link_ids
+          AND occurred_at <= :departure_at
+          AND collected_at <= :departure_utc
+          AND (expected_clear_at IS NULL OR expected_clear_at >= :departure_at)
+    """).bindparams(bindparam("link_ids", expanding=True)),
+        {"link_ids": list(link_ids), "departure_at": departure_at,
+         "departure_utc": departure_at - KST_OFFSET}).mappings()
+    by_link = {}
+    for row in rows:
+        by_link.setdefault(row["link_id"], []).append(dict(row))
+    return by_link
+
+
+def incident_data_age_sec(db, departure_at):
+    """출발 시각 기준 돌발 데이터 지연(마지막 수집 이후 초)."""
+    latest = db.execute(text("SELECT MAX(collected_at) FROM incidents WHERE collected_at <= :departure_utc"),
+                        {"departure_utc": departure_at - KST_OFFSET}).scalar()
+    return round((departure_at - KST_OFFSET - latest).total_seconds()) if latest else None
+
+
+def load_volume_lag(db, link_ids, spot_links, departure_at):
+    """매칭 링크의 측정지점별 최신 시간 교통량(양방향·전 차로 합). 출발 전 수집분만. {link_id: {...}}"""
+    spots = {spot_links[link_id] for link_id in link_ids if link_id in spot_links}
+    if not spots:
+        return {}
+    rows = db.execute(text("""
+        SELECT spot_id, measured_at, SUM(traffic_volume) AS volume
+        FROM traffic_volume_measurements
+        WHERE spot_id IN :spots
+          AND collected_at <= :departure_utc
+          AND measured_at >= :start AND measured_at <= :departure_at
+        GROUP BY spot_id, measured_at
+    """).bindparams(bindparam("spots", expanding=True)),
+        {"spots": list(spots), "departure_utc": departure_at - KST_OFFSET,
+         "start": departure_at - timedelta(hours=VOLUME_LAG_WINDOW_HOURS), "departure_at": departure_at}).mappings()
+    latest = {}
+    for row in rows:
+        if row["spot_id"] not in latest or row["measured_at"] > latest[row["spot_id"]]["measured_at"]:
+            latest[row["spot_id"]] = {"measured_at": row["measured_at"], "volume": float(row["volume"])}
+    return {link_id: latest[spot] for link_id, spot in spot_links.items() if spot in latest}
+
+
+def load_weather_before(db, departure_at):
+    """출발 시각 이전 마지막 기상 관측(108 관측소)만 사용합니다."""
+    row = db.execute(text("""
+        SELECT temperature_c, rainfall_mm, humidity_pct, observed_at
+        FROM weather_measurements
+        WHERE weather_station_id = '108' AND observed_at <= :departure_at
+        ORDER BY observed_at DESC LIMIT 1
+    """), {"departure_at": departure_at}).mappings().first()
+    return weather_features(row, departure_at)
+
+
+def weather_features(row, departure_at):
+    """기상 관측 행 → 피처. 학습(데이터셋)과 온라인 추론이 같은 변환을 씁니다."""
+    if not row:
+        return {"weather_temperature_c": None, "weather_rainfall_mm": None,
+                "weather_humidity_pct": None, "weather_age_hours": None, "weather_observed_at": None}
+    return {
+        "weather_temperature_c": float(row["temperature_c"]) if row["temperature_c"] is not None else None,
+        "weather_rainfall_mm": float(row["rainfall_mm"] or 0.0),
+        "weather_humidity_pct": float(row["humidity_pct"]) if row["humidity_pct"] is not None else None,
+        "weather_age_hours": round((departure_at - row["observed_at"]).total_seconds() / 3600, 2),
+        "weather_observed_at": row["observed_at"],
+    }
+
+
+def candidate_features(matches, by_link, volumes, incidents, weather, departure_at, osrm_duration_sec, total_m,
+                       lag_window, incident_age=None):
+    """후보 1개의 모델 입력 피처. 데이터셋 생성과 온라인 추론이 이 함수 하나를 공유합니다."""
+    return {
+        **speed_lag_features(matches, by_link, departure_at, lag_window),
+        **volume_lag_features(matches, volumes, departure_at),
+        **incident_features(matches, incidents, departure_at, osrm_duration_sec, total_m, incident_age),
+        **weather,
+    }
+
+
 class RouteTrainingDatasetBuilder:
     def __init__(self, db: Session, fetch_candidates=fetch_osrm_candidates, sleep_sec=0.2,
                  window_minutes=OBSERVATION_WINDOW_MIN):
@@ -305,7 +398,7 @@ class RouteTrainingDatasetBuilder:
         OSRM 후보는 OD 쌍당 한 번만 조회하고 출발 시각마다 관측만 바꿔 붙입니다.
         """
         link_geometry = load_road_link_geometry(self.db)
-        spot_links = self._load_spot_links()
+        spot_links = load_spot_links(self.db)
         rows = []
         for origin, destination in od_pairs:
             candidates = self.fetch_candidates(origin, destination)
@@ -319,21 +412,18 @@ class RouteTrainingDatasetBuilder:
                     self.db, link_ids, departure_at - self.lag_window,
                     departure_at + timedelta(seconds=longest) + self.window,
                 )
-                incidents = self._load_active_incidents(link_ids, departure_at)
-                incident_age = self._incident_data_age_sec(departure_at)
-                volumes = self._load_volume_lag(link_ids, spot_links, departure_at)
-                weather = self._load_weather(departure_at)
+                incidents = load_active_incidents_by_link(self.db, link_ids, departure_at)
+                incident_age = incident_data_age_sec(self.db, departure_at)
+                volumes = load_volume_lag(self.db, link_ids, spot_links, departure_at)
+                weather = load_weather_before(self.db, departure_at)
                 records = []
                 for candidate, matches in matched:
                     trip = select_trip_observations(by_link, matched_link_ids(matches), departure_at,
                                                     candidate["duration_sec"], self.window)
-                    total_m = route_total_m(candidate, matches)
-                    features = {
-                        **speed_lag_features(matches, by_link, departure_at, self.lag_window),
-                        **volume_lag_features(matches, volumes, departure_at),
-                        **incident_features(matches, incidents, departure_at, candidate["duration_sec"], total_m, incident_age),
-                        **weather,
-                    }
+                    features = candidate_features(
+                        matches, by_link, volumes, incidents, weather, departure_at,
+                        candidate["duration_sec"], route_total_m(candidate, matches), self.lag_window, incident_age,
+                    )
                     records.append(build_candidate_record(candidate, matches, trip, features))
                 assign_ranks(records)
                 request_id = f"{origin['name']}->{destination['name']}@{departure_at:%Y%m%d%H%M}"
@@ -375,77 +465,6 @@ class RouteTrainingDatasetBuilder:
             "label_observed_at_max": stamp(record.label_observed_at_max),
             "route_rank_actual": record.rank_actual,
             "chosen_best": record.chosen_best,
-        }
-
-    def _load_spot_links(self):
-        """{link_id: spot_id} — 교통량 측정지점이 연결된 링크만."""
-        rows = self.db.execute(text("SELECT link_id, spot_id FROM traffic_spot_road_maps")).fetchall()
-        return {row[0]: row[1] for row in rows}
-
-    def _load_active_incidents(self, link_ids, departure_at):
-        """출발 시각에 활성이고, 출발 전에 수집된(collected_at UTC) 돌발만."""
-        if not link_ids:
-            return {}
-        rows = self.db.execute(text("""
-            SELECT incident_id, link_id, incident_type, incident_detail_type, description,
-                   occurred_at, expected_clear_at
-            FROM incidents
-            WHERE link_id IN :link_ids
-              AND occurred_at <= :departure_at
-              AND collected_at <= :departure_utc
-              AND (expected_clear_at IS NULL OR expected_clear_at >= :departure_at)
-        """).bindparams(bindparam("link_ids", expanding=True)),
-            {"link_ids": list(link_ids), "departure_at": departure_at,
-             "departure_utc": departure_at - KST_OFFSET}).mappings()
-        by_link = {}
-        for row in rows:
-            by_link.setdefault(row["link_id"], []).append(dict(row))
-        return by_link
-
-    def _incident_data_age_sec(self, departure_at):
-        """출발 시각 기준 돌발 데이터 지연(마지막 수집 이후 초)."""
-        latest = self.db.execute(text("SELECT MAX(collected_at) FROM incidents WHERE collected_at <= :departure_utc"),
-                                 {"departure_utc": departure_at - KST_OFFSET}).scalar()
-        return round((departure_at - KST_OFFSET - latest).total_seconds()) if latest else None
-
-    def _load_volume_lag(self, link_ids, spot_links, departure_at):
-        """매칭 링크의 측정지점별 최신 시간 교통량(양방향·전 차로 합). 출발 전 수집분만."""
-        spots = {spot_links[link_id] for link_id in link_ids if link_id in spot_links}
-        if not spots:
-            return {}
-        rows = self.db.execute(text("""
-            SELECT spot_id, measured_at, SUM(traffic_volume) AS volume
-            FROM traffic_volume_measurements
-            WHERE spot_id IN :spots
-              AND collected_at <= :departure_utc
-              AND measured_at >= :start AND measured_at <= :departure_at
-            GROUP BY spot_id, measured_at
-        """).bindparams(bindparam("spots", expanding=True)),
-            {"spots": list(spots), "departure_utc": departure_at - KST_OFFSET,
-             "start": departure_at - timedelta(hours=VOLUME_LAG_WINDOW_HOURS), "departure_at": departure_at}).mappings()
-        latest = {}
-        for row in rows:
-            if row["spot_id"] not in latest or row["measured_at"] > latest[row["spot_id"]]["measured_at"]:
-                latest[row["spot_id"]] = {"measured_at": row["measured_at"], "volume": float(row["volume"])}
-        return {link_id: latest[spot] for link_id, spot in spot_links.items() if spot in latest}
-
-    def _load_weather(self, departure_at):
-        """출발 시각 이전 마지막 기상 관측(108 관측소)만 사용합니다."""
-        row = self.db.execute(text("""
-            SELECT temperature_c, rainfall_mm, humidity_pct, observed_at
-            FROM weather_measurements
-            WHERE weather_station_id = '108' AND observed_at <= :departure_at
-            ORDER BY observed_at DESC LIMIT 1
-        """), {"departure_at": departure_at}).mappings().first()
-        if not row:
-            return {"weather_temperature_c": None, "weather_rainfall_mm": None,
-                    "weather_humidity_pct": None, "weather_age_hours": None, "weather_observed_at": None}
-        return {
-            "weather_temperature_c": float(row["temperature_c"]) if row["temperature_c"] is not None else None,
-            "weather_rainfall_mm": float(row["rainfall_mm"] or 0.0),
-            "weather_humidity_pct": float(row["humidity_pct"]) if row["humidity_pct"] is not None else None,
-            "weather_age_hours": round((departure_at - row["observed_at"]).total_seconds() / 3600, 2),
-            "weather_observed_at": row["observed_at"],
         }
 
 

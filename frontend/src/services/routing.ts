@@ -29,6 +29,22 @@ export interface RouteResult {
   incidentDetails?: RouteIncident[]
   linkMatchRatio?: number
   directionMatchRatio?: number | null
+  // 경로 모델 ETA. etaSource가 "model"일 때만 time이 모델 예측이고, 아니면 OSRM 기준입니다.
+  predictedDurationSec?: number | null
+  etaSource?: "model" | "osrm"
+  etaReasons?: string[]
+  etaQuality?: RouteEtaQuality | null
+  routeModelVersion?: string | null
+}
+
+export interface RouteEtaQuality {
+  speed_lag_coverage: number | null
+  speed_lag_age_min: number | null
+  speed_lag_kmh: number | null
+  volume_lag_coverage: number | null
+  active_incident_count: number | null
+  control_length_m: number | null
+  incident_data_age_sec: number | null
 }
 
 export interface RouteIncident {
@@ -51,6 +67,8 @@ interface ModelRanking {
   route_request_id?: string
   available: boolean
   model_version: string
+  route_model_version?: string | null
+  eta_basis?: "route_model" | "heuristic_score"
   algorithm: string
   message: string
   target_at: string
@@ -72,6 +90,10 @@ interface ModelRanking {
     speed_match_ratio: number
     link_match_ratio?: number
     direction_match_ratio?: number | null
+    predicted_duration_sec?: number | null
+    eta_source?: "model" | "osrm"
+    eta_reasons?: string[]
+    eta_quality?: RouteEtaQuality | null
     speed_observed_at: string | null
     incidents: RouteIncident[]
   }[]
@@ -161,9 +183,11 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
     const ai = Boolean(ranking?.available && prediction?.ai)
     const names = [...new Set(steps[i].map(s => s.name).filter(Boolean))]
 
-    // 실시간 도로 속도(speed_penalty), AI 교통량 지연(traffic_penalty), 사고(incident_penalty)가 결합된 최종 소요시간
+    // 카드 시간: 경로 모델 ETA(실시간 링크 속도·돌발·교통량·기상 반영)가 있으면 그것, 없으면 OSRM 기준.
+    // score(휴리스틱 비교 비용)는 ETA가 아니므로 시간으로 표시하지 않습니다.
     const baseDurationSec = r.duration
-    const effectiveDurationSec = prediction?.score && prediction.score > 0 ? prediction.score : baseDurationSec
+    const modelEta = prediction?.eta_source === "model" ? prediction.predicted_duration_sec ?? null : null
+    const effectiveDurationSec = modelEta && modelEta > 0 ? modelEta : baseDurationSec
     const time = Math.max(1, Math.round(effectiveDurationSec / 60))
     const baseTime = Math.max(1, Math.round(baseDurationSec / 60))
     const delayMin = Math.max(0, Math.round((effectiveDurationSec - baseDurationSec) / 60))
@@ -204,6 +228,11 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       incidentDetails: prediction?.incidents,
       linkMatchRatio: prediction?.link_match_ratio,
       directionMatchRatio: prediction?.direction_match_ratio,
+      predictedDurationSec: modelEta,
+      etaSource: modelEta ? "model" : "osrm",
+      etaReasons: prediction?.eta_reasons,
+      etaQuality: prediction?.eta_quality,
+      routeModelVersion: ranking?.route_model_version,
     }
   })
   return { origin, dest, routes, predictionMessage }

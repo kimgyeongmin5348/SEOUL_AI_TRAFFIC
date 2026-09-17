@@ -15,10 +15,11 @@ def main() -> None:
     db = SessionLocal()
     try:
         service = RouteRankingEvaluationService(db)
-        overall = service.evaluate()
-        print(f"overall: {overall}")
-        for grade in ("high", "medium", "low"):
-            print(f"{grade}: {service.evaluate(grade)}")
+        # 같은 온라인 요청(라벨 있는 후보)에 대해 운영 휴리스틱·경로 모델 ETA·OSRM 기본 순서를 나란히 비교합니다.
+        for basis in ("heuristic", "model_eta", "osrm"):
+            print(f"[{basis}] overall: {service.evaluate(basis=basis)}")
+            for grade in ("high", "medium", "low"):
+                print(f"[{basis}] {grade}: {service.evaluate(grade, basis=basis)}")
     finally:
         db.close()
 

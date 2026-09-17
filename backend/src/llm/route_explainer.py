@@ -13,6 +13,8 @@ from backend.src.llm.prompts import (
 def _template_explanation(evidence: dict[str, Any]) -> str:
     selected_id = evidence["selected_route_id"]
     selected = next(route for route in evidence["routes"] if route["route_id"] == selected_id)
+    if evidence.get("eta_basis") == "route_model" and selected.get("predicted_eta_minutes") is not None:
+        return _model_eta_explanation(evidence, selected)
     others = sorted(
         (route for route in evidence["routes"] if route["route_id"] != selected_id),
         key=lambda route: route["comparison_score"],
@@ -36,6 +38,28 @@ def _template_explanation(evidence: dict[str, Any]) -> str:
         f"예측 교통 증가 페널티는 약 {selected['predicted_traffic_penalty_minutes']}분이고 "
         f"실제 관측 도로 연결 범위는 {selected['prediction_coverage_percent']}%입니다. {saving_text}{comparison} "
         "비교 점수는 실제 예상 도착시간이 아닙니다."
+    )
+
+
+def _model_eta_explanation(evidence: dict[str, Any], selected: dict[str, Any]) -> str:
+    selected_id = selected["route_id"]
+    roads = "·".join(selected["main_roads"][:2]) or f"경로 {selected_id}"
+    quality = selected.get("eta_quality") or {}
+    coverage = quality.get("speed_lag_coverage")
+    age = quality.get("speed_lag_age_min")
+    incidents = quality.get("active_incident_count") or 0
+    basis = f" 속도 관측 반영 비율은 {round(coverage * 100)}%" if coverage is not None else ""
+    basis += f", 관측은 {age:g}분 전 값" if age is not None else ""
+    basis += f"이고 경로 위 활성 돌발은 {incidents}건입니다." if basis else f"경로 위 활성 돌발은 {incidents}건입니다."
+    others = sorted((r for r in evidence["routes"] if r["route_id"] != selected_id and r.get("predicted_eta_minutes") is not None),
+                    key=lambda r: r["predicted_eta_minutes"])
+    comparison = ""
+    if others:
+        comparison = f" 다음 후보 {others[0]['route_id']}의 예측 {others[0]['predicted_eta_minutes']:g}분보다 {max(0, round(others[0]['predicted_eta_minutes'] - selected['predicted_eta_minutes'], 1)):g}분 짧습니다."
+    return (
+        f"경로 예측 AI는 {roads}를 포함한 경로 {selected_id}를 추천했습니다. "
+        f"예상 소요시간은 약 {selected['predicted_eta_minutes']:g}분(OSRM 기본 {selected['base_duration_minutes']:g}분)이며,{basis}{comparison} "
+        "예측값은 링크 관측 속도로 학습한 모델의 추정치이며 관측이 없는 구간은 OSRM 시간을 따릅니다."
     )
 
 

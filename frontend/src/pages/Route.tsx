@@ -634,9 +634,9 @@ export default function Route() {
                             color: r.ai ? "#5e5ce6" : "#007aff",
                           }}
                         >
-                          {r.ai ? "실시간 속도·AI 반영" : "실시간 속도 반영"}
+                          {r.etaSource === "model" ? "AI ETA" : "OSRM 기준"}
                         </span>
-                        {r.delayMin > 0 && (
+                        {r.etaSource === "model" && r.delayMin > 0 && (
                           <span className="text-[10px] font-semibold text-[#ff3b30] bg-[#ff3b30]/10 px-1.5 py-0.5 rounded ml-1">
                             +{r.delayMin}분 정체
                           </span>
@@ -792,24 +792,45 @@ export default function Route() {
                 <div className="mb-4 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/60 flex items-start gap-2.5 text-xs text-[#2c3e50] leading-relaxed">
                   <span className="text-base shrink-0 mt-0.5">ℹ️</span>
                   <div>
-                    <span className="font-semibold text-[#007aff]">실시간 속도·AI 경로 분석:</span>
-                    {" "}본 경로는 OSRM 도로망 기본 시간에 <strong className="text-[#1a1a2e]">서울시 실시간 관측 속도 지연, AI 모델의 미래 혼잡도 예측, 실시간 돌발상황(사고·공사)</strong>을 모두 반영하여 실제 체감 소요시간과 최적 경로를 산출합니다.
+                    {selectedRoute.etaSource === "model" ? (
+                      <>
+                        <span className="font-semibold text-[#007aff]">AI ETA 적용:</span>
+                        {" "}경로 소요시간 모델({selectedRoute.routeModelVersion})이 <strong className="text-[#1a1a2e]">출발 직전 링크 관측 속도, 활성 돌발(사고·공사·통제), 측정지점 교통량, 기상</strong>을 입력으로 이 경로의 통행시간을 예측한 값입니다. 후보 전부 예측 가능할 때 예측 시간이 가장 짧은 경로를 추천합니다.
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-[#ff9500]">AI ETA 미적용:</span>
+                        {" "}{selectedRoute.etaReasons?.length ? selectedRoute.etaReasons.join(", ") : "경로 모델을 사용할 수 없어"} 소요시간은 <strong className="text-[#1a1a2e]">OSRM 기본 시간</strong>이며 실제보다 짧을 수 있습니다. 추천 순위는 교통량·속도·돌발 패널티 비교 점수로 정했습니다.
+                      </>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
                   {[
                     {
-                      label: "실시간 예상 소요 시간",
-                      value: selectedRoute?.delayMin > 0
-                        ? `${selectedRoute?.time}분 (정체 +${selectedRoute?.delayMin}분)`
-                        : `${selectedRoute?.time}분`,
+                      label: selectedRoute.etaSource === "model" ? "AI 예상 소요 시간" : "OSRM 기준 소요 시간",
+                      value: selectedRoute.etaSource === "model" && selectedRoute.delayMin > 0
+                        ? `${selectedRoute.time}분 (OSRM +${selectedRoute.delayMin}분)`
+                        : `${selectedRoute.time}분`,
+                      color: selectedRoute.etaSource === "model" ? "#5e5ce6" : "#007aff",
+                    },
+                    {
+                      label: "OSRM 기본 시간",
+                      value: `${selectedRoute.baseTime}분`,
+                      color: "#4a4a68",
+                    },
+                    {
+                      label: "속도 관측 반영 비율",
+                      value: selectedRoute.etaQuality?.speed_lag_coverage == null
+                        ? "미적용"
+                        : `${Math.round(selectedRoute.etaQuality.speed_lag_coverage * 100)}% (${selectedRoute.etaQuality.speed_lag_age_min ?? "?"}분 전)`,
                       color: "#007aff",
                     },
                     {
-                      label: "AI 비교 추천 점수",
+                      label: "휴리스틱 비교 점수",
                       value: selectedRoute.score ? `${Math.round(selectedRoute.score)}점 (비용)` : "미적용",
-                      color: "#5e5ce6",
+                      color: "#6b6b8a",
                     },
                     {
                       label: "실제 주행 거리",

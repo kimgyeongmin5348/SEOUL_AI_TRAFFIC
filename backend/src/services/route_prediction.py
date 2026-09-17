@@ -639,17 +639,30 @@ def predict_routes(db, candidates, now, departure_at=None):
     results, available = rank_candidates(
         candidates, predictions, metadata, incidents_by_road, target_clock, speeds_by_road, link_geometry
     )
+    # 경로 소요시간 모델: 학습과 같은 피처로 후보별 ETA를 예측하고, 전 후보가 자격을 갖추면 순위도 모델로 정합니다.
+    # 모델이 없거나 자격 미달이면 위 휴리스틱 점수 순위를 그대로 씁니다.
+    from backend.src.services.route_eta_model import apply_model_ranking, predict_route_etas
+    eta = predict_route_etas(db, candidates, results, observation_clock, target_clock.replace(tzinfo=None), weather)
+    eta_basis, model_ranking = apply_model_ranking(results, eta)
+    if model_ranking:
+        available = True
     eligible_count = sum(route["coverage"] >= .5 for route in results)
     selected = next((route for route in results if route["ai"]), None)
     osrm_default = min(results, key=lambda route: route["base_duration_sec"])
-    comparable_to_osrm = bool(selected and osrm_default["coverage"] >= .5)
-    saved_seconds = max(0., osrm_default["score"] - selected["score"]) if comparable_to_osrm else None
+    if model_ranking:
+        comparable_to_osrm = True
+        saved_seconds = max(0., osrm_default["predicted_duration_sec"] - selected["predicted_duration_sec"])
+    else:
+        comparable_to_osrm = bool(selected and osrm_default["coverage"] >= .5)
+        saved_seconds = max(0., osrm_default["score"] - selected["score"]) if comparable_to_osrm else None
     extra_distance = None
     if comparable_to_osrm and selected["distance_m"] is not None and osrm_default["distance_m"] is not None:
         extra_distance = selected["distance_m"] - osrm_default["distance_m"]
     return {"model_version": report["model_version"], "algorithm": report["algorithm"],
             "rmse": float(report["rmse"]), "target_at": target.isoformat()+"+09:00",
             "available": available, "routes": results,
+            "route_model_version": eta["model_version"] if eta else None,
+            "eta_basis": eta_basis,
             "observed_at": observed.isoformat()+"+09:00",
             "weather_at": weather["observed_at"].isoformat()+"+09:00", "forecast_steps": forecast_steps,
             "target_context": {
@@ -664,10 +677,14 @@ def predict_routes(db, candidates, now, departure_at=None):
                 "ai_selected_route_id": selected["id"] if selected else None,
                 "estimated_minutes_saved": round(saved_seconds / 60, 1) if saved_seconds is not None else None,
                 "extra_distance_km": round(extra_distance / 1000, 2) if extra_distance is not None else None,
-                "basis": "traffic_adjusted_comparison_score",
+                "basis": "route_model_eta" if model_ranking else "traffic_adjusted_comparison_score",
             },
-            "message": f"베스트 모델 교통량 예측 반영 · 후보 {eligible_count}/{len(results)}개 평가 · 실시간 관측과 최근 30일 시간대 패턴 사용 · {forecast_steps}시간 순차 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측 유지 · 도로명·진행 방향 기준 교통량 매칭 · 소요시간은 실시간 속도·AI 혼잡도 반영" if available
-            else "예측 반영 범위가 50% 이상인 경로 후보가 없어 AI 추천을 보류했습니다."}
+            "message": (
+                f"경로 모델 {eta['model_version']} ETA 기준 추천 · 실시간 링크 속도·활성 돌발·교통량·기상 반영 · 후보 {len(results)}개 전부 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측"
+                if model_ranking else
+                f"베스트 모델 교통량 예측 반영 · 후보 {eligible_count}/{len(results)}개 평가 · 실시간 관측과 최근 30일 시간대 패턴 사용 · {forecast_steps}시간 순차 예측 · 기상 {weather['observed_at']:%m/%d %H시} 관측 유지 · 도로명·진행 방향 기준 교통량 매칭 · 경로 모델 ETA 미적용(소요시간은 OSRM 기준)" if available
+                else "예측 반영 범위가 50% 이상인 경로 후보가 없어 AI 추천을 보류했습니다."
+            )}
 
 
 def predict_spot_series(db, spot_id, now, horizon_hours=3):

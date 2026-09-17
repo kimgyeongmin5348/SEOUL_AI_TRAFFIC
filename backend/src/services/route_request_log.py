@@ -58,6 +58,8 @@ def build_request_row(request_id, req, now, departure, recommendation=None, erro
         "status": STATUS_OK if recommendation is not None else STATUS_UNAVAILABLE,
         "status_message": (recommendation or {}).get("message") if recommendation is not None else (error or "")[:500],
         "model_version": (recommendation or {}).get("model_version"),
+        "route_model_version": (recommendation or {}).get("route_model_version"),
+        "eta_basis": (recommendation or {}).get("eta_basis"),
         "ai_available": bool((recommendation or {}).get("available")),
         "ai_selected_route_id": comparison.get("ai_selected_route_id"),
         "osrm_default_route_id": comparison.get("osrm_default_route_id"),
@@ -83,6 +85,8 @@ def build_candidate_rows(request_id, candidates, recommendation=None):
             "traffic_penalty_sec": result.get("traffic_penalty_sec"),
             "incident_penalty_sec": result.get("incident_penalty_sec"),
             "speed_penalty_sec": result.get("speed_penalty_sec"),
+            "predicted_duration_sec": result.get("predicted_duration_sec"),
+            "eta_source": result.get("eta_source"),
             "coverage": result.get("coverage"),
             "match_ratio": result.get("match_ratio"),
             "speed_match_ratio": result.get("speed_match_ratio"),
@@ -110,12 +114,12 @@ INSERT_REQUEST = text("""
     INSERT INTO route_requests (
         route_request_id, requested_at, departure_at, target_at,
         origin_name, origin_lat, origin_lng, destination_name, destination_lat, destination_lng,
-        candidate_count, status, status_message, model_version, ai_available,
+        candidate_count, status, status_message, model_version, route_model_version, eta_basis, ai_available,
         ai_selected_route_id, osrm_default_route_id, traffic_observed_at, weather_observed_at, forecast_steps
     ) VALUES (
         :route_request_id, :requested_at, :departure_at, :target_at,
         :origin_name, :origin_lat, :origin_lng, :destination_name, :destination_lat, :destination_lng,
-        :candidate_count, :status, :status_message, :model_version, :ai_available,
+        :candidate_count, :status, :status_message, :model_version, :route_model_version, :eta_basis, :ai_available,
         :ai_selected_route_id, :osrm_default_route_id, :traffic_observed_at, :weather_observed_at, :forecast_steps
     )
 """)
@@ -123,14 +127,14 @@ INSERT_REQUEST = text("""
 INSERT_CANDIDATE = text("""
     INSERT INTO route_request_candidates (
         route_request_id, route_id, route_distance_m, osrm_duration_sec, segment_count, route_direction_code,
-        score, traffic_penalty_sec, incident_penalty_sec, speed_penalty_sec,
+        score, traffic_penalty_sec, incident_penalty_sec, speed_penalty_sec, predicted_duration_sec, eta_source,
         coverage, match_ratio, speed_match_ratio, link_match_ratio,
         direction_match_ratio, direction_matched_steps,
         incident_count, predicted_volume, typical_volume,
         ai_selected, steps_json, coordinates_json, link_match_json
     ) VALUES (
         :route_request_id, :route_id, :route_distance_m, :osrm_duration_sec, :segment_count, :route_direction_code,
-        :score, :traffic_penalty_sec, :incident_penalty_sec, :speed_penalty_sec,
+        :score, :traffic_penalty_sec, :incident_penalty_sec, :speed_penalty_sec, :predicted_duration_sec, :eta_source,
         :coverage, :match_ratio, :speed_match_ratio, :link_match_ratio,
         :direction_match_ratio, :direction_matched_steps,
         :incident_count, :predicted_volume, :typical_volume,

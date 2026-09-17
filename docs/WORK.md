@@ -316,6 +316,26 @@
 - 재생성 절차: `build_route_training_dataset.py` → `check_route_dataset.py` → `train_route_model.py`
 - 검증 결과: 백엔드 전체 단위 테스트 `98 passed`
 
+## 2026-09-17
+
+### 경로 모델 온라인 추론 연결 및 fallback (#13)
+
+- `route_training_dataset.py`의 DB 로더(활성 돌발·교통량 lag·기상·측정지점 링크)를 모듈 함수로 빼고 `candidate_features`로 묶어, **학습 데이터셋과 온라인 추론이 같은 코드로 피처를 만든다.**
+- `route_eta_model.py` 추가
+    - `route_models/route_xgb_duration_v1.joblib`을 로드해 후보별 `predicted_duration_sec`를 예측한다. 관측 기준 시각은 요청 시각, 요일·시각 피처는 출발 예정 시각.
+    - 자격: 링크 매칭률 ≥ 50%, 속도 관측 커버리지 ≥ 30%. 미달 후보는 `eta_source=osrm`과 사유(`eta_reasons`)를 남긴다.
+    - **후보 전부가 자격을 갖출 때만** 예측 ETA 최소 후보를 AI 추천으로 바꾼다(`eta_basis=route_model`). 하나라도 미달이면 기존 휴리스틱 점수 순위를 유지한다(`heuristic_score`).
+    - 모델 파일이 없거나 조회·예측 중 예외가 나면 None을 돌려주고 추천은 기존 방식으로 진행된다(경고 로그).
+    - 응답 후보마다 `eta_quality`(속도 커버리지·관측 지연 분·평균 속도·교통량 커버리지·활성 돌발·통제 길이·돌발 데이터 지연)를 붙여 근거를 드러낸다.
+- `predict_routes`가 휴리스틱 순위 뒤에 모델 ETA를 적용하고, `osrm_comparison.estimated_minutes_saved`를 모델 적용 시 예측 ETA 차이로 계산한다. `message`에 적용/미적용을 명시한다.
+- 로그: `009_add_route_request_eta.sql`로 후보에 `predicted_duration_sec`·`eta_source`, 요청에 `route_model_version`·`eta_basis` 추가. RDS 적용 완료. 라벨이 붙으면 `evaluate_route_ranking.py`가 **휴리스틱 / 모델 ETA / OSRM** 세 기준을 같은 요청으로 비교한다.
+- 설명(LLM·템플릿): `eta_basis=route_model`이면 "경로 예측 AI는 …"으로 시작해 예측 소요시간·OSRM 기본·속도 반영 비율·관측 지연·돌발 건수를 근거로 쓴다.
+- 프론트: 카드 시간 = 모델 ETA(`etaSource=model`)이고 아니면 OSRM. 팀원 #30의 `score`를 시간으로 쓰던 계산을 제거(score는 ETA가 아님). 뱃지 `AI ETA` / `OSRM 기준`, 상세에 AI 예상 시간·OSRM 기본·속도 관측 반영 비율(관측 n분 전)·휴리스틱 점수를 분리 표시. 미적용이면 사유 배너.
+- 검증
+    - 서울역→강남역 실요청(23시): A ETA 1,482초 / B 1,441초(OSRM 742/784초), 속도 반영 95%/88%, 관측 4분 전. 휴리스틱은 A, 모델은 B 선택.
+    - API end-to-end(TestClient + RDS): 응답·로그(`predicted_duration_sec`, `eta_source`, `route_model_version`)·설명문 확인 후 검증 행 삭제.
+    - 단위 테스트 8개 추가(자격·zero-fill·공유 피처·미자격·모델 없음/예외 fallback·순위 교체·부분 미달 시 휴리스틱 유지). 백엔드 전체 `106 passed`, 프론트 빌드 성공.
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.
@@ -330,9 +350,10 @@
 10. [완료] `inbbong` 브랜치를 `main`에 PR로 병합한다. (반복 병합 중; 라벨 job 커밋은 PR 대기)
 11. [완료] 서울시 주요 출발·도착지(OD) 쌍 기반으로 과거 OSRM 후보 경로를 대량 시뮬레이션 생성하고 링크 관측과 결합해 `route_training_dataset.csv`를 일괄 구축한다. (Cold Start 해소)
 12. [완료] 경로 실제 소요시간(`actual_duration_sec`) 회귀 모델을 학습하고 아티팩트(`ml/artifacts/route_models`)를 생성한다.
-13. `route_prediction.py`의 휴리스틱 추천 방식을 신규 경로 AI 모델 추론으로 교체하고, 매칭 데이터 부족 시 기존 방식으로 안전하게 fallback하도록 연동한다.
+13. [완료] `route_prediction.py`에 경로 모델 ETA 추론을 연결하고 자격 미달·오류 시 휴리스틱으로 fallback한다. (009 RDS 적용, PR·배포 대기)
 14. [완료] OD 단위 holdout(학습에 없는 OD 쌍으로 검증)을 추가해 새 경로 일반화 성능을 측정한다. (30쌍, holdout 7쌍 Top-1 82.5%)
-15. 온라인 요청 로그에 `link_match_json`·`actual_duration_sec`가 쌓이기 시작하면 `evaluate_route_ranking.py`로 현재 휴리스틱 점수의 Top-1·regret를 측정해 오프라인 결과와 비교한다.
+15. 배포 후 온라인 라벨이 쌓이면 `evaluate_route_ranking.py`로 휴리스틱 / 모델 ETA / OSRM의 Top-1·regret를 같은 요청으로 비교한다.
 16. [배포 후 자동] `road_segments.axis_*` 컬럼을 채운다 — `master_sync`가 시작 직후 실행되도록 변경.
 17. [완료] Render worker 24시간 가동 확인.
 18. `measured_at`(KST)·`collected_at`(UTC) 타임존 혼재를 정리한다.
+19. 9/19 데이터셋 재생성(`build → check → train`)으로 9일치 관측 기준 최종 모델을 만들고 문서 수치를 갱신한다.

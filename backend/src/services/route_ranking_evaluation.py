@@ -83,14 +83,22 @@ class RouteRankingEvaluationService:
     def __init__(self, db: Session):
         self.db = db
 
-    def load_requests(self, quality: str | None = None):
-        """actual_duration_sec가 채워진 후보를 요청 단위로 묶어 반환합니다."""
-        query = """
-            SELECT c.route_request_id, c.route_id, c.score, c.actual_duration_sec,
+    # 비교 기준 컬럼. 셋 다 "낮을수록 우수"인 후보 점수입니다.
+    SCORE_COLUMNS = {
+        "heuristic": "c.score",                    # 운영 휴리스틱 비교 점수
+        "model_eta": "c.predicted_duration_sec",   # 경로 모델 ETA
+        "osrm": "c.osrm_duration_sec",             # OSRM 기본 시간
+    }
+
+    def load_requests(self, quality: str | None = None, basis: str = "heuristic"):
+        """actual_duration_sec가 채워진 후보를 요청 단위로 묶어 반환합니다. basis로 비교 기준 컬럼을 고릅니다."""
+        column = self.SCORE_COLUMNS[basis]
+        query = f"""
+            SELECT c.route_request_id, c.route_id, {column} AS score, c.actual_duration_sec,
                    c.actual_duration_quality
             FROM route_request_candidates c
             WHERE c.actual_duration_sec IS NOT NULL
-              AND c.score IS NOT NULL
+              AND {column} IS NOT NULL
         """
         params = {}
         if quality:
@@ -108,5 +116,5 @@ class RouteRankingEvaluationService:
             })
         return [{"route_request_id": key, "candidates": value} for key, value in grouped.items()]
 
-    def evaluate(self, quality: str | None = None):
-        return evaluate_requests(self.load_requests(quality))
+    def evaluate(self, quality: str | None = None, basis: str = "heuristic"):
+        return evaluate_requests(self.load_requests(quality, basis))
