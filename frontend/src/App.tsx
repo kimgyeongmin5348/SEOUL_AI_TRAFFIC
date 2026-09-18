@@ -32,7 +32,7 @@ export default function App() {
           <Route path="/traffic" element={<Traffic />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/weather" element={<Weather />} />
-          <Route path="/prediction" element={<Prediction />} />
+
           <Route path="/favorites" element={<RequireAuth><Favorites /></RequireAuth>} />
           <Route path="/chatbot" element={<Chatbot />} />
           <Route path="/login" element={<Login />} />

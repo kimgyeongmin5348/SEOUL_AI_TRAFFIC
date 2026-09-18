@@ -99,39 +99,6 @@ CREATE TABLE IF NOT EXISTS weather_stations (
   DEFAULT CHARACTER SET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
--- 머신러닝 모델 버전 및 평가 이력
-CREATE TABLE IF NOT EXISTS model_versions (
-    model_version VARCHAR(50) NOT NULL,
-    algorithm VARCHAR(50) NOT NULL,
-    hyperparameters JSON NOT NULL,
-    mae DECIMAL(12, 4) NOT NULL,
-    rmse DECIMAL(12, 4) NOT NULL,
-    r2_score DECIMAL(10, 6) NOT NULL,
-    artifact_path VARCHAR(500) NOT NULL,
-    trained_at DATETIME NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT FALSE,
-    PRIMARY KEY (model_version)
-) ENGINE = InnoDB
-  DEFAULT CHARACTER SET = utf8mb4
-  COLLATE = utf8mb4_unicode_ci;
-
--- 모델 학습 시도 전체 이력 및 leaderboard 원본
-CREATE TABLE IF NOT EXISTS model_training_history (
-    id BIGINT NOT NULL AUTO_INCREMENT,
-    model_version VARCHAR(50) NOT NULL,
-    algorithm VARCHAR(50) NOT NULL,
-    hyperparameters JSON NOT NULL,
-    mae DECIMAL(12, 4) NOT NULL,
-    rmse DECIMAL(12, 4) NOT NULL,
-    r2_score DECIMAL(10, 6) NOT NULL,
-    artifact_path VARCHAR(500) NOT NULL,
-    trained_at DATETIME NOT NULL,
-    accepted BOOLEAN NOT NULL DEFAULT FALSE,
-    PRIMARY KEY (id),
-    KEY idx_training_history_algorithm_rmse (algorithm, rmse),
-    KEY idx_training_history_trained_at (trained_at)
-) ENGINE = InnoDB
-  DEFAULT CHARACTER SET utf8mb4
   COLLATE = utf8mb4_unicode_ci;
 
 -- 교통량 측정지점과 도로 링크 간 공간 매핑
@@ -380,4 +347,51 @@ CREATE TABLE IF NOT EXISTS service_link_standard_links (
         ON DELETE CASCADE
 ) ENGINE = InnoDB
   DEFAULT CHARACTER SET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- 경로 AI 모델 학습 이력 (교통량 model_training_history와 완전 분리)
+-- 경로 모델은 RMSE만으로 비교하면 스케일이 달라 교통량 모델과 섞일 수 없다.
+-- 채택 기준: top1_accuracy DESC, mean_regret_sec ASC
+CREATE TABLE IF NOT EXISTS route_model_training_history (
+    id                         BIGINT         NOT NULL AUTO_INCREMENT,
+    model_version              VARCHAR(50)    NOT NULL,
+    algorithm                  VARCHAR(50)    NOT NULL,
+    hyperparameters            JSON           NOT NULL,
+    mae                        DECIMAL(12, 4) NOT NULL,
+    rmse                       DECIMAL(12, 4) NOT NULL,
+    r2_score                   DECIMAL(10, 6) NOT NULL,
+    top1_accuracy              DECIMAL(7, 6)  NOT NULL,
+    pairwise_ranking_accuracy  DECIMAL(7, 6)  NOT NULL,
+    mean_regret_sec            DECIMAL(10, 2) NOT NULL,
+    od_top1_accuracy           DECIMAL(7, 6)  NULL,
+    od_mean_regret_sec         DECIMAL(10, 2) NULL,
+    od_generalizes             BOOLEAN        NULL,
+    artifact_path              VARCHAR(500)   NOT NULL,
+    trained_at                 DATETIME       NOT NULL,
+    accepted                   BOOLEAN        NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (id),
+    KEY idx_route_training_history_algorithm (algorithm),
+    KEY idx_route_training_history_trained_at (trained_at)
+) ENGINE = InnoDB
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- 경로 AI 모델 활성 버전 관리
+-- is_active=TRUE 인 행 1개가 현재 /api/routes/predict 에서 서빙되는 모델
+CREATE TABLE IF NOT EXISTS route_model_versions (
+    model_version              VARCHAR(50)    NOT NULL,
+    algorithm                  VARCHAR(50)    NOT NULL,
+    hyperparameters            JSON           NOT NULL,
+    mae                        DECIMAL(12, 4) NOT NULL,
+    rmse                       DECIMAL(12, 4) NOT NULL,
+    r2_score                   DECIMAL(10, 6) NOT NULL,
+    top1_accuracy              DECIMAL(7, 6)  NOT NULL,
+    pairwise_ranking_accuracy  DECIMAL(7, 6)  NOT NULL,
+    mean_regret_sec            DECIMAL(10, 2) NOT NULL,
+    artifact_path              VARCHAR(500)   NOT NULL,
+    trained_at                 DATETIME       NOT NULL,
+    is_active                  BOOLEAN        NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (model_version)
+) ENGINE = InnoDB
+  DEFAULT CHARACTER SET utf8mb4
   COLLATE = utf8mb4_unicode_ci;

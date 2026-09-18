@@ -162,7 +162,7 @@ export default function Prediction() {
                 className="text-white/70 text-sm mt-0.5"
                 style={{ fontFamily: "var(--font-body)" }}
               >
-                머신러닝 기반 미래 교통량 예측 UI · 최대 3시간
+                AI 타임머신 기반 특정 도로 미래 통과 속도 예측 · 최대 3시간
               </p>
             </div>
             {predState.isFromDb && (
@@ -410,10 +410,10 @@ export default function Prediction() {
                         fontSize: 12,
                       }}
                       formatter={(value, name) => {
-                        const volume = Number(value ?? 0)
+                        const speed = Number(value ?? 0)
                         return [
-                          volume ? `${volume.toLocaleString()}대` : "미정",
-                          name === "actual" ? "실제 교통량" : "AI 예측",
+                          speed ? `${speed.toLocaleString()} km/h` : "미정",
+                          name === "actual" ? "실제 속도" : "AI 예측 속도",
                         ]
                       }}
                     />
@@ -514,7 +514,7 @@ export default function Prediction() {
                     AI Prediction Model
                   </h4>
                   {[
-                    { label: "알고리즘", value: "XGBoost" },
+                    { label: "알고리즘", value: activeRoad?.algorithm || predState.roads[0]?.algorithm || "Loading..." },
                     {
                       label: "예측 기준",
                       value: new Date().toLocaleTimeString("ko-KR", {
@@ -522,7 +522,7 @@ export default function Prediction() {
                         minute: "2-digit",
                       }),
                     },
-                    { label: "학습 모델", value: "traffic_xgb_baseline_v1" },
+                    { label: "학습 모델", value: activeRoad?.model_version || predState.roads[0]?.model_version || "Loading..." },
                     { label: "Forecast 범위", value: "최대 3시간" },
                   ].map((item) => (
                     <div

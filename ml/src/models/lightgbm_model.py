@@ -1,82 +1,92 @@
-"""LightGBM 기본 회귀 모델 학습 진입점."""
-
-import argparse
 import sys
-from datetime import datetime
 from pathlib import Path
-
 from lightgbm import LGBMRegressor
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from ml.src.util.config import (
-    BASELINE_COLSAMPLE_BYTREE,
-    BASELINE_LEARNING_RATE,
-    BASELINE_N_ESTIMATORS,
-    BASELINE_SUBSAMPLE,
-    RANDOM_STATE,
-    TARGET_COLUMN,
-)
-from ml.src.util.paths import ML_MODELS_DIR, REPORTS_DIR, TRAINING_DATASET
-from ml.src.util.train import evaluate, load_full_dataset, load_time_split, save_if_better
+def train_route_model(
+    *,
+    train,
+    test,
+    od_train=None,
+    od_test=None,
+    params: dict = None,
+    no_db: bool = False,
+) -> tuple:
+    from ml.src.util.config import ROUTE_FEATURE_COLUMNS, ROUTE_LGBM_PARAMS, ROUTE_TARGET_COLUMN
+    from ml.src.util.train import evaluate_route, route_beats_baseline
 
-
-def train_model(*, input_path: Path | None = None, nrows: int | None = None, no_db: bool = False) -> dict:
-    dataset_path = input_path or TRAINING_DATASET
-    parser = argparse.ArgumentParser(description="Train the LightGBM baseline")
-    train, validation, features, cutoff = load_time_split(
-        dataset_path, target=TARGET_COLUMN, nrows=nrows
-    )
-    params = {
-        "objective": "regression",
-        "n_estimators": BASELINE_N_ESTIMATORS,
-        "learning_rate": BASELINE_LEARNING_RATE,
-        "num_leaves": 31,
-        "subsample": BASELINE_SUBSAMPLE,
-        "colsample_bytree": BASELINE_COLSAMPLE_BYTREE,
-        "random_state": RANDOM_STATE,
-        "n_jobs": -1,
-    }
-    validation_model = LGBMRegressor(**params)
-    validation_model.fit(train[features], train[TARGET_COLUMN])
-    metrics = evaluate(validation_model, validation, features, TARGET_COLUMN)
-    full_df, full_features = load_full_dataset(dataset_path, target=TARGET_COLUMN, nrows=nrows)
+    if params is None:
+        params = ROUTE_LGBM_PARAMS.copy()
     model = LGBMRegressor(**params)
-    model.fit(full_df[full_features], full_df[TARGET_COLUMN])
+    
+    import warnings
+    from lightgbm.sklearn import LGBMDeprecationWarning
+    warnings.filterwarnings("ignore", category=LGBMDeprecationWarning)
+    
+    model.fit(
+        train[ROUTE_FEATURE_COLUMNS],
+        train[ROUTE_TARGET_COLUMN],
+        eval_X=test[ROUTE_FEATURE_COLUMNS],
+        eval_y=test[ROUTE_TARGET_COLUMN],
+    )
 
-    version = "traffic_lgbm_baseline_v1"
-    artifact = ML_MODELS_DIR / f"{version}.joblib"
+    metrics = evaluate_route(model, test, ROUTE_FEATURE_COLUMNS)
+
+    from backend.src.services.route_ranking_evaluation import (
+        mean_regret,
+        pairwise_ranking_accuracy,
+        top1_accuracy,
+    )
+    baseline_pred = test["osrm_duration_sec"].to_numpy()
+    test_copy = test.copy()
+    test_copy["pred_score"] = baseline_pred
+    grouped = {}
+    for row in test_copy.itertuples():
+        grouped.setdefault(row.route_request_id, []).append({
+            "route_id": row.route_id,
+            "score": float(row.pred_score),
+            "actual_duration_sec": float(getattr(row, ROUTE_TARGET_COLUMN)),
+        })
+    baseline_requests = [{"route_request_id": k, "candidates": v} for k, v in grouped.items()]
+    baseline = {
+        "baseline_mae": float((test[ROUTE_TARGET_COLUMN] - test["osrm_duration_sec"]).abs().mean()),
+        "baseline_top1_accuracy": top1_accuracy(baseline_requests),
+        "baseline_pairwise_ranking_accuracy": pairwise_ranking_accuracy(baseline_requests),
+        "baseline_mean_regret_sec": mean_regret(baseline_requests),
+    }
+
+    adopted = route_beats_baseline(metrics, baseline)
+
+    version = "route_lgbm_duration_v1"
     result = {
         "model_version": version,
         "algorithm": "LightGBM",
-        "split": "full_historical_train_with_time_validation",
-        "cutoff_time": str(cutoff),
-        "train_rows": len(full_df),
-        "validation_rows": len(validation),
-        "feature_columns": full_features,
         "hyperparameters": params,
-        **metrics,
+        **metrics, **baseline,
+        "accepted": adopted,
     }
-    report_path = REPORTS_DIR / f"{version}_report.csv"
-    accepted = save_if_better(
-        model=model,
-        artifact_path=artifact,
-        report_path=report_path,
-        report=result,
-        no_db=no_db,
-    )
-    result["accepted"] = accepted
-    print(result)
-    return result
+    
+    if od_train is not None and od_test is not None and not od_train.empty and not od_test.empty:
+        od_model = LGBMRegressor(**params)
+        od_model.fit(od_train[ROUTE_FEATURE_COLUMNS], od_train[ROUTE_TARGET_COLUMN])
+        od_metrics = evaluate_route(od_model, od_test, ROUTE_FEATURE_COLUMNS)
+        result.update({
+            "od_top1_accuracy": od_metrics["top1_accuracy"],
+            "od_mean_regret_sec": od_metrics["mean_regret_sec"],
+            "od_generalizes": route_beats_baseline(od_metrics, {
+                "baseline_top1_accuracy": baseline["baseline_top1_accuracy"],
+                "baseline_mean_regret_sec": baseline["baseline_mean_regret_sec"],
+                "baseline_mae": baseline["baseline_mae"],
+            }),
+        })
 
+    return model, result
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train the LightGBM baseline")
-    parser.add_argument("--input", type=Path, default=TRAINING_DATASET)
-    parser.add_argument("--nrows", type=int, default=None)
-    parser.add_argument("--no-db", action="store_true", help="DB model registry 저장 생략")
-    args = parser.parse_args()
-    train_model(input_path=args.input, nrows=args.nrows, no_db=args.no_db)
+    pass
+
+if __name__ == "__main__":
+    main()

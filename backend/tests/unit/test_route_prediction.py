@@ -19,8 +19,8 @@ from backend.src.services.route_prediction import (
 
 
 def candidate(id, duration, road):
-    return SimpleNamespace(id=id, duration_sec=duration,
-                           steps=[SimpleNamespace(name=road, duration_sec=duration)])
+    return SimpleNamespace(id=id, duration_sec=duration, distance_m=1000.0,
+                           steps=[SimpleNamespace(name=road, duration_sec=duration, distance_m=1000.0)])
 
 
 def test_best_saved_artifact_not_rejected_leaderboard_attempt(tmp_path):
