@@ -23,8 +23,8 @@
 
 | 이름 | 담당 및 역할 (Role) | 주요 기여 내용 |
 | :--- | :--- | :--- |
-| **김경민**<br>(@kimgyeongmin5348) | **Frontend / Backend / Infra** | - KMA(기상청)/TOPIS 실시간 수집 스케줄러 및 전체 외부 API 연동 개발<br>- AWS EC2, RDS 인프라 구축 및 전체 데이터베이스 설계/관리<br>- FastAPI 백엔드 서버 및 React 프론트엔드 UI/UX 전체 구현<br>- LLM 챗봇 프롬프트 엔지니어링 및 모델 연동 |
-| **인봉**<br>(@inBBong) | **Data & ML Engineering** | - OSRM 맵 매칭 및 경로 학습 데이터셋(OD 기반) 구축 파이프라인 개발<br>- XGBoost/LightGBM 기반 통행 소요 시간 및 교통량 예측 모델 학습<br>- ML 파이프라인 구축 및 머신러닝 모델 성능 튜닝 |
+| **김경민**<br>([@kimgyeongmin5348](https://github.com/kimgyeongmin5348)) | **Frontend / Backend / Infra** | - KMA(기상청)/TOPIS 실시간 수집 스케줄러 및 전체 외부 API 연동 개발<br>- AWS EC2, RDS 인프라 구축 및 전체 데이터베이스 설계/관리<br>- FastAPI 백엔드 서버 및 React 프론트엔드 UI/UX 전체 구현<br>- LLM 챗봇 프롬프트 엔지니어링 및 모델 연동 |
+| **한인혁**<br>([@inBBong](https://github.com/inBBong)) | **Data & ML Engineering** | - OSRM 맵 매칭 및 경로 학습 데이터셋(OD 기반) 구축 파이프라인 개발<br>- XGBoost/LightGBM 기반 통행 소요 시간 및 교통량 예측 모델 학습<br>- ML 파이프라인 구축 및 머신러닝 모델 성능 튜닝 |
 
 ## 📂 4. 파일 구조 (Project Structure)
 프로젝트는 크게 프론트엔드, 백엔드, 머신러닝 파이프라인, 데이터 수집 스크립트로 분리되어 관리됩니다.
