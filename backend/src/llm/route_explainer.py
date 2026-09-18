@@ -40,7 +40,7 @@ def _template_explanation(evidence: dict[str, Any]) -> str:
     else:
         point2 = f"{roads} 구간의 실시간 통행 흐름이 원활하며 돌발(사고·공사) 지연이 없어요."
 
-    point3 = "시간대별 교통량 패턴과 실시간 주행 데이터를 AI 모델이 종합 분석한 최적 경로예요."
+    point3 = "시간대별 교통량 패턴과 실시간 주행 데이터를 종합 분석한 최적 경로예요."
 
     return f"1. {point1}\n2. {point2}\n3. {point3}"
 
@@ -56,7 +56,7 @@ def explain_route_recommendation(
     if evidence is None:
         return {
             "selected_route_id": None,
-            "text": recommendation.get("message", "설명할 AI 추천 경로가 없습니다."),
+            "text": recommendation.get("message", "설명할 최적 추천 경로가 없습니다."),
             "source": "system",
             "llm_model": None,
         }

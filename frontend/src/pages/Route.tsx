@@ -517,7 +517,7 @@ export default function Route() {
                   fontFamily: "var(--font-display)",
                 }}
               >
-                {loading ? "경로 계산 중…" : "AI 경로 분석"}
+                {loading ? "경로 계산 중…" : "경로 탐색"}
               </button>
             </div>
 
@@ -589,12 +589,12 @@ export default function Route() {
                 className={`route-ai-brief cursor-pointer transition-all ${selected === aiRecommendedRoute.id ? 'ring-2 ring-[#007aff] shadow-lg' : ''}`}
                 onClick={() => setSelected(aiRecommendedRoute.id)}
                 aria-live="polite" 
-                aria-label="AI 추천 브리핑"
+                aria-label="최적 경로 브리핑"
               >
                 <div className="route-ai-brief__glow" aria-hidden="true" />
                 <div className="route-ai-brief__header">
                   <div>
-                    <span className="route-ai-brief__eyebrow">✦ AI ROUTE BRIEF</span>
+                    <span className="route-ai-brief__eyebrow">✦ ROUTE BRIEF</span>
                     <h2>경로 {aiRecommendedRoute.id}를 추천해요</h2>
                   </div>
                   <span className="route-ai-brief__status">추천 완료</span>
@@ -603,7 +603,7 @@ export default function Route() {
                 <div className="route-ai-brief__metrics" aria-label="추천 경로 핵심 정보">
                   <div><span>예상 시간</span><strong>{aiRecommendedRoute.time}분</strong></div>
                   <div><span>주행 거리</span><strong>{aiRecommendedRoute.distance}km</strong></div>
-                  <div><span>추천 방식</span><strong>AI 추천</strong></div>
+                  <div><span>추천 방식</span><strong>최적 경로</strong></div>
                 </div>
 
                 <div className="route-ai-brief__reason">
@@ -614,7 +614,7 @@ export default function Route() {
                       : [
                           "대안 경로 대비 예상 정체 구간이 적어 가장 빠르게 도착할 수 있어요.",
                           "주요 경유 구간의 실시간 소통 흐름이 양호하며 돌발 사고 영향이 없어요.",
-                          "시간대별 교통 흐름 변화를 AI가 종합 분석해 가장 안정적인 경로예요.",
+                          "시간대별 교통 흐름 변화를 종합 분석해 가장 안정적인 경로예요.",
                         ]
                     ).map((sentence, index) => (
                       <li key={`${index}-${sentence}`}>
@@ -627,7 +627,6 @@ export default function Route() {
 
                 <div className="route-ai-brief__footer">
                   <span>주요 경유 · {aiRecommendedRoute.via}</span>
-                  {recommendationMeta && <span>{recommendationMeta}</span>}
                 </div>
               </section>
             )}

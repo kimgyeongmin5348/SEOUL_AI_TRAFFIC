@@ -508,10 +508,10 @@ def record_route_search(req: RouteSearchRequest, user=Depends(current_user), db:
             "label": label,
         })
         db.commit()
-        return {"status": "ok", "message": "寃쎈줈 寃???잛닔媛 湲곕줉?섏뿀?듬땲??"}
+        return {"status": "ok", "message": "성공적으로 기록되었습니다."}
     except SQLAlchemyError:
         db.rollback()
-        raise HTTPException(503, "寃쎈줈 寃??湲곕줉???ㅽ뙣?덉뒿?덈떎.") from None
+        raise HTTPException(503, "기록에 실패했습니다.") from None
 
 # Candidate geometry is supplied by OSRM; precise GPS coordinates are not stored.
 from typing import Annotated
@@ -544,7 +544,7 @@ class RouteCandidate(BaseModel):
     @model_validator(mode="after")
     def consistent_duration(self):
         if abs(sum(s.duration_sec for s in self.steps) - self.duration_sec) > max(2, self.duration_sec * .02):
-            raise ValueError("援ш컙 ?쒓컙 ?⑷퀎媛 寃쎈줈 ?쒓컙怨??쇱튂?댁빞 ?⑸땲??")
+            raise ValueError("구간 시간 합계가 경로 시간과 일치해야 합니다.")
         return self
 
 
@@ -564,7 +564,7 @@ class RoutePredictionRequest(BaseModel):
     @model_validator(mode="after")
     def unique_ids(self):
         if len({c.id for c in self.candidates}) != len(self.candidates):
-            raise ValueError("寃쎈줈 ID媛 以묐났?섏뿀?듬땲??")
+            raise ValueError("경로 ID가 중복되었습니다.")
         return self
 
 
@@ -598,11 +598,11 @@ def predict_route_candidates(req: RoutePredictionRequest, db: Session = Depends(
         raise HTTPException(503, str(exc)) from None
     except SQLAlchemyError:
         db.rollback()
-        raise HTTPException(503, "?ㅼ떆媛?愿痢??곗씠?곕? 遺덈윭?ㅼ? 紐삵빐 AI 異붿쿇???ъ슜?????놁뒿?덈떎.") from None
+        raise HTTPException(503, "실시간 관측 데이터를 불러오지 못해 최적 경로 추천을 사용할 수 없습니다.") from None
     except Exception:
         import logging
         logging.getLogger(__name__).exception("Route model inference failed")
-        raise HTTPException(503, "?숈뒿 紐⑤뜽 異붾줎???ㅽ뙣??AI 異붿쿇???ъ슜?????놁뒿?덈떎.") from None
+        raise HTTPException(503, "추론에 실패해 최적 경로 추천을 사용할 수 없습니다.") from None
 
 
 @app.get("/api/predictions/insights")
@@ -692,7 +692,7 @@ def prediction_roads(q: str = Query(default="", max_length=100), db: Session = D
         """), {"query": q.strip(), "pattern": f"%{q.strip()}%"}).mappings()
         return {"roads": [dict(row) for row in rows]}
     except SQLAlchemyError:
-        raise HTTPException(503, "?꾨줈 紐⑸줉??遺덈윭?ㅼ? 紐삵뻽?듬땲??") from None
+        raise HTTPException(503, "도로 목록을 불러오지 못했습니다.") from None
 
 
 @app.get("/api/predictions/roads/{spot_id}")
@@ -702,7 +702,7 @@ def prediction_for_road(spot_id: str, db: Session = Depends(get_db)):
     except ValueError as exc:
         raise HTTPException(503, str(exc)) from None
     except SQLAlchemyError:
-        raise HTTPException(503, "?꾨줈 ?덉륫 ?곗씠?곕? 遺덈윭?ㅼ? 紐삵뻽?듬땲??") from None
+        raise HTTPException(503, "데이터를 불러오지 못했습니다.") from None
 
 
 from backend.src.llm.chatbot import get_traffic_chat_reply
@@ -735,7 +735,7 @@ if FRONTEND_DIST.is_dir():
     @app.get("/{full_path:path}", include_in_schema=False)
     def serve_frontend(full_path: str):
         if full_path.startswith("api/"):
-            raise HTTPException(404, "API 寃쎈줈瑜?李얠쓣 ???놁뒿?덈떎.")
+            raise HTTPException(404, "API 경로를 찾을 수 없습니다.")
         requested = (FRONTEND_DIST / full_path).resolve()
         if requested.is_relative_to(FRONTEND_DIST.resolve()) and requested.is_file():
             return FileResponse(requested)
