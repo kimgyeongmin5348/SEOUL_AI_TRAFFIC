@@ -419,7 +419,7 @@ export default function Route() {
                   fontFamily: "var(--font-display)",
                 }}
               >
-                {loading ? "경로 계산 중…" : "AI 경로 분석 시작"}
+                {loading ? "경로 계산 중…" : "경로 탐색 시작"}
               </button>
             </div>
 
