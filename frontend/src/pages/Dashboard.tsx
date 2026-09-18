@@ -462,64 +462,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* AI forecast teaser */}
-            <div
-              className="p-4 text-white"
-              style={{
-                borderRadius: 20,
-                background:
-                  "linear-gradient(135deg, rgba(94,92,230,0.85), rgba(0,122,255,0.85))",
-                backdropFilter: "blur(16px)",
-                border: "1px solid rgba(255,255,255,0.2)",
-              }}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    <circle
-                      cx="7"
-                      cy="7"
-                      r="5.5"
-                      stroke="white"
-                      strokeWidth="1.5"
-                    />
-                    <path
-                      d="M4 9l2-3 2 2 2-4"
-                      stroke="white"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </div>
-                <span
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 600,
-                    fontSize: 13,
-                  }}
-                >
-                  AI 예측
-                </span>
-              </div>
-              <p
-                style={{
-                  fontSize: 12,
-                  opacity: 0.9,
-                  fontFamily: "var(--font-body)",
-                  lineHeight: 1.5,
-                }}
-              >
-                수집된 실시간 속도와 돌발상황을 토대로 혼잡도를 예측합니다.
-              </p>
-              <button
-                onClick={() => navigate("/prediction")}
-                className="mt-3 text-xs font-semibold bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-xl transition-colors"
-                style={{ fontFamily: "var(--font-body)" }}
-              >
-                자세히 보기 →
-              </button>
-            </div>
+
           </div>
         </div>
 

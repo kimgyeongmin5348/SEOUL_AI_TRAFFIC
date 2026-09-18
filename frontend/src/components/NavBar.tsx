@@ -13,7 +13,7 @@ export default function NavBar() {
   const desktopLinks = [
     { href: "/", label: "서비스 소개" },
     { href: "/dashboard", label: "실시간 교통" },
-    { href: "/prediction", label: "AI 예측" },
+
     { href: "/chatbot", label: "AI 챗봇" },
     { href: "/favorites", label: "즐겨찾기" },
   ]
@@ -126,23 +126,7 @@ export default function NavBar() {
         </svg>
       ),
     },
-    {
-      href: "/prediction",
-      label: "AI 미래 예측",
-      desc: "딥러닝 기반 3시간 후 예측",
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-          <path
-            d="M2 16l4.5-5 3.5 3 4-6 4 4"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle cx="16" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.6" />
-        </svg>
-      ),
-    },
+
     {
       href: "/favorites",
       label: "나의 즐겨찾기",

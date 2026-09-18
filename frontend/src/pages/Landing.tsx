@@ -85,7 +85,7 @@ export default function Landing() {
           <div className="hero-copy animate-slide-up">
             <div className="eyebrow"><span /> SEOUL MOBILITY INTELLIGENCE</div>
             <h1>도시의 흐름을 읽고,<br /><span>이동의 여유를 찾다.</span></h1>
-            <p className="hero-description">복잡한 서울의 길, 더 명확한 선택.<br />실시간 교통과 날씨, AI 예측을 연결해<br className="sm:hidden" /> 더 나은 이동을 계획하세요.</p>
+            <p className="hero-description">복잡한 서울의 길, 더 명확한 선택.<br />실시간 교통과 날씨, 돌발상황을 연결해<br className="sm:hidden" /> 더 나은 이동을 계획하세요.</p>
             <Link to="/dashboard" className="hero-map-link">실시간 교통 지도 살펴보기 <span aria-hidden="true">↗</span></Link>
             <div className="hero-context">
               <div><span className="context-label">COVERAGE</span><strong>서울 전역</strong></div>

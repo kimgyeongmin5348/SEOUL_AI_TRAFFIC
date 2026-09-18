@@ -912,19 +912,19 @@ export default function Route() {
 
                 {isDetailsOpen && (
                   <div className="animate-fade-in">
-                    {/* 실시간 속도 및 AI 예측 안내 배너 */}
+                    {/* 실시간 속도 및 돌발상황 안내 배너 */}
                     <div className="mb-4 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/60 flex items-start gap-2.5 text-xs text-[#2c3e50] leading-relaxed">
                       <span className="text-base shrink-0 mt-0.5">ℹ️</span>
                       <div>
-                        <span className="font-semibold text-[#007aff]">실시간 속도·AI 경로 분석:</span>
-                        {" "}본 경로는 OSRM 도로망 기본 시간에 <strong className="text-[#1a1a2e]">서울시 실시간 관측 속도 지연, AI 모델의 미래 혼잡도 예측, 실시간 돌발상황(사고·공사)</strong>을 모두 반영하여 실제 체감 소요시간과 최적 경로를 산출합니다.
+                        <span className="font-semibold text-[#007aff]">실시간 속도·돌발상황 분석:</span>
+                        {" "}본 경로는 OSRM 도로망 기본 시간에 <strong className="text-[#1a1a2e]">서울시 실시간 관측 속도 지연, 실시간 돌발상황(사고·공사)</strong>을 모두 반영하여 실제 체감 소요시간과 최적 경로를 산출합니다.
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
                       {[
                         {
-                          label: "AI 최종 예측 소요 시간",
+                          label: "최종 예상 소요 시간",
                           value: selectedRoute?.delayMin > 0
                             ? `${selectedRoute?.time}분 (정체 +${selectedRoute?.delayMin}분)`
                             : `${selectedRoute?.time}분`,
@@ -936,7 +936,7 @@ export default function Route() {
                           color: "#6b6b8a",
                         },
                         {
-                          label: "적용 AI 모델 알고리즘",
+                          label: "경로 탐색 알고리즘",
                           value: selectedRoute.modelVersion ? selectedRoute.modelVersion.replace('route_', '').split('_')[0].toUpperCase() : "기본 OSRM 모델",
                           color: "#5e5ce6",
                         },

@@ -8,7 +8,7 @@ const RoutePage = lazy(() => import("./pages/Route"))
 const Traffic = lazy(() => import("./pages/Traffic"))
 const Incidents = lazy(() => import("./pages/Incidents"))
 const Weather = lazy(() => import("./pages/Weather"))
-const Prediction = lazy(() => import("./pages/Prediction"))
+
 const Favorites = lazy(() => import("./pages/Favorites"))
 const Login = lazy(() => import("./pages/Login"))
 const Chatbot = lazy(() => import("./pages/Chatbot"))

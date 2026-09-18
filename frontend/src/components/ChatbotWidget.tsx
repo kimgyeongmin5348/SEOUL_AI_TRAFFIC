@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect } from "react"
 import { sendChatMessage, ChatMessage } from "../services/api"
 import ChatMessageContent from "./ChatMessageContent"
 
@@ -6,7 +6,7 @@ const SUGGESTIONS = [
   "지금 올림픽대로 정체 심한가요?",
   "비 올 때 운전 주의구간과 우회 팁",
   "강남에서 여의도 갈 때 빠른 경로 추천",
-  "RoadPulse AI 예측 기능이 뭐야?",
+  "RoadPulse 경로 분석 기능이 뭐야?",
 ]
 
 export default function ChatbotWidget() {
@@ -106,7 +106,7 @@ export default function ChatbotWidget() {
                     Thinking
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400">서울시 실시간 교통 & AI 예측</p>
+                <p className="text-[10px] text-slate-400">서울시 실시간 교통 & 경로 안내</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
