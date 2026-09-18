@@ -9,7 +9,7 @@ const features = [
   { number: "01", title: "실시간 교통", desc: "주요 도로의 속도와 혼잡도를 한눈에 확인하세요.", href: "/traffic", tag: "TRAFFIC" },
   { number: "02", title: "돌발상황 확인", desc: "사고, 공사, 통제 정보를 출발 전에 살펴보세요.", href: "/incidents", tag: "INCIDENTS" },
   { number: "03", title: "기상 영향 분석", desc: "날씨가 이동에 미치는 영향을 함께 확인하세요.", href: "/weather", tag: "WEATHER" },
-  { number: "04", title: "AI 교통 예측", desc: "앞으로의 도로 상황을 살펴보고 출발을 계획하세요.", href: "/prediction", tag: "PREDICTION" },
+  { number: "04", title: "최적 경로 분석", desc: "출발 시간별 예상 소요시간을 비교해 최적의 경로를 찾으세요.", href: "/route", tag: "ROUTE" },
 ]
 
 export default function Landing() {
@@ -90,11 +90,11 @@ export default function Landing() {
             <div className="hero-context">
               <div><span className="context-label">COVERAGE</span><strong>서울 전역</strong></div>
               <div><span className="context-label">INSIGHT</span><strong>교통 · 기상 · 돌발</strong></div>
-              <div><span className="context-label">POWERED BY</span><strong>AI 교통 예측</strong></div>
+              <div><span className="context-label">POWERED BY</span><strong>교통 통합 분석</strong></div>
             </div>
           </div>
           <form className="route-planner animate-slide-up-delay-1" onSubmit={(event) => { event.preventDefault(); analyze() }}>
-            <div className="planner-heading"><span className="planner-kicker">PLAN YOUR JOURNEY</span><span className="planner-ai">✦ AI 경로 분석</span></div>
+            <div className="planner-heading"><span className="planner-kicker">PLAN YOUR JOURNEY</span><span className="planner-ai">✦ 최적 경로 탐색</span></div>
             <h2>어디로 이동하시나요?</h2>
             <p className="planner-description">출발지와 도착지를 입력하고 경로를 확인하세요.</p>
             <div className="planner-fields">
@@ -118,7 +118,7 @@ export default function Landing() {
               <button type="button" aria-pressed={timeMode === "custom"} onClick={selectCustomTime}>시간 선택</button>
             </div>
             {timeMode === "custom" && <div className="custom-departure"><label htmlFor="departure-time">원하는 출발 시간</label><input ref={timeInputRef} id="departure-time" type="datetime-local" min={toLocalInput(new Date())} max={toLocalInput(new Date(Date.now() + 3 * 60 * 60_000))} value={departureAt} onChange={(event) => setDepartureAt(event.target.value)} required /></div>}
-            <button type="submit" className="planner-submit" disabled={!origin.trim() || !dest.trim()}>AI로 이동 경로 분석하기 <span aria-hidden="true">→</span></button>
+            <button type="submit" className="planner-submit" disabled={!origin.trim() || !dest.trim()}>최적 이동 경로 분석하기 <span aria-hidden="true">→</span></button>
             <p className="planner-footnote">교통 · 돌발상황 · 기상 정보를 함께 고려합니다</p>
           </form>
         </section>
