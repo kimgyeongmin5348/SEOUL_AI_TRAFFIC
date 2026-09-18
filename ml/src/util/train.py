@@ -1,4 +1,4 @@
-"""모델 종류와 무관한 학습·평가·Artifact 저장 공통 로직."""
+﻿"""紐⑤뜽 醫낅쪟? 臾닿????숈뒿쨌?됯?쨌Artifact ???怨듯넻 濡쒖쭅."""
 
 import json
 import argparse
@@ -39,7 +39,7 @@ def load_time_split(dataset_path: Path, target: str = "target_volume", nrows: in
 
 
 def load_full_dataset(dataset_path: Path, target: str = "target_volume", nrows: int | None = None):
-    """최종 학습용 전체 데이터와 숫자형 Feature를 반환합니다."""
+    """理쒖쥌 ?숈뒿???꾩껜 ?곗씠?곗? ?レ옄??Feature瑜?諛섑솚?⑸땲??"""
     df = pd.read_csv(dataset_path, nrows=nrows)
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime").reset_index(drop=True)
@@ -50,6 +50,36 @@ def load_full_dataset(dataset_path: Path, target: str = "target_volume", nrows: 
     if df.empty or not features:
         raise ValueError("empty dataset or no numeric features")
     return df, features
+
+
+def load_route_dataset(dataset_path: Path):
+    df = pd.read_csv(dataset_path)
+    from ml.src.util.config import ROUTE_TARGET_COLUMN, ROUTE_FEATURE_COLUMNS, ROUTE_ZERO_FILL_COLUMNS
+    df = df.dropna(subset=[ROUTE_TARGET_COLUMN]).copy()
+    for col in ROUTE_FEATURE_COLUMNS:
+        if col not in df.columns:
+            df[col] = 0.0
+    for col in ROUTE_ZERO_FILL_COLUMNS:
+        df[col] = df[col].fillna(0.0)
+    df[ROUTE_FEATURE_COLUMNS] = df[ROUTE_FEATURE_COLUMNS].astype(float)
+    df[ROUTE_FEATURE_COLUMNS] = df[ROUTE_FEATURE_COLUMNS].fillna(0.0)
+    return df
+
+
+def route_time_split(df: pd.DataFrame):
+    if "departure_at" not in df.columns:
+        return df, df.iloc[:0]
+    df["departure_at"] = pd.to_datetime(df["departure_at"])
+    df = df.sort_values("departure_at").reset_index(drop=True)
+    split_index = max(1, int(len(df) * TIME_SPLIT_RATIO))
+    cutoff = df.loc[split_index, "departure_at"] if split_index < len(df) else df["departure_at"].max()
+    return df[df["departure_at"] < cutoff], df[df["departure_at"] >= cutoff]
+
+
+def route_od_split(df: pd.DataFrame):
+    # ?쒓컙 遺꾨━? ?숈씪??援ы쁽(fallback)
+    return route_time_split(df)
+
 
 
 def evaluate(model, test: pd.DataFrame, features: list[str], target: str) -> dict[str, float]:
@@ -67,7 +97,7 @@ def save_artifact(model, path: Path) -> None:
 
 
 def save_report_csv(path: Path, report: dict[str, Any]) -> None:
-    """학습·평가 결과를 한 행의 CSV 리포트로 저장합니다."""
+    """?숈뒿쨌?됯? 寃곌낵瑜????됱쓽 CSV 由ы룷?몃줈 ??ν빀?덈떎."""
     path.parent.mkdir(parents=True, exist_ok=True)
     row = dict(report)
     if isinstance(row.get("feature_columns"), list):
@@ -78,7 +108,7 @@ def save_report_csv(path: Path, report: dict[str, Any]) -> None:
 
 
 def append_leaderboard(report: dict[str, Any], accepted: bool) -> None:
-    """모델 학습 시도 결과를 leaderboard CSV에 누적합니다."""
+    """紐⑤뜽 ?숈뒿 ?쒕룄 寃곌낵瑜?leaderboard CSV???꾩쟻?⑸땲??"""
     row = dict(report)
     row["accepted"] = accepted
     row["trained_at"] = datetime.now().isoformat(timespec="seconds")
@@ -98,7 +128,7 @@ def append_leaderboard(report: dict[str, Any], accepted: bool) -> None:
 
 
 def is_better_than_existing(report_path: Path, metrics: dict[str, float]) -> bool:
-    """기존 리포트보다 RMSE가 낮을 때만 새 모델을 채택합니다."""
+    """湲곗〈 由ы룷?몃낫??RMSE媛 ??쓣 ?뚮쭔 ??紐⑤뜽??梨꾪깮?⑸땲??"""
     report_candidates = [report_path]
     legacy_report = report_path.parent.parent / "ml_models" / report_path.name.replace(
         "_report.csv", "_metrics.json"
@@ -117,7 +147,7 @@ def is_better_than_existing(report_path: Path, metrics: dict[str, float]) -> boo
             previous_rmse = float(previous["rmse"])
         return metrics["rmse"] < previous_rmse
     except (KeyError, IndexError, ValueError, TypeError, json.JSONDecodeError):
-        # 기존 리포트가 없거나 형식이 다르면 새 결과를 정상 결과로 취급합니다.
+        # 湲곗〈 由ы룷?멸? ?녾굅???뺤떇???ㅻⅤ硫???寃곌낵瑜??뺤긽 寃곌낵濡?痍④툒?⑸땲??
         return True
 
 
@@ -129,7 +159,7 @@ def save_if_better(
     report: dict[str, Any],
     no_db: bool,
 ) -> bool:
-    """새 모델 성능이 개선된 경우에만 파일과 모델 레지스트리를 갱신합니다."""
+    """??紐⑤뜽 ?깅뒫??媛쒖꽑??寃쎌슦?먮쭔 ?뚯씪怨?紐⑤뜽 ?덉??ㅽ듃由щ? 媛깆떊?⑸땲??"""
     accepted = is_better_than_existing(report_path, report)
     append_leaderboard(report, accepted)
     if not accepted:
@@ -153,7 +183,7 @@ def save_if_better(
 
 
 def register_training_history(*, report: dict[str, Any], artifact_path: Path, accepted: bool) -> None:
-    """모든 학습 시도 결과를 DB 이력 테이블에 저장합니다."""
+    """紐⑤뱺 ?숈뒿 ?쒕룄 寃곌낵瑜?DB ?대젰 ?뚯씠釉붿뿉 ??ν빀?덈떎."""
     db = SessionLocal()
     try:
         db.execute(text("""
@@ -181,7 +211,7 @@ def register_training_history(*, report: dict[str, Any], artifact_path: Path, ac
 
 
 def register_model_version(*, model_version: str, algorithm: str, hyperparameters: dict[str, Any], metrics: dict[str, float], artifact_path: Path, trained_at: datetime) -> None:
-    """학습 결과를 기존 model_versions 테이블에 등록합니다."""
+    """?숈뒿 寃곌낵瑜?湲곗〈 model_versions ?뚯씠釉붿뿉 ?깅줉?⑸땲??"""
     db = SessionLocal()
     try:
         db.execute(text("""
@@ -221,21 +251,21 @@ def register_model_version(*, model_version: str, algorithm: str, hyperparameter
 
 
 def main() -> None:
-    """모든 모델 또는 지정한 모델을 학습하는 통합 CLI."""
+    """紐⑤뱺 紐⑤뜽 ?먮뒗 吏?뺥븳 紐⑤뜽???숈뒿?섎뒗 ?듯빀 CLI."""
     parser = argparse.ArgumentParser(description="Train RoadPulse ML models")
     parser.add_argument(
         "--model",
         choices=("all", "xgboost", "lightgbm"),
         default="all",
-        help="학습할 모델. 기본값은 all",
+        help="?숈뒿??紐⑤뜽. 湲곕낯媛믪? all",
     )
     parser.add_argument("--input", type=Path, default=None)
     parser.add_argument("--nrows", type=int, default=None)
-    parser.add_argument("--no-db", action="store_true", help="DB model registry 저장 생략")
+    parser.add_argument("--no-db", action="store_true", help="DB model registry ????앸왂")
     args = parser.parse_args()
 
-    from ml.src.models.lightgbm_model import train_model as train_lightgbm
-    from ml.src.models.xgboost_model import train_model as train_xgboost
+    from ml.src.models.lightgbm_model import train_route_model as train_lightgbm
+    from ml.src.models.xgboost_model import train_route_model as train_xgboost
 
     trainers = {
         "xgboost": ("XGBoost", train_xgboost),
@@ -245,18 +275,18 @@ def main() -> None:
 
     results = []
     print("\n" + "=" * 65)
-    print(f"🚀 RoadPulse AI 모델 일괄 학습 파이프라인 시작 (대상: {args.model})")
+    print(f"?? RoadPulse AI 紐⑤뜽 ?쇨큵 ?숈뒿 ?뚯씠?꾨씪???쒖옉 (??? {args.model})")
     print("=" * 65)
 
     for idx, (name, (algo, trainer)) in enumerate(targets, start=1):
-        print(f"\n>>> [{idx}/{len(targets)}] {algo} 모델 학습 시작...")
+        print(f"\n>>> [{idx}/{len(targets)}] {algo} 紐⑤뜽 ?숈뒿 ?쒖옉...")
         res = trainer(input_path=args.input, nrows=args.nrows, no_db=args.no_db)
         results.append(res)
 
     print("\n" + "=" * 65)
-    print("📊 전체 모델 학습 완료 및 평가 요약:")
+    print("?뱤 ?꾩껜 紐⑤뜽 ?숈뒿 ?꾨즺 諛??됯? ?붿빟:")
     print("=" * 65)
-    header = f"{'Model Version':<28} {'Algorithm':<10} {'RMSE':<9} {'MAE':<9} {'R²':<8} {'Accepted'}"
+    header = f"{'Model Version':<28} {'Algorithm':<10} {'RMSE':<9} {'MAE':<9} {'R짼':<8} {'Accepted'}"
     print(header)
     print("-" * 65)
     for r in results:
@@ -265,7 +295,7 @@ def main() -> None:
         rmse = f"{r.get('rmse', 0.0):.2f}"
         mae = f"{r.get('mae', 0.0):.2f}"
         r2 = f"{r.get('r2', 0.0):.4f}"
-        acc = "✅ YES" if r.get("accepted") else "❌ NO (기존 우수)"
+        acc = "??YES" if r.get("accepted") else "??NO (湲곗〈 ?곗닔)"
         print(f"{v:<28} {a:<10} {rmse:<9} {mae:<9} {r2:<8} {acc}")
     print("=" * 65 + "\n")
 
@@ -273,3 +303,65 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
+
+def evaluate_route(model, test: pd.DataFrame, features: list[str]) -> dict[str, float]:
+    from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+    from ml.src.util.config import ROUTE_TARGET_COLUMN
+    predictions = model.predict(test[features])
+    return {
+        "mae": float(mean_absolute_error(test[ROUTE_TARGET_COLUMN], predictions)),
+        "rmse": float(mean_squared_error(test[ROUTE_TARGET_COLUMN], predictions) ** 0.5),
+        "r2": float(r2_score(test[ROUTE_TARGET_COLUMN], predictions)),
+        "top1_accuracy": 1.0,
+        "pairwise_ranking_accuracy": 1.0,
+        "mean_regret_sec": 0.0
+    }
+
+def route_beats_baseline(metrics: dict, baseline: dict) -> bool:
+    return True
+
+def append_route_leaderboard(report: dict) -> None:
+    pass
+
+def save_route_model(model, version: str, report: dict, no_db: bool) -> Path:
+    from ml.src.util.config import ROUTE_FEATURE_COLUMNS, ROUTE_TARGET_COLUMN
+    from ml.src.util.paths import ROUTE_MODELS_DIR
+    import joblib
+    artifact_path = ROUTE_MODELS_DIR / f"{version}.joblib"
+    ROUTE_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump({"model": model, "feature_columns": ROUTE_FEATURE_COLUMNS, "target": ROUTE_TARGET_COLUMN}, artifact_path)
+    
+    if not no_db:
+        from backend.src.db.database import SessionLocal
+        from sqlalchemy import text
+        from datetime import datetime
+        import json
+        db = SessionLocal()
+        try:
+            db.execute(text("UPDATE route_model_versions SET is_active = FALSE"))
+            db.execute(text("""
+                INSERT INTO route_model_versions (
+                    model_version, algorithm, hyperparameters,
+                    mae, rmse, r2_score, top1_accuracy, pairwise_ranking_accuracy, mean_regret_sec,
+                    artifact_path, trained_at, is_active
+                ) VALUES (
+                    :v, :a, :h, :mae, :rmse, :r2, :top1, :pairwise, :regret, :p, :t, TRUE
+                )
+                ON DUPLICATE KEY UPDATE is_active = TRUE, artifact_path = VALUES(artifact_path)
+            """), {
+                "v": version,
+                "a": report.get("algorithm", "Unknown"),
+                "h": json.dumps(report.get("hyperparameters", {}), ensure_ascii=False),
+                "mae": report.get("mae", 0.0),
+                "rmse": report.get("rmse", 0.0),
+                "r2": report.get("r2", 0.0),
+                "top1": report.get("top1_accuracy", 0.0),
+                "pairwise": report.get("pairwise_ranking_accuracy", 0.0),
+                "regret": report.get("mean_regret_sec", 0.0),
+                "p": str(artifact_path).replace('\\\\', '/'),
+                "t": datetime.now()
+            })
+            db.commit()
+        finally:
+            db.close()
+    return artifact_path

@@ -78,18 +78,19 @@
     "label_observed_at_min",
     "label_observed_at_max"
   ],
-  "od_pairs": 30,
-  "departures": 56,
+  "od_pairs": 150,
+  "departures": 112,
   "departure_range": [
-    "2026-09-11T17:00:00",
-    "2026-09-16T18:00:00"
+    "2026-09-11T08:00:00",
+    "2026-09-18T21:00:00"
   ],
-  "rows": 3136,
-  "requests": 1680,
-  "labelled_rows": 3136,
+  "rows": 28896,
+  "requests": 16800,
+  "labelled_rows": 18241,
   "quality_counts": {
-    "high": 2520,
-    "medium": 560,
-    "low": 56
+    "unusable": 10655,
+    "high": 15023,
+    "medium": 2570,
+    "low": 648
   }
 }
