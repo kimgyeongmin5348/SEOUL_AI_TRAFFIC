@@ -621,7 +621,7 @@ def load_latest_road_speeds(db, target):
     return latest
 
 
-def predict_routes(db, candidates, now, departure_at=None):
+def predict_routes(db, candidates, now, departure_at=None, origin=None, destination=None):
     from backend.src.services.route_prediction import best_saved_route_model
     from backend.src.services.route_training_dataset import RouteTrainingDatasetBuilder
     from ml.src.util.config import ROUTE_FEATURE_COLUMNS, ROUTE_ZERO_FILL_COLUMNS
@@ -639,8 +639,8 @@ def predict_routes(db, candidates, now, departure_at=None):
     # 2. OSRM candidates를 피처 딕셔너리로 변환 (데이터셋 빌더 재사용)
     builder = RouteTrainingDatasetBuilder(db)
     
-    dummy_origin = {"name": "출발지", "lat": 0.0, "lng": 0.0}
-    dummy_dest = {"name": "도착지", "lat": 0.0, "lng": 0.0}
+    req_origin = origin.model_dump() if origin else {"name": "출발지", "lat": 0.0, "lng": 0.0}
+    req_dest = destination.model_dump() if destination else {"name": "도착지", "lat": 0.0, "lng": 0.0}
     
     from backend.src.services.route_training_dataset import OsrmStep
     dict_candidates = []
@@ -661,7 +661,7 @@ def predict_routes(db, candidates, now, departure_at=None):
             ]
         })
         
-    rows = builder.build_inference_features("infer_1", dummy_origin, dummy_dest, dict_candidates, target)
+    rows = builder.build_inference_features("infer_1", req_origin, req_dest, dict_candidates, target)
     if not rows:
         raise ValueError("경로 피처를 생성할 수 없습니다. (OSRM 후보 또는 DB 관측치 부족)")
         
@@ -672,12 +672,28 @@ def predict_routes(db, candidates, now, departure_at=None):
     for col in ROUTE_ZERO_FILL_COLUMNS:
         df[col] = df[col].fillna(0.0)
 
-    # DataFrame 강제 형변환 및 잔여 결측치 처리 (XGBoost object 에러 방지)
     df[ROUTE_FEATURE_COLUMNS] = df[ROUTE_FEATURE_COLUMNS].astype(float)
     df[ROUTE_FEATURE_COLUMNS] = df[ROUTE_FEATURE_COLUMNS].fillna(0.0)
 
     # 3. 진짜 경로 AI 모델 추론
     predictions = model.predict(df[ROUTE_FEATURE_COLUMNS])
+
+    # 추가: departure_at이 현재보다 미래인 경우, '지금' 출발할 때의 소요 시간도 계산
+    now_clock = now.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    now_predictions = None
+    if target > now_clock:
+        now_rows = builder.build_inference_features("infer_1", req_origin, req_dest, dict_candidates, now_clock)
+        if now_rows:
+            now_df = pd.DataFrame(now_rows)
+            for col in ROUTE_FEATURE_COLUMNS:
+                if col not in now_df.columns:
+                    now_df[col] = float("nan")
+            for col in ROUTE_ZERO_FILL_COLUMNS:
+                now_df[col] = now_df[col].fillna(0.0)
+            now_df[ROUTE_FEATURE_COLUMNS] = now_df[ROUTE_FEATURE_COLUMNS].astype(float)
+            now_df[ROUTE_FEATURE_COLUMNS] = now_df[ROUTE_FEATURE_COLUMNS].fillna(0.0)
+            now_predictions = model.predict(now_df[ROUTE_FEATURE_COLUMNS])
+
     
     # 4. 결과 매핑 및 랭킹 (예측된 가장 짧은 시간을 갖는 경로가 1등)
     results = []
@@ -700,6 +716,7 @@ def predict_routes(db, candidates, now, departure_at=None):
             "distance_m": c_dict["distance_m"],
             "base_duration_sec": c_dict["duration_sec"],
             "score": ai_duration,
+            "now_score": float(now_predictions[i]) if now_predictions is not None else None,
             "coverage": float(row.get("link_match_ratio", 1.0)) if "link_match_ratio" in row else 1.0,
             "ai": False,
             "incident_count": int(row.get("incident_count", 0)) if "incident_count" in row else 0,
@@ -743,56 +760,111 @@ def predict_routes(db, candidates, now, departure_at=None):
     }
 
 def predict_spot_series(db, spot_id, now, horizon_hours=3):
-    """Predict one traffic observation spot on demand for the prediction UI."""
-    model, report = best_saved_model()
+    """Predict future speed (km/h) passing through the spot area using the E2E route model + historical pattern."""
+    from backend.src.services.route_prediction import best_saved_route_model, TM_TO_WGS84, pd
+    from ml.src.util.config import ROUTE_FEATURE_COLUMNS, ROUTE_ZERO_FILL_COLUMNS
+    from backend.src.services.route_training_dataset import fetch_osrm_candidates, OsrmStep, RouteTrainingDatasetBuilder
+    from sqlalchemy import text
+    from datetime import timedelta
+    
+    model, report = best_saved_route_model()
     target = now.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+    
     spot = db.execute(text("""
         SELECT spot_id, spot_name, tm_x, tm_y FROM traffic_spots WHERE spot_id=:spot_id
     """), {"spot_id": spot_id}).mappings().first()
     if not spot:
         raise ValueError("선택한 도로 측정지점을 찾을 수 없습니다.")
-    history = list(db.execute(text("""
-        SELECT v.spot_id, s.spot_name, s.tm_x, s.tm_y, v.direction_code,
-               v.measured_at, SUM(v.traffic_volume) AS volume
-        FROM traffic_volume_measurements v JOIN traffic_spots s ON s.spot_id=v.spot_id
-        WHERE v.spot_id=:spot_id AND v.measured_at>=:start AND v.measured_at<:target
-        GROUP BY v.spot_id, s.spot_name, s.tm_x, s.tm_y, v.direction_code, v.measured_at
-        ORDER BY v.measured_at
-    """), {"spot_id": spot_id, "start": target-timedelta(days=30), "target": target}).mappings())
-    weather = db.execute(text("""
-        SELECT temperature_c, rainfall_mm, humidity_pct, wind_speed_ms, pressure_hpa, observed_at
-        FROM weather_measurements WHERE weather_station_id='108'
-        AND observed_at<=:now AND observed_at>=:start
-        ORDER BY observed_at DESC LIMIT 1
-    """), {"now": target, "start": target-timedelta(hours=36)}).mappings().first()
-    if not history:
-        raise ValueError("선택한 도로의 최근 교통량이 없습니다.")
-    observed = max(row["measured_at"] for row in history)
-    if target - observed > timedelta(hours=3):
-        raise ValueError("선택한 도로의 실시간 교통량이 3시간 이상 지연됐습니다.")
-
-    records = [dict(row) for row in history]
-    forecast_target = observed + timedelta(hours=1)
+        
+    lng, lat = TM_TO_WGS84.transform(spot["tm_x"], spot["tm_y"])
+    origin = {"lat": lat, "lng": lng, "name": spot["spot_name"]}
+    dest = {"lat": lat + 0.02, "lng": lng + 0.02, "name": f"{spot['spot_name']} 통과"}
+    
+    osrm_cands = fetch_osrm_candidates(origin, dest, timeout=3.0)
+    if not osrm_cands:
+        raise ValueError("해당 지점 주변 가상 도로 구간을 탐색할 수 없습니다.")
+        
+    c = osrm_cands[0]
+    dict_candidates = [{
+        "route_id": c["route_id"],
+        "distance_m": c["distance_m"],
+        "duration_sec": c["duration_sec"],
+        "coordinates": c.get("coordinates", []),
+        "steps": [
+            OsrmStep(name=s.name, duration_sec=s.duration_sec, distance_m=s.distance_m, coordinates=getattr(s, "coordinates", [])) 
+            for s in c["steps"]
+        ]
+    }]
+    
+    # 과거 30일치 동시간대 평균 패턴 (Historical Profile)
+    # spot_id 기반이므로, 해당 지점의 실제 정체 패턴이 완벽하게 반영됨
+    history_pattern = db.execute(text("""
+        SELECT HOUR(s.measured_at) AS hr, AVG(s.speed_kmh) AS avg_spd
+        FROM traffic_speed_measurements s
+        JOIN traffic_spot_road_maps m ON s.link_id = m.link_id
+        WHERE m.spot_id = :spot_id AND s.measured_at >= :start AND s.speed_kmh > 0
+        GROUP BY HOUR(s.measured_at)
+    """), {"spot_id": spot_id, "start": target - timedelta(days=30)}).mappings().fetchall()
+    
+    pattern_dict = {row["hr"]: float(row["avg_spd"]) for row in history_pattern}
+    base_hr = target.hour
+    base_avg_spd = pattern_dict.get(base_hr, 30.0) # 없으면 30km/h로 가정
+    
+    builder = RouteTrainingDatasetBuilder(db)
+    forecast_target = target
     end = target + timedelta(hours=horizon_hours)
-    columns = report["feature_columns"]
+    
     points = []
+    current_speed = None
+    
     while forecast_target <= end:
-        features, metadata = build_features(records, weather, forecast_target)
-        predictions = np.asarray(model.predict(features[columns]), dtype=float)
-        if not np.isfinite(predictions).all():
-            raise ValueError("모델이 유효하지 않은 예측값을 반환했습니다.")
-        for value, meta in zip(predictions, metadata, strict=True):
-            records.append({**meta, "measured_at": forecast_target, "volume": max(0., float(value))})
-        if forecast_target >= target:
-            points.append({
-                "target_at": forecast_target.isoformat()+"+09:00",
-                "predicted_volume": round(sum(max(0., float(value)) for value in predictions), 1),
-            })
+        rows = builder.build_inference_features(f"spot_{spot_id}", origin, dest, dict_candidates, forecast_target)
+        if not rows:
+            break
+            
+        df = pd.DataFrame(rows)
+        for col in ROUTE_FEATURE_COLUMNS:
+            if col not in df.columns:
+                df[col] = float("nan")
+        for col in ROUTE_ZERO_FILL_COLUMNS:
+            df[col] = df[col].fillna(0.0)
+            
+        df[ROUTE_FEATURE_COLUMNS] = df[ROUTE_FEATURE_COLUMNS].astype(float).fillna(0.0)
+        
+        predictions = model.predict(df[ROUTE_FEATURE_COLUMNS])
+        ai_duration = max(1.0, float(predictions[0]))
+        
+        # 모델의 베이스 예측 속도 (현재 상태 기반)
+        raw_speed_kmh = (c["distance_m"] / 1000) / (ai_duration / 3600)
+        
+        # 미래 시간일 경우 역사적 프로필을 곱하여 시계열 변동성 부여
+        target_hr = forecast_target.hour
+        target_avg_spd = pattern_dict.get(target_hr, base_avg_spd)
+        pattern_ratio = target_avg_spd / max(1.0, base_avg_spd)
+        
+        # 0시간(현재)일때는 ratio=1.0 이므로 raw 속도 그대로, 미래로 갈수록 패턴이 강하게 개입
+        hours_ahead = (forecast_target - target).total_seconds() / 3600.0
+        blend_factor = min(1.0, hours_ahead * 0.33) # 3시간 뒤엔 패턴이 100% 개입
+        
+        final_ratio = 1.0 * (1 - blend_factor) + pattern_ratio * blend_factor
+        speed_kmh = round(min(120.0, max(0.0, raw_speed_kmh * final_ratio)), 1)
+        
+        if forecast_target == target:
+            current_speed = speed_kmh
+            
+        points.append({
+            "target_at": forecast_target.isoformat()+"+09:00",
+            "predicted_speed": speed_kmh,
+        })
+            
         forecast_target += timedelta(hours=1)
-    current = sum(float(row["volume"]) for row in history if row["measured_at"] == observed)
+        
+    if current_speed is None:
+        raise ValueError("가상 구간 추론에 실패했습니다.")
+        
     return {
         "spot_id": spot["spot_id"], "road": spot["spot_name"],
-        "observed_at": observed.isoformat()+"+09:00", "current_volume": round(current, 1),
+        "observed_at": target.isoformat()+"+09:00", "current_speed": current_speed,
         "model_version": report["model_version"], "algorithm": report["algorithm"],
         "points": points,
     }

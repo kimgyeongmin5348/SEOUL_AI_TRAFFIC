@@ -10,6 +10,7 @@ import {
   fetchFavoriteRoutes,
   fetchNearbyParking,
   recordRouteSearch,
+  fetchIncidentsData,
   FavoriteRouteItem,
   ParkingLotItem,
 } from "../services/api"
@@ -26,16 +27,45 @@ const POPULAR_ROUTES = [
   { from: "노원구 상계동", to: "서초구 양재동", label: "노원 ➔ 양재" },
 ]
 
-function explanationSentences(text: string | null | undefined) {
+function explanationSentences(text: string | null | undefined): string[] {
   if (!text) return []
   const cleaned = text
     .replace(/\*\*/g, "")
-    .replace(/^\s*(?:추천 이유|AI 추천 근거)\s*[:：]\s*/i, "")
-    .replace(/\s+/g, " ")
+    .replace(/^\s*(?:추천 이유|AI 추천 근거|선정 이유|AI 추천 이유)\s*[:：]\s*/i, "")
     .trim()
-  return (cleaned.match(/[^.!?]+[.!?]?/g) || [cleaned])
-    .map((sentence) => sentence.trim())
-    .filter(Boolean)
+
+  // 1. 줄바꿈으로 분리
+  const lines = cleaned
+    .split(/\r?\n+/)
+    .map((line) => line.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, "").trim())
+    .filter((line) => line.length > 5)
+
+  if (lines.length >= 2) {
+    return lines.slice(0, 3)
+  }
+
+  // 2. 인라인 번호 매김 (점/괄호 뒤에 반드시 공백 필수: "1. 이유 2. 이유", 소수점 3.5 보호)
+  const inlineNumbered = cleaned
+    .split(/(?:^|\s+)(?:\d+[.)]|[-•*])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 5)
+
+  if (inlineNumbered.length >= 2) {
+    return inlineNumbered.slice(0, 3)
+  }
+
+  // 3. 문장 단위 분리 (마침표 뒤 공백이 있고 뒤에 문자가 올 때, 소수점은 공백이 없으므로 안전)
+  const sentences = cleaned
+    .split(/(?<=[.!?])\s+(?=[^\d\s])/)
+    .map((s) => s.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, "").trim())
+    .filter((s) => s.length > 5)
+
+  if (sentences.length >= 2) {
+    return sentences.slice(0, 3)
+  }
+
+  const single = cleaned.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, "").trim()
+  return single ? [single] : []
 }
 
 function shortExplanation(text: string | null | undefined) {
@@ -52,6 +82,10 @@ export default function Route() {
   const departureAt = searchParams.get("departure") || undefined
   const [originPlace, setOriginPlace] = useState<PlaceSuggestion | null>(null)
   const [destPlace, setDestPlace] = useState<PlaceSuggestion | null>(null)
+  
+  const [departureOffset, setDepartureOffset] = useState<number>(0) // in minutes
+  const [showTrafficLines, setShowTrafficLines] = useState(true)
+  const [showIncidents, setShowIncidents] = useState(true)
 
   const [origin, setOrigin] = useState(initialOrigin)
   const [dest, setDest] = useState(initialDest)
@@ -133,6 +167,15 @@ export default function Route() {
     })
   }, [user])
 
+  const [incidents, setIncidents] = useState<any[]>([])
+  useEffect(() => {
+    fetchIncidentsData().then((res) => {
+      if (res && res.incidents) {
+        setIncidents(res.incidents)
+      }
+    }).catch(() => {})
+  }, [])
+
   const runAnalysis = async (startPlace: PlaceSuggestion, endPlace: PlaceSuggestion) => {
     const id = ++requestId.current
     setLoading(true)
@@ -154,7 +197,17 @@ export default function Route() {
           lots: [] as ParkingLotItem[],
           error: parkingError instanceof Error ? parkingError.message : "주변 주차장을 불러오지 못했습니다.",
         }))
-      const res = await getLiveSeoulRoutes(startPlace, endPlace, departureAt)
+      
+      let targetDepartureAt: string | undefined = undefined
+      if (departureOffset > 0) {
+        const d = new Date()
+        d.setMinutes(d.getMinutes() + departureOffset)
+        targetDepartureAt = d.toISOString()
+      } else if (departureAt) {
+        targetDepartureAt = departureAt
+      }
+
+      const res = await getLiveSeoulRoutes(startPlace, endPlace, targetDepartureAt)
       if (id !== requestId.current) return
       setPredictionMessage(res.predictionMessage)
       setRouteList(res.routes)
@@ -468,6 +521,30 @@ export default function Route() {
               </button>
             </div>
 
+            {/* 타임머신 출발 시간 선택 */}
+            <div className="mt-3 pt-2 border-t border-black/5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              <span className="text-[11px] font-semibold text-[#4a4a68] shrink-0 mr-0.5">출발 시간:</span>
+              {[
+                { label: "지금", offset: 0 },
+                { label: "+30분", offset: 30 },
+                { label: "+1시간", offset: 60 },
+                { label: "+2시간", offset: 120 },
+                { label: "+3시간", offset: 180 },
+              ].map((opt) => (
+                <button
+                  key={opt.offset}
+                  onClick={() => setDepartureOffset(opt.offset)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors ${
+                    departureOffset === opt.offset
+                      ? "bg-[#007aff] text-white shadow-sm border-transparent"
+                      : "bg-[#f0f2f8] text-[#4a4a68] hover:bg-[#e4e7f0] border border-black/5"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
             {locationMessage && <p role="status" className="mt-2.5 text-xs text-[#6b6b8a]">{locationMessage}</p>}
             {predictionMessage && !hasResults && <p role="status" className="mt-2.5 text-xs sm:text-sm text-[#4a4a68] font-medium">{predictionMessage}</p>}
             {error && <p role="alert" className="mt-2.5 text-xs sm:text-sm text-red-600">{error}</p>}
@@ -535,8 +612,9 @@ export default function Route() {
                     {(aiExplanation.length > 0
                       ? aiExplanation
                       : [
-                          "기본 소요시간과 예측 교통량을 함께 비교해 가장 유리한 후보를 골랐어요.",
-                          "도로 상황에 따라 실제 도착 시간은 달라질 수 있어요.",
+                          "대안 경로 대비 예상 정체 구간이 적어 가장 빠르게 도착할 수 있어요.",
+                          "주요 경유 구간의 실시간 소통 흐름이 양호하며 돌발 사고 영향이 없어요.",
+                          "시간대별 교통 흐름 변화를 AI가 종합 분석해 가장 안정적인 경로예요.",
                         ]
                     ).map((sentence, index) => (
                       <li key={`${index}-${sentence}`}>
@@ -700,8 +778,9 @@ export default function Route() {
                 originPoint={originPoint || undefined}
                 destPoint={destPoint || undefined}
                 parkingLots={parkingLots}
-                enableTraffic={false}
-                enableIncidents={false}
+                enableTraffic={showTrafficLines}
+                enableIncidents={showIncidents}
+                incidents={incidents}
                 enableParking={true}
                 selectedParkingLotId={selectedParkingCode}
                 onSelectParkingLot={(lot) => setSelectedParkingCode(lot ? lot.parking_code : null)}
@@ -710,31 +789,57 @@ export default function Route() {
 
             {(parkingLots.length > 0 || parkingMessage) && (
               <section className="glass p-4 sm:p-5" style={{ borderRadius: 20 }} aria-label="도착지 주변 주차장">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">🅿️</span>
-                    <h3 className="text-[#1a1a2e] font-semibold" style={{ fontFamily: "var(--font-display)", fontSize: 16 }}>
-                      도착지 주변 주차장 {parkingLots.length > 0 && `(${parkingLots.length}곳)`}
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-[#6b6b8a]">직선거리 반경 1.5km</span>
-                    {parkingLots.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setIsParkingCollapsed((prev) => !prev)}
-                        className="text-xs font-semibold text-[#007aff] hover:underline px-2.5 py-1 rounded-lg bg-blue-50/80 border border-blue-200/50 cursor-pointer"
+                {parkingLots.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsParkingCollapsed((prev) => !prev)}
+                    className={`w-full flex items-center justify-between text-left hover:opacity-80 transition-opacity cursor-pointer ${
+                      !isParkingCollapsed || parkingMessage ? "mb-3" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🅿️</span>
+                      <h3
+                        className="text-[#1a1a2e]"
+                        style={{
+                          fontFamily: "var(--font-display)",
+                          fontWeight: 600,
+                          fontSize: 16,
+                        }}
                       >
-                        {isParkingCollapsed ? "목록 펼치기 ▾" : "목록 접기 ▴"}
-                      </button>
-                    )}
+                        도착지 주변 주차장 ({parkingLots.length}곳)
+                      </h3>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-[#6b6b8a]">직선거리 반경 1.5km</span>
+                      <span className="text-[#007aff] text-xl leading-none">
+                        {isParkingCollapsed ? "+" : "−"}
+                      </span>
+                    </div>
+                  </button>
+                ) : (
+                  <div className={`flex items-center justify-between ${parkingMessage ? "mb-3" : ""}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🅿️</span>
+                      <h3
+                        className="text-[#1a1a2e]"
+                        style={{
+                          fontFamily: "var(--font-display)",
+                          fontWeight: 600,
+                          fontSize: 16,
+                        }}
+                      >
+                        도착지 주변 주차장
+                      </h3>
+                    </div>
+                    <span className="text-xs text-[#6b6b8a]">직선거리 반경 1.5km</span>
                   </div>
-                </div>
+                )}
 
                 {parkingMessage && <p role="status" className="text-sm text-[#6b6b8a] mt-1">{parkingMessage}</p>}
 
                 {!isParkingCollapsed && parkingLots.length > 0 && (
-                  <div className="grid gap-2.5 sm:grid-cols-2 mt-3">
+                  <div className="grid gap-2.5 sm:grid-cols-2">
                     {parkingLots.map((lot) => {
                       const isSelected = selectedParkingCode === lot.parking_code
                       const hasLive = lot.realtime_status === "AVAILABLE" && lot.available_spaces !== null
@@ -784,8 +889,11 @@ export default function Route() {
             {selectedRoute && (
               <div className="glass p-4 sm:p-5" style={{ borderRadius: 20 }}>
                 <button 
+                  type="button"
                   onClick={() => setIsDetailsOpen(!isDetailsOpen)}
-                  className="w-full flex items-center justify-between mb-3 hover:opacity-80 transition-opacity"
+                  className={`w-full flex items-center justify-between text-left hover:opacity-80 transition-opacity cursor-pointer ${
+                    isDetailsOpen ? "mb-3" : ""
+                  }`}
                 >
                   <h3
                     className="text-[#1a1a2e]"

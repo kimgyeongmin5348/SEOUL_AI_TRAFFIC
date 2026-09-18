@@ -1,0 +1,78 @@
+{
+  "model_version": "route_lightgbm_duration_v1_tuned",
+  "algorithm": "LightGBM",
+  "rmse": 0.0,
+  "target_at": "2026-09-18T22:00:00+09:00",
+  "available": true,
+  "routes": [
+    {
+      "id": "A",
+      "steps": [
+        {
+          "name": "강남대로",
+          "distance_m": 10000.0,
+          "duration_sec": 600.0,
+          "speed_kmh": 60.00000000000001,
+          "links": []
+        }
+      ],
+      "distance_m": 10000.0,
+      "base_duration_sec": 600.0,
+      "score": 1350.1533173610455,
+      "coverage": 0.0,
+      "ai": true,
+      "incident_count": 0,
+      "predicted_volume": 0,
+      "traffic_penalty_sec": 750.1533173610455,
+      "incident_penalty_sec": 0,
+      "speed_penalty_sec": 0,
+      "speed_match_ratio": 0.0,
+      "speed_observed_at": "2026-09-18T22:00:00",
+      "incidents": [],
+      "link_match_ratio": 0.0,
+      "direction_match_ratio": 0.0
+    },
+    {
+      "id": "B",
+      "steps": [
+        {
+          "name": "테헤란로",
+          "distance_m": 11000.0,
+          "duration_sec": 650.0,
+          "speed_kmh": 60.92307692307693,
+          "links": []
+        }
+      ],
+      "distance_m": 11000.0,
+      "base_duration_sec": 650.0,
+      "score": 1769.7863405663106,
+      "coverage": 0.0,
+      "ai": false,
+      "incident_count": 0,
+      "predicted_volume": 0,
+      "traffic_penalty_sec": 1119.7863405663106,
+      "incident_penalty_sec": 0,
+      "speed_penalty_sec": 0,
+      "speed_match_ratio": 0.0,
+      "speed_observed_at": "2026-09-18T22:00:00",
+      "incidents": [],
+      "link_match_ratio": 0.0,
+      "direction_match_ratio": 0.0
+    }
+  ],
+  "osrm_comparison": {
+    "osrm_default_route_id": "A",
+    "ai_selected_route_id": "A",
+    "estimated_minutes_saved": 0.0,
+    "extra_distance_km": 0.0,
+    "basis": "ai_route_duration_score"
+  },
+  "message": "🤖 LightGBM 최적 경로 추천 완료! 실시간 속도, 돌발상황, 요일·시간대 35개 요인을 분석해 최단 시간 경로를 선정했습니다.",
+  "route_request_id": "a09edfb0-09c8-4484-a88e-ff4e6656b81d",
+  "explanation": {
+    "selected_route_id": "A",
+    "text": "교통량 예측 AI는 prediction_coverage 50% 이상인 후보 중 comparison_score가 가장 낮은 경로 A를 선택했습니다.  \nAI의 선택은 모델이 예측한 교통 증가 페널티를 기본 경로시간에 더한 값으로 계산되었으며, 현재 실시간 도로 상태가 없으므로 속도·사고·공사·통제 정보를 반영하지 못합니다.  \nOSRM 기본 경로와 동일한 경로가 선택되었으며, estimated_minutes_saved와 extra_distance_km가 모두 0.0이므로 시간 절약이나 거리 차이가 없습니다.  \n이 점수는 실제 도착 시간을 나타내지 않으며, 모델의 교통량 예측과 기상 관측만 반영된다는 점을 유의해 주세요.",
+    "source": "llm",
+    "llm_model": "openai/gpt-oss-20b"
+  }
+}
