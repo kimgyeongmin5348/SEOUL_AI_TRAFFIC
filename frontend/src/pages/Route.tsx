@@ -31,7 +31,7 @@ function explanationSentences(text: string | null | undefined): string[] {
   if (!text) return []
   const cleaned = text
     .replace(/\*\*/g, "")
-    .replace(/^\s*(?:추천 이유|AI 추천 근거|선정 이유|AI 추천 이유)\s*[:：]\s*/i, "")
+    .replace(/^\s*(?:추천 이유|최적 추천 근거|선정 이유|최적 추천 이유)\s*[:：]\s*/i, "")
     .trim()
 
   // 1. 줄바꿈으로 분리
@@ -419,7 +419,7 @@ export default function Route() {
                   fontFamily: "var(--font-display)",
                 }}
               >
-                {loading ? "경로 계산 중…" : "AI 경로 분석 시작"}
+                {loading ? "경로 계산 중…" : "경로 탐색 시작"}
               </button>
             </div>
 
@@ -517,7 +517,7 @@ export default function Route() {
                   fontFamily: "var(--font-display)",
                 }}
               >
-                {loading ? "경로 계산 중…" : "AI 경로 분석"}
+                {loading ? "경로 계산 중…" : "경로 탐색"}
               </button>
             </div>
 
@@ -589,12 +589,12 @@ export default function Route() {
                 className={`route-ai-brief cursor-pointer transition-all ${selected === aiRecommendedRoute.id ? 'ring-2 ring-[#007aff] shadow-lg' : ''}`}
                 onClick={() => setSelected(aiRecommendedRoute.id)}
                 aria-live="polite" 
-                aria-label="AI 추천 브리핑"
+                aria-label="최적 경로 브리핑"
               >
                 <div className="route-ai-brief__glow" aria-hidden="true" />
                 <div className="route-ai-brief__header">
                   <div>
-                    <span className="route-ai-brief__eyebrow">✦ AI ROUTE BRIEF</span>
+                    <span className="route-ai-brief__eyebrow">✦ ROUTE BRIEF</span>
                     <h2>경로 {aiRecommendedRoute.id}를 추천해요</h2>
                   </div>
                   <span className="route-ai-brief__status">추천 완료</span>
@@ -603,7 +603,7 @@ export default function Route() {
                 <div className="route-ai-brief__metrics" aria-label="추천 경로 핵심 정보">
                   <div><span>예상 시간</span><strong>{aiRecommendedRoute.time}분</strong></div>
                   <div><span>주행 거리</span><strong>{aiRecommendedRoute.distance}km</strong></div>
-                  <div><span>추천 방식</span><strong>AI 추천</strong></div>
+                  <div><span>추천 방식</span><strong>최적 경로</strong></div>
                 </div>
 
                 <div className="route-ai-brief__reason">
@@ -614,7 +614,7 @@ export default function Route() {
                       : [
                           "대안 경로 대비 예상 정체 구간이 적어 가장 빠르게 도착할 수 있어요.",
                           "주요 경유 구간의 실시간 소통 흐름이 양호하며 돌발 사고 영향이 없어요.",
-                          "시간대별 교통 흐름 변화를 AI가 종합 분석해 가장 안정적인 경로예요.",
+                          "시간대별 교통 흐름 변화를 종합 분석해 가장 안정적인 경로예요.",
                         ]
                     ).map((sentence, index) => (
                       <li key={`${index}-${sentence}`}>
@@ -627,7 +627,6 @@ export default function Route() {
 
                 <div className="route-ai-brief__footer">
                   <span>주요 경유 · {aiRecommendedRoute.via}</span>
-                  {recommendationMeta && <span>{recommendationMeta}</span>}
                 </div>
               </section>
             )}
@@ -653,46 +652,37 @@ export default function Route() {
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <div
-                          className="w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0"
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-sm"
                           style={{
-                            borderRadius: 10,
-                            background: isSelected
-                              ? "linear-gradient(135deg, #007aff, #5e5ce6)"
-                              : "rgba(240,242,248,0.9)",
-                            color: isSelected ? "white" : "#4a4a68",
+                            background: r.ai ? "linear-gradient(135deg, #007aff, #00c6ff)" : color,
                             fontFamily: "var(--font-display)",
                           }}
                         >
                           {r.id}
                         </div>
-                        <div className="min-w-0">
-                          <p
-                            className="font-semibold text-[#1a1a2e] truncate"
-                            style={{
-                              fontFamily: "var(--font-display)",
-                              fontSize: 15,
-                            }}
+                        <div className="flex flex-col min-w-0">
+                          <h3
+                            className="font-semibold text-sm truncate text-[#1a1a2e]"
+                            style={{ fontFamily: "var(--font-display)" }}
                           >
                             {r.label}
-                          </p>
-                          <p
-                            className="text-xs text-[#6b6b8a] truncate"
-                            style={{ fontFamily: "var(--font-body)" }}
-                          >
+                          </h3>
+                          <p className="text-[11px] text-[#6b6b8a] truncate">
                             경유: {r.via}
                           </p>
                         </div>
                       </div>
                       {r.ai && (
                         <span
-                          className="text-xs px-2 py-0.5 rounded-full font-semibold text-white shadow-xs shrink-0"
+                          className="ml-auto text-[11px] px-2 py-0.5 rounded-full font-bold shadow-sm"
                           style={{
+                            color: "white",
                             background:
-                              "linear-gradient(135deg, #5e5ce6, #007aff)",
+                              "linear-gradient(135deg, #007aff, #00c6ff)",
                             fontFamily: "var(--font-body)",
                           }}
                         >
-                          AI 추천
+                          최적 추천
                         </span>
                       )}
                     </div>
@@ -714,11 +704,11 @@ export default function Route() {
                         <span
                           className="text-[10px] font-semibold ml-1.5 px-1.5 py-0.5 rounded"
                           style={{
-                            background: r.ai ? "rgba(94,92,230,0.14)" : "rgba(0,122,255,0.12)",
-                            color: r.ai ? "#5e5ce6" : "#007aff",
+                            background: r.ai ? "rgba(0,122,255,0.12)" : "rgba(0,122,255,0.12)",
+                            color: "#007aff",
                           }}
                         >
-                          {r.ai ? "실시간 속도·AI 반영" : "실시간 속도 반영"}
+                          {r.ai ? "실시간 데이터 반영" : "실시간 속도 반영"}
                         </span>
                         {r.delayMin > 0 && (
                           <span className="text-[10px] font-semibold text-[#ff3b30] bg-[#ff3b30]/10 px-1.5 py-0.5 rounded ml-1">
@@ -750,13 +740,13 @@ export default function Route() {
                       <div
                         className="mt-3 p-3 rounded-xl text-xs leading-relaxed"
                         style={{
-                          background: "rgba(94,92,230,0.08)",
+                          background: "rgba(0,122,255,0.08)",
                           color: "#3f3f58",
-                          border: "1px solid rgba(94,92,230,0.15)",
+                          border: "1px solid rgba(0,122,255,0.15)",
                           fontFamily: "var(--font-body)",
                         }}
                       >
-                        <span className="font-semibold text-[#5e5ce6]">AI 한줄 요약</span>
+                        <span className="font-semibold text-[#007aff]">핵심 요약</span>
                         <p className="mt-1 text-[13px] leading-relaxed">{shortExplanation(r.reason)}</p>
                       </div>
                     )}
@@ -912,19 +902,19 @@ export default function Route() {
 
                 {isDetailsOpen && (
                   <div className="animate-fade-in">
-                    {/* 실시간 속도 및 AI 예측 안내 배너 */}
+                    {/* 실시간 속도 및 돌발상황 안내 배너 */}
                     <div className="mb-4 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/60 flex items-start gap-2.5 text-xs text-[#2c3e50] leading-relaxed">
                       <span className="text-base shrink-0 mt-0.5">ℹ️</span>
                       <div>
-                        <span className="font-semibold text-[#007aff]">실시간 속도·AI 경로 분석:</span>
-                        {" "}본 경로는 OSRM 도로망 기본 시간에 <strong className="text-[#1a1a2e]">서울시 실시간 관측 속도 지연, AI 모델의 미래 혼잡도 예측, 실시간 돌발상황(사고·공사)</strong>을 모두 반영하여 실제 체감 소요시간과 최적 경로를 산출합니다.
+                        <span className="font-semibold text-[#007aff]">실시간 속도·돌발상황 분석:</span>
+                        {" "}본 경로는 OSRM 도로망 기본 시간에 <strong className="text-[#1a1a2e]">서울시 실시간 관측 속도 지연, 실시간 돌발상황(사고·공사)</strong>을 모두 반영하여 실제 체감 소요시간과 최적 경로를 산출합니다.
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
                       {[
                         {
-                          label: "AI 최종 예측 소요 시간",
+                          label: "최종 예상 소요 시간",
                           value: selectedRoute?.delayMin > 0
                             ? `${selectedRoute?.time}분 (정체 +${selectedRoute?.delayMin}분)`
                             : `${selectedRoute?.time}분`,
@@ -936,7 +926,7 @@ export default function Route() {
                           color: "#6b6b8a",
                         },
                         {
-                          label: "적용 AI 모델 알고리즘",
+                          label: "경로 탐색 알고리즘",
                           value: selectedRoute.modelVersion ? selectedRoute.modelVersion.replace('route_', '').split('_')[0].toUpperCase() : "기본 OSRM 모델",
                           color: "#5e5ce6",
                         },

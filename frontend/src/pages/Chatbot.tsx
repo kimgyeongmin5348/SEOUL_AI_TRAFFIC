@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect } from "react"
 import Sidebar from "../components/Sidebar"
 import SubpageBackground from "../components/SubpageBackground"
 import ChatMessageContent from "../components/ChatMessageContent"
@@ -8,7 +8,7 @@ const SUGGESTIONS = [
   "지금 올림픽대로 정체 심한가요?",
   "비 올 때 운전 주의구간과 우회 팁",
   "강남에서 여의도 갈 때 빠른 경로 추천",
-  "RoadPulse AI 예측 기능이 뭐야?",
+  "RoadPulse 경로 분석 기능이 뭐야?",
 ]
 
 export default function ChatbotPage() {
