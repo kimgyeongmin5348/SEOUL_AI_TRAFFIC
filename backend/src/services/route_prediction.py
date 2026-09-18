@@ -624,7 +624,30 @@ def load_latest_road_speeds(db, target):
 def predict_routes(db, candidates, now, departure_at=None, origin=None, destination=None):
     from backend.src.services.route_prediction import best_saved_route_model
     from backend.src.services.route_training_dataset import RouteTrainingDatasetBuilder
-    from ml.src.util.config import ROUTE_FEATURE_COLUMNS, ROUTE_ZERO_FILL_COLUMNS
+    ROUTE_FEATURE_COLUMNS = [
+        "route_distance_m", "osrm_duration_sec", "segment_count",
+        "link_match_ratio", "direction_match_ratio", "opposite_direction_ratio",
+        "speed_lag_kmh", "speed_lag_min_kmh", "speed_lag_travel_time_sec",
+        "speed_lag_coverage", "speed_lag_age_min", "speed_data_available",
+        "volume_lag_vph_mean", "volume_lag_vph_max", "volume_lag_coverage", "volume_lag_age_hours",
+        "active_incident_count", "accident_count", "construction_count",
+        "control_count", "breakdown_count",
+        "control_length_m", "blocked_length_m",
+        "incident_severity_max", "incident_impact_score",
+        "incident_clear_overlap_sec", "incident_match_ratio", "incident_data_age_sec",
+        "weather_temperature_c", "weather_rainfall_mm", "weather_humidity_pct", "weather_age_hours",
+        "departure_hour", "weekday", "is_weekend",
+    ]
+    ROUTE_ZERO_FILL_COLUMNS = [
+        "direction_match_ratio", "opposite_direction_ratio",
+        "speed_lag_coverage", "speed_data_available",
+        "volume_lag_coverage",
+        "active_incident_count", "accident_count", "construction_count",
+        "control_count", "breakdown_count",
+        "control_length_m", "blocked_length_m",
+        "incident_severity_max", "incident_impact_score",
+        "incident_clear_overlap_sec", "incident_match_ratio",
+    ]
     import pandas as pd
     
     target_clock = departure_at or now
@@ -762,7 +785,30 @@ def predict_routes(db, candidates, now, departure_at=None, origin=None, destinat
 def predict_spot_series(db, spot_id, now, horizon_hours=3):
     """Predict future speed (km/h) passing through the spot area using the E2E route model + historical pattern."""
     from backend.src.services.route_prediction import best_saved_route_model, TM_TO_WGS84, pd
-    from ml.src.util.config import ROUTE_FEATURE_COLUMNS, ROUTE_ZERO_FILL_COLUMNS
+    ROUTE_FEATURE_COLUMNS = [
+        "route_distance_m", "osrm_duration_sec", "segment_count",
+        "link_match_ratio", "direction_match_ratio", "opposite_direction_ratio",
+        "speed_lag_kmh", "speed_lag_min_kmh", "speed_lag_travel_time_sec",
+        "speed_lag_coverage", "speed_lag_age_min", "speed_data_available",
+        "volume_lag_vph_mean", "volume_lag_vph_max", "volume_lag_coverage", "volume_lag_age_hours",
+        "active_incident_count", "accident_count", "construction_count",
+        "control_count", "breakdown_count",
+        "control_length_m", "blocked_length_m",
+        "incident_severity_max", "incident_impact_score",
+        "incident_clear_overlap_sec", "incident_match_ratio", "incident_data_age_sec",
+        "weather_temperature_c", "weather_rainfall_mm", "weather_humidity_pct", "weather_age_hours",
+        "departure_hour", "weekday", "is_weekend",
+    ]
+    ROUTE_ZERO_FILL_COLUMNS = [
+        "direction_match_ratio", "opposite_direction_ratio",
+        "speed_lag_coverage", "speed_data_available",
+        "volume_lag_coverage",
+        "active_incident_count", "accident_count", "construction_count",
+        "control_count", "breakdown_count",
+        "control_length_m", "blocked_length_m",
+        "incident_severity_max", "incident_impact_score",
+        "incident_clear_overlap_sec", "incident_match_ratio",
+    ]
     from backend.src.services.route_training_dataset import fetch_osrm_candidates, OsrmStep, RouteTrainingDatasetBuilder
     from sqlalchemy import text
     from datetime import timedelta
