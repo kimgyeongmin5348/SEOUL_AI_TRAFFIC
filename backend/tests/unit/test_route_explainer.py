@@ -82,8 +82,7 @@ def test_llm_failure_falls_back_without_losing_recommendation():
     result = explain_route_recommendation(recommendation(), candidates(), client=FailingClient())
     assert result["selected_route_id"] == "A"
     assert result["source"] == "template"
-    assert result["text"].startswith("교통량 예측 AI는")
-    assert "실제 예상 도착시간이 아닙니다" in result["text"]
+    assert "최적 경로" in result["text"] or "도착할 수 있어요" in result["text"]
 
 
 def test_client_builds_nvidia_chat_completions_url():

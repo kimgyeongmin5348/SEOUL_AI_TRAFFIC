@@ -91,11 +91,13 @@ export interface PredictionRow {
 
 export interface RoadPredictionView {
   road: string
-  predictions: { time: string; actual: number | null; predicted: number; confidence: number }[]
+  predictions: Array<{ time: string; actual: number | null; predicted: number; confidence: number }>
   current: "원활" | "서행" | "혼잡"
   next30: "원활" | "서행" | "혼잡"
   next60: "원활" | "서행" | "혼잡"
   trend: "up" | "down" | "stable"
+  model_version?: string
+  algorithm?: string
 }
 
 export interface PredictionRoadOption {
@@ -637,6 +639,36 @@ export async function fetchPredictionData() {
   }
 }
 
+export interface AiInsights {
+  stats: {
+    model_version: string
+    algorithm: string
+    accuracy_pct: number
+    saved_hours_today: number
+  }
+  time_machine: {
+    origin: string
+    destination: string
+    points: Array<{ time: string; duration_min: number }>
+    best_time: string
+    best_duration: number
+  }
+  hell_zones: Array<{
+    id: number
+    road: string
+    description: string
+    osrm_min: number
+    ai_min: number
+    saved_min: number
+  }>
+}
+
+export async function fetchAiInsights(): Promise<AiInsights> {
+  const res = await fetch("/api/predictions/insights")
+  if (!res.ok) throw new Error("AI 인사이트 데이터를 불러올 수 없습니다.")
+  return (await res.json()) as AiInsights
+}
+
 export async function searchPredictionRoads(query = ""): Promise<PredictionRoadOption[]> {
   const response = await fetch(`/api/predictions/roads?q=${encodeURIComponent(query.trim())}`)
   if (!response.ok) throw new Error("예측 가능한 도로 목록을 불러오지 못했습니다.")
@@ -648,33 +680,36 @@ export async function fetchRoadPrediction(spotId: string): Promise<RoadPredictio
   const response = await fetch(`/api/predictions/roads/${encodeURIComponent(spotId)}`)
   const body = await response.json()
   if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "도로 예측에 실패했습니다.")
-  const result = body as OnDemandRoadPrediction
+  const result = body as any
   const predictions = [
     {
-      time: "현재 실측",
-      actual: Math.round(result.current_volume),
-      predicted: Math.round(result.current_volume),
+      time: "현재 출발 시",
+      actual: Math.round(result.current_speed),
+      predicted: Math.round(result.current_speed),
       confidence: 100,
     },
-    ...result.points.map((point, index) => ({
-      time: new Date(point.target_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }),
+    ...result.points.map((point: any, index: number) => ({
+      time: new Date(point.target_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) + " 출발",
       actual: null,
-      predicted: Math.round(point.predicted_volume),
+      predicted: Math.round(point.predicted_speed),
       confidence: Math.max(65, 94 - index * 8),
     })),
   ]
-  const classify = (volume: number): "원활" | "서행" | "혼잡" =>
-    volume >= 5000 ? "혼잡" : volume >= 3000 ? "서행" : "원활"
+  const classify = (speed: number): "원활" | "서행" | "혼잡" =>
+    speed < 25 ? "혼잡" : speed < 40 ? "서행" : "원활"
   const current = predictions[0].predicted
   const next30 = predictions[1]?.predicted ?? current
   const next60 = predictions[2]?.predicted ?? next30
+  // 속도가 떨어지면 정체 심화("up"), 속도가 오르면 정체 해소("down")
   return {
     road: result.road,
     predictions,
     current: classify(current),
     next30: classify(next30),
     next60: classify(next60),
-    trend: next60 > current * 1.05 ? "up" : next60 < current * 0.95 ? "down" : "stable",
+    trend: next60 < current * 0.95 ? "up" : next60 > current * 1.05 ? "down" : "stable",
+    model_version: result.model_version,
+    algorithm: result.algorithm,
   }
 }
 

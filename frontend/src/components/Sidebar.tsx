@@ -99,35 +99,7 @@ const navItems = [
     ),
     label: "날씨",
   },
-  {
-    href: "/prediction",
-    icon: (
-      // 상승 그래프 + 별(AI)
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <path
-          d="M2 16l4.5-5 3.5 3 4-6 4 4"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <circle
-          cx="16"
-          cy="4"
-          r="2.5"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          d="M16 2.5v3M14.5 4h3"
-          stroke="currentColor"
-          strokeWidth="1.2"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-    label: "AI 예측",
-  },
+
   {
     href: "/favorites",
     icon: (
@@ -189,8 +161,7 @@ const mobileBottomNavItems = [
   { href: "/", label: "홈", icon: homeIcon },
   { href: "/dashboard", label: "지도", icon: navItems[0].icon },
   { href: "/route", label: "경로", icon: navItems[1].icon },
-  { href: "/prediction", label: "예측", icon: navItems[5].icon },
-  { href: "/favorites", label: "MY", icon: navItems[6].icon },
+  { href: "/favorites", label: "MY", icon: navItems[5].icon },
   { href: "/chatbot", label: "챗봇", icon: chatbotIcon },
 ]
 

@@ -435,6 +435,59 @@ class RouteTrainingDatasetBuilder:
                 time.sleep(self.sleep_sec)
         return rows
 
+    def build_inference_features(self, request_id, origin, destination, candidates, departure_at):
+        """실시간 추론(Inference) 시 OSRM 후보 경로들의 피처를 추출합니다."""
+        link_geometry = load_road_link_geometry(self.db)
+        spot_links = self._load_spot_links()
+        weather = self._load_weather(departure_at)
+        incident_age = self._incident_data_age_sec(departure_at)
+
+        rows = []
+        for candidate in candidates:
+            # 1. 링크 매칭
+            matches = match_candidate(candidate, link_geometry)
+            link_ids = {part["link_id"] for m in matches for part in m.get("links", [])}
+            total_m = route_total_m(candidate, matches)
+
+            # 2. 피처에 필요한 실시간/과거 데이터 로드
+            from backend.src.services.route_training_dataset import load_link_observations
+            longest = max(c["duration_sec"] for c in candidates) if candidates else 0
+            by_link = load_link_observations(
+                self.db, link_ids, departure_at - self.lag_window,
+                departure_at + timedelta(seconds=longest) + self.window
+            )
+            incidents = self._load_active_incidents(link_ids, departure_at)
+            volumes = self._load_volume_lag(link_ids, spot_links, departure_at)
+
+            # 3. 피처 계산
+            features = {
+                **speed_lag_features(matches, by_link, departure_at, self.lag_window),
+                **volume_lag_features(matches, volumes, departure_at),
+                **incident_features(matches, incidents, departure_at, candidate["duration_sec"], total_m, incident_age),
+                **weather,
+            }
+            
+            # 임시 CandidateRecord 생성 (정답(label)은 없음)
+            from backend.src.services.route_training_dataset import CandidateRecord
+            record = CandidateRecord(
+                route_id=candidate["route_id"],
+                route_distance_m=candidate["distance_m"],
+                osrm_duration_sec=candidate["duration_sec"],
+                segment_count=len(candidate["steps"]),
+                link_match_ratio=round(sum(m["matched_m"] for m in matches) / total_m, 3) if total_m else 0.0,
+                direction_match_ratio=0.0,
+                opposite_direction_ratio=0.0,
+                actual_duration_sec=None,
+                actual_delay_sec=None,
+                quality=0,
+                observed_length_ratio=0.0,
+                label_observed_at_min=None,
+                label_observed_at_max=None,
+                features=features,
+            )
+            rows.append(self._row(request_id, origin, destination, departure_at, record))
+        return rows
+
     @staticmethod
     def _row(request_id, origin, destination, departure_at, record):
         weekday = departure_at.weekday()

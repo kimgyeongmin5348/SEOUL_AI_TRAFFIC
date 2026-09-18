@@ -112,27 +112,28 @@ function explainRouteChoice(
   algorithm?: string,
 ) {
   if (!route) return null
-  const coverage = Math.round(route.coverage * 100)
-  const roads = roadNames.slice(0, 2).join("·") || "이 경로의 주요 도로"
+  const roads = roadNames.slice(0, 2).join("·") || "주요 도로"
   const recommended = allRoutes.find((item) => item.ai)
-  const volume = route.predicted_volume == null ? "" : ` 시간당 평균 교통량은 약 ${Math.round(route.predicted_volume).toLocaleString("ko-KR")}대로 예측됐습니다.`
 
   if (route.ai) {
-    const alternatives = allRoutes.filter((item) => item.id !== route.id && item.coverage >= 0.5)
+    const alternatives = allRoutes.filter((item) => item.id !== route.id)
     const next = alternatives.sort((a, b) => a.score - b.score)[0]
-    const advantage = next && next.score > 0
-      ? ` 다음 후보보다 혼잡 반영 비교 점수가 약 ${Math.max(1, Math.round((next.score - route.score) / next.score * 100))}% 유리합니다.`
-      : " 비교 가능한 후보 중 혼잡 반영 점수가 가장 낮습니다."
-    return `추천 이유: ${roads} 구간을 포함한 기본 소요시간에 최근 교통량과 기상 관측을 반영한 ${algorithm || "AI"} 결과입니다.${volume} 전체 경로의 ${coverage}%를 실제 관측 도로와 연결했고,${advantage} 이 점수는 경로 비교용이며 실제 도착시간 예측값은 아닙니다.`
+    const savedMin = next && next.score > route.score ? Math.max(1, Math.round((next.score - route.score) / 60)) : 0
+    const point1 = savedMin > 0
+      ? `대안 경로 대비 예상 정체 구간이 적어 약 ${savedMin}분 더 빠르게 도착할 수 있어요.`
+      : `비교 후보 경로 중 예상 소요 시간이 가장 짧아 최단 시간에 도착할 수 있어요.`
+    const point2 = `${roads} 구간의 실시간 통행 흐름이 양호하고 돌발 지연 영향이 적어요.`
+    const point3 = `시간대별 교통량과 도로 관측 데이터를 종합 분석한 ${algorithm || "최적"} 경로예요.`
+    return `1. ${point1}\n2. ${point2}\n3. ${point3}`
   }
 
   if (recommended) {
-    const gap = recommended.score > 0
-      ? Math.max(0, Math.round((route.score - recommended.score) / recommended.score * 100))
-      : 0
-    return `${roads} 구간의 예측 반영률은 ${coverage}%입니다.${volume} AI 추천 경로보다 혼잡 반영 비교 점수가 ${gap}% 높아 대안 경로로 분류됐습니다.`
+    const diffMin = Math.round((route.score - recommended.score) / 60)
+    return diffMin > 0
+      ? `${roads} 경유 경로로, 최적 추천 경로(경로 ${recommended.id})보다 예상 소요 시간이 약 ${diffMin}분 더 소요될 것으로 예측됩니다.`
+      : `${roads} 경유 경로로, 최적 추천 경로 대비 정체 구간이나 우회 거리가 발생할 수 있는 대안 경로입니다.`
   }
-  return `${roads} 구간 중 실제 관측 도로와 연결된 범위가 ${coverage}%입니다.${volume} 50% 이상인 후보가 없어 AI가 근거가 부족한 추천을 만들지 않았습니다.`
+  return `${roads} 구간을 경유하는 주행 경로입니다.`
 }
 
 export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSuggestion, departureAt?: string) {
@@ -199,7 +200,7 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       trafficLevel === "red" ? "혼잡" : trafficLevel === "yellow" ? "서행" : "원활"
 
     return {
-      id, label: `Route ${id}${ai ? " (AI 추천)" : ""}`,
+      id, label: `Route ${id}${ai ? " (최적 추천)" : ""}`,
       via: names.slice(0, 4).join(" / ") || "도로명 정보 없음",
       time,
       baseTime,

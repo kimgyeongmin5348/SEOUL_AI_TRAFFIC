@@ -8,7 +8,7 @@ const RoutePage = lazy(() => import("./pages/Route"))
 const Traffic = lazy(() => import("./pages/Traffic"))
 const Incidents = lazy(() => import("./pages/Incidents"))
 const Weather = lazy(() => import("./pages/Weather"))
-const Prediction = lazy(() => import("./pages/Prediction"))
+
 const Favorites = lazy(() => import("./pages/Favorites"))
 const Login = lazy(() => import("./pages/Login"))
 const Chatbot = lazy(() => import("./pages/Chatbot"))
@@ -32,7 +32,7 @@ export default function App() {
           <Route path="/traffic" element={<Traffic />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/weather" element={<Weather />} />
-          <Route path="/prediction" element={<Prediction />} />
+
           <Route path="/favorites" element={<RequireAuth><Favorites /></RequireAuth>} />
           <Route path="/chatbot" element={<Chatbot />} />
           <Route path="/login" element={<Login />} />
