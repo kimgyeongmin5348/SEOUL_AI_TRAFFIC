@@ -49,16 +49,22 @@ def _model_eta_explanation(evidence: dict[str, Any], selected: dict[str, Any]) -
     age = quality.get("speed_lag_age_min")
     incidents = quality.get("active_incident_count") or 0
     basis = f" 속도 관측 반영 비율은 {round(coverage * 100)}%" if coverage is not None else ""
-    basis += f", 관측은 {age:g}분 전 값" if age is not None else ""
+    basis += f", 관측은 {round(age)}분 전 값" if age is not None else ""
     basis += f"이고 경로 위 활성 돌발은 {incidents}건입니다." if basis else f"경로 위 활성 돌발은 {incidents}건입니다."
     others = sorted((r for r in evidence["routes"] if r["route_id"] != selected_id and r.get("predicted_eta_minutes") is not None),
                     key=lambda r: r["predicted_eta_minutes"])
+    # 화면이 문장 단위로 나눠 보여주므로 소수점 없이 정수 분으로 씁니다.
+    eta = round(selected["predicted_eta_minutes"])
+    base = round(selected["base_duration_minutes"]) if selected.get("base_duration_minutes") is not None else None
     comparison = ""
     if others:
-        comparison = f" 다음 후보 {others[0]['route_id']}의 예측 {others[0]['predicted_eta_minutes']:g}분보다 {max(0, round(others[0]['predicted_eta_minutes'] - selected['predicted_eta_minutes'], 1)):g}분 짧습니다."
+        gap = max(0, round(others[0]["predicted_eta_minutes"] - selected["predicted_eta_minutes"]))
+        comparison = (f" 다음 후보 {others[0]['route_id']}(약 {round(others[0]['predicted_eta_minutes'])}분)보다 {gap}분 빠릅니다."
+                      if gap >= 1 else f" 다음 후보 {others[0]['route_id']}와 예측 시간이 거의 같습니다.")
+    base_text = f"(OSRM 기본 {base}분)" if base is not None else ""
     return (
         f"경로 예측 AI는 {roads}를 포함한 경로 {selected_id}를 추천했습니다. "
-        f"예상 소요시간은 약 {selected['predicted_eta_minutes']:g}분(OSRM 기본 {selected['base_duration_minutes']:g}분)이며,{basis}{comparison} "
+        f"예상 소요시간은 약 {eta}분{base_text}이며,{basis}{comparison} "
         "예측값은 링크 관측 속도로 학습한 모델의 추정치이며 관측이 없는 구간은 OSRM 시간을 따릅니다."
     )
 

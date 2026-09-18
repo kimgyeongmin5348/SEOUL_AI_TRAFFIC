@@ -33,7 +33,9 @@ function explanationSentences(text: string | null | undefined) {
     .replace(/^\s*(?:추천 이유|AI 추천 근거)\s*[:：]\s*/i, "")
     .replace(/\s+/g, " ")
     .trim()
-  return (cleaned.match(/[^.!?]+[.!?]?/g) || [cleaned])
+  // 문장 끝(마침표·물음표·느낌표 뒤 공백)에서만 자릅니다. "20.6분"처럼 소수점은 문장 경계가 아닙니다.
+  return cleaned
+    .split(/(?<=[.!?])\s+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean)
 }
