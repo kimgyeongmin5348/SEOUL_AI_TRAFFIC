@@ -741,5 +741,7 @@ if FRONTEND_DIST.is_dir():
         requested = (FRONTEND_DIST / full_path).resolve()
         if requested.is_relative_to(FRONTEND_DIST.resolve()) and requested.is_file():
             return FileResponse(requested)
-        return FileResponse(FRONTEND_DIST / "index.html")
+        # index.html은 해시가 없는 파일이라 캐시되면 옛 번들을 계속 가리킵니다.
+        # 배포 직후 새 빌드가 바로 보이도록 매번 재검증하게 합니다.
+        return FileResponse(FRONTEND_DIST / "index.html", headers={"Cache-Control": "no-cache"})
 

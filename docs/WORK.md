@@ -348,6 +348,18 @@
 - 스크린샷의 3km 경로(대학로·율곡로) AI 예상 21분 vs OSRM 3분은 7배로, 학습 데이터에 짧은 도심 경로가 적어(OD 30쌍 모두 5~15km) 과대 예측 가능성이 있다. 온라인 라벨이 붙으면 실제값과 비교한다.
 - 검증 결과: 설명 테스트 `4 passed`, 프론트엔드 빌드 성공
 
+## 2026-09-19
+
+### 배포 환경 AI 경로 추천 503 및 메인화면 캐시 문제 수정
+
+- 증상: 배포 사이트에서 `/api/routes/predict`가 503을 반환해 AI 추천 대신 fallback으로 동작하고(F5로도 복구 안 됨), 메인화면은 첫 진입 시 예전 빌드가 보이다가 F5를 누르면 최신으로 바뀜. 로컬은 정상.
+- 원인 1 (AI 503): `4abe7ef chore: remove deployment-unnecessary files`에서 `ml/src/`가 통째로 삭제됐는데 `route_prediction.py`의 `predict_routes`·`predict_spot_series`가 여전히 `from ml.src.util.config import ROUTE_FEATURE_COLUMNS, ROUTE_ZERO_FILL_COLUMNS`를 호출 → 배포 서버에서 `ModuleNotFoundError: No module named 'ml.src'`. Dockerfile도 `backend/`와 `ml/artifacts/`만 복사하므로 `ml/src`는 원래 이미지에 들어가지 않는다. 로컬은 삭제 커밋을 받기 전이거나 `ml/src` 복사본이 남아 있어 통과했다.
+    - 수정: `backend/src/services/route_features.py`를 추가해 추론에 필요한 두 상수(피처 35개, zero-fill 16개)를 backend 안으로 옮기고 두 import를 `backend.src.services.route_features`로 변경.
+    - 검증: 서빙 중인 `route_lightgbm_duration_v1_tuned.joblib`·`route_xgboost_duration_v1_tuned.joblib`의 `feature_columns`와 옮긴 목록이 순서까지 일치. 모델 파일 내부에 `ml.src` 참조 없음. `backend.src.api.app` import 성공.
+- 원인 2 (메인화면 예전 빌드): `app.py`의 SPA fallback이 `index.html`을 캐시 헤더 없이 내려보내 브라우저가 이전 `index.html`(옛 해시 번들을 가리킴)을 재사용.
+    - 수정: `index.html` 응답에 `Cache-Control: no-cache` 추가. 해시가 붙는 `/assets/*`는 그대로 캐시.
+- 남은 문제: `backend/tests/unit/test_route_duration_model.py`, `scripts/evaluate_link_models.py`는 아직 `ml.src`를 import해 현재 저장소에서 실행 불가. 배포에는 영향 없음. 학습 파이프라인을 계속 쓰려면 `ml/src` 삭제를 되돌리거나 해당 스크립트를 정리해야 한다(팀 결정 필요).
+
 ### 다음 작업
 
 1. [완료] `road_segments`에 `axis_code`, `axis_direction`, `link_sequence` 컬럼을 추가하고 `sync_road_segments`가 저장하도록 수정한다.

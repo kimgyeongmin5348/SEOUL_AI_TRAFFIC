@@ -624,7 +624,7 @@ def load_latest_road_speeds(db, target):
 def predict_routes(db, candidates, now, departure_at=None, origin=None, destination=None):
     from backend.src.services.route_prediction import best_saved_route_model
     from backend.src.services.route_training_dataset import RouteTrainingDatasetBuilder
-    from ml.src.util.config import ROUTE_FEATURE_COLUMNS, ROUTE_ZERO_FILL_COLUMNS
+    from backend.src.services.route_features import ROUTE_FEATURE_COLUMNS, ROUTE_ZERO_FILL_COLUMNS
     import pandas as pd
     
     target_clock = departure_at or now
@@ -762,7 +762,7 @@ def predict_routes(db, candidates, now, departure_at=None, origin=None, destinat
 def predict_spot_series(db, spot_id, now, horizon_hours=3):
     """Predict future speed (km/h) passing through the spot area using the E2E route model + historical pattern."""
     from backend.src.services.route_prediction import best_saved_route_model, TM_TO_WGS84, pd
-    from ml.src.util.config import ROUTE_FEATURE_COLUMNS, ROUTE_ZERO_FILL_COLUMNS
+    from backend.src.services.route_features import ROUTE_FEATURE_COLUMNS, ROUTE_ZERO_FILL_COLUMNS
     from backend.src.services.route_training_dataset import fetch_osrm_candidates, OsrmStep, RouteTrainingDatasetBuilder
     from sqlalchemy import text
     from datetime import timedelta
