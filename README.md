@@ -1,7 +1,7 @@
 # 🚦 RoadPulse (Seoul AI Traffic)
 > **AI 기반 서울시 교통량 예측 및 최적 경로 추천 서비스**
 
-[![RoadPulse Main](https://images.unsplash.com/photo-1546874177-9e664107314e?q=80&w=800&auto=format&fit=crop)](https://roadpulse.onrender.com)
+[![RoadPulse Main](./docs/main_screen.jpg)](https://roadpulse-a2sz.onrender.com)
 *(이미지를 클릭하면 웹사이트로 이동합니다)*
 
 ## 📖 1. 프로젝트 소개
