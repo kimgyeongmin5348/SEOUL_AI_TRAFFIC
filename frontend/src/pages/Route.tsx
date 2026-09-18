@@ -31,7 +31,7 @@ function explanationSentences(text: string | null | undefined): string[] {
   if (!text) return []
   const cleaned = text
     .replace(/\*\*/g, "")
-    .replace(/^\s*(?:추천 이유|AI 추천 근거|선정 이유|AI 추천 이유)\s*[:：]\s*/i, "")
+    .replace(/^\s*(?:추천 이유|최적 추천 근거|선정 이유|최적 추천 이유)\s*[:：]\s*/i, "")
     .trim()
 
   // 1. 줄바꿈으로 분리
@@ -652,46 +652,37 @@ export default function Route() {
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <div
-                          className="w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0"
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-sm"
                           style={{
-                            borderRadius: 10,
-                            background: isSelected
-                              ? "linear-gradient(135deg, #007aff, #5e5ce6)"
-                              : "rgba(240,242,248,0.9)",
-                            color: isSelected ? "white" : "#4a4a68",
+                            background: r.ai ? "linear-gradient(135deg, #007aff, #00c6ff)" : color,
                             fontFamily: "var(--font-display)",
                           }}
                         >
                           {r.id}
                         </div>
-                        <div className="min-w-0">
-                          <p
-                            className="font-semibold text-[#1a1a2e] truncate"
-                            style={{
-                              fontFamily: "var(--font-display)",
-                              fontSize: 15,
-                            }}
+                        <div className="flex flex-col min-w-0">
+                          <h3
+                            className="font-semibold text-sm truncate text-[#1a1a2e]"
+                            style={{ fontFamily: "var(--font-display)" }}
                           >
                             {r.label}
-                          </p>
-                          <p
-                            className="text-xs text-[#6b6b8a] truncate"
-                            style={{ fontFamily: "var(--font-body)" }}
-                          >
+                          </h3>
+                          <p className="text-[11px] text-[#6b6b8a] truncate">
                             경유: {r.via}
                           </p>
                         </div>
                       </div>
                       {r.ai && (
                         <span
-                          className="text-xs px-2 py-0.5 rounded-full font-semibold text-white shadow-xs shrink-0"
+                          className="ml-auto text-[11px] px-2 py-0.5 rounded-full font-bold shadow-sm"
                           style={{
+                            color: "white",
                             background:
-                              "linear-gradient(135deg, #5e5ce6, #007aff)",
+                              "linear-gradient(135deg, #007aff, #00c6ff)",
                             fontFamily: "var(--font-body)",
                           }}
                         >
-                          AI 추천
+                          최적 추천
                         </span>
                       )}
                     </div>
@@ -713,11 +704,11 @@ export default function Route() {
                         <span
                           className="text-[10px] font-semibold ml-1.5 px-1.5 py-0.5 rounded"
                           style={{
-                            background: r.ai ? "rgba(94,92,230,0.14)" : "rgba(0,122,255,0.12)",
-                            color: r.ai ? "#5e5ce6" : "#007aff",
+                            background: r.ai ? "rgba(0,122,255,0.12)" : "rgba(0,122,255,0.12)",
+                            color: "#007aff",
                           }}
                         >
-                          {r.ai ? "실시간 속도·AI 반영" : "실시간 속도 반영"}
+                          {r.ai ? "실시간 데이터 반영" : "실시간 속도 반영"}
                         </span>
                         {r.delayMin > 0 && (
                           <span className="text-[10px] font-semibold text-[#ff3b30] bg-[#ff3b30]/10 px-1.5 py-0.5 rounded ml-1">
@@ -749,13 +740,13 @@ export default function Route() {
                       <div
                         className="mt-3 p-3 rounded-xl text-xs leading-relaxed"
                         style={{
-                          background: "rgba(94,92,230,0.08)",
+                          background: "rgba(0,122,255,0.08)",
                           color: "#3f3f58",
-                          border: "1px solid rgba(94,92,230,0.15)",
+                          border: "1px solid rgba(0,122,255,0.15)",
                           fontFamily: "var(--font-body)",
                         }}
                       >
-                        <span className="font-semibold text-[#5e5ce6]">AI 한줄 요약</span>
+                        <span className="font-semibold text-[#007aff]">핵심 요약</span>
                         <p className="mt-1 text-[13px] leading-relaxed">{shortExplanation(r.reason)}</p>
                       </div>
                     )}

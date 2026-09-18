@@ -101,15 +101,15 @@ function explainRouteChoice(
       ? `대안 경로 대비 예상 정체 구간이 적어 약 ${savedMin}분 더 빠르게 도착할 수 있어요.`
       : `비교 후보 경로 중 예상 소요 시간이 가장 짧아 최단 시간에 도착할 수 있어요.`
     const point2 = `${roads} 구간의 실시간 통행 흐름이 양호하고 돌발 지연 영향이 적어요.`
-    const point3 = `시간대별 교통량과 도로 관측 데이터를 종합 분석한 ${algorithm || "AI"} 최적 경로예요.`
+    const point3 = `시간대별 교통량과 도로 관측 데이터를 종합 분석한 ${algorithm || "최적"} 경로예요.`
     return `1. ${point1}\n2. ${point2}\n3. ${point3}`
   }
 
   if (recommended) {
     const diffMin = Math.round((route.score - recommended.score) / 60)
     return diffMin > 0
-      ? `${roads} 경유 경로로, AI 추천 경로(경로 ${recommended.id})보다 예상 소요 시간이 약 ${diffMin}분 더 소요될 것으로 예측됩니다.`
-      : `${roads} 경유 경로로, AI 추천 경로 대비 정체 구간이나 우회 거리가 발생할 수 있는 대안 경로입니다.`
+      ? `${roads} 경유 경로로, 최적 추천 경로(경로 ${recommended.id})보다 예상 소요 시간이 약 ${diffMin}분 더 소요될 것으로 예측됩니다.`
+      : `${roads} 경유 경로로, 최적 추천 경로 대비 정체 구간이나 우회 거리가 발생할 수 있는 대안 경로입니다.`
   }
   return `${roads} 구간을 경유하는 주행 경로입니다.`
 }
@@ -176,7 +176,7 @@ export async function getLiveSeoulRoutes(origin: PlaceSuggestion, dest: PlaceSug
       trafficLevel === "red" ? "혼잡" : trafficLevel === "yellow" ? "서행" : "원활"
 
     return {
-      id, label: `Route ${id}${ai ? " (AI 추천)" : ""}`,
+      id, label: `Route ${id}${ai ? " (최적 추천)" : ""}`,
       via: names.slice(0, 4).join(" / ") || "도로명 정보 없음",
       time,
       baseTime,

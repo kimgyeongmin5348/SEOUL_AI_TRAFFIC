@@ -599,10 +599,12 @@ def predict_route_candidates(req: RoutePredictionRequest, db: Session = Depends(
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(503, "실시간 관측 데이터를 불러오지 못해 최적 경로 추천을 사용할 수 없습니다.") from None
-    except Exception:
+    except Exception as exc:
+        import traceback
         import logging
+        err = traceback.format_exc()
         logging.getLogger(__name__).exception("Route model inference failed")
-        raise HTTPException(503, "추론에 실패해 최적 경로 추천을 사용할 수 없습니다.") from None
+        raise HTTPException(503, f"추론에 실패해 최적 경로 추천을 사용할 수 없습니다. 상세 에러: {err}") from None
 
 
 @app.get("/api/predictions/insights")
