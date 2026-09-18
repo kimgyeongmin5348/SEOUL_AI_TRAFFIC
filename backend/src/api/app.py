@@ -740,6 +740,17 @@ if FRONTEND_DIST.is_dir():
             raise HTTPException(404, "API 경로를 찾을 수 없습니다.")
         requested = (FRONTEND_DIST / full_path).resolve()
         if requested.is_relative_to(FRONTEND_DIST.resolve()) and requested.is_file():
-            return FileResponse(requested)
-        return FileResponse(FRONTEND_DIST / "index.html")
+            headers = {}
+            if full_path.startswith("assets/"):
+                headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return FileResponse(requested, headers=headers)
+        
+        return FileResponse(
+            FRONTEND_DIST / "index.html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            }
+        )
 
