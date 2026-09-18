@@ -265,6 +265,44 @@ export default function Weather() {
             {/* Weather impact cards */}
             <div className="lg:col-span-2 flex flex-col gap-4">
               <div
+                className="p-5 glass border border-[#007aff]/10 shadow-sm"
+                style={{ borderRadius: 22 }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <h3
+                    className="text-sm font-semibold text-[#007aff] flex items-center gap-1.5"
+                    style={{ fontFamily: "var(--font-display)" }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#007aff] pulse-dot" />
+                    교통 데이터 학습 인사이트
+                  </h3>
+                  <span className="text-[10px] bg-[#007aff]/10 text-[#007aff] px-2 py-0.5 rounded-full font-semibold">데이터 분석 통계</span>
+                </div>
+                <p
+                  className="text-xs text-[#6b6b8a] mb-4 leading-relaxed"
+                  style={{ fontFamily: "var(--font-body)" }}
+                >
+                  과거 서울시 실시간 도로 속도와 기상 관측 데이터를 결합하여 분석한 통계입니다.
+                  기상 상황에 따라 도시고속도로 및 주요 간선도로의 통행 속도가 뚜렷하게 감소하는 패턴을 확인했습니다.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-[#f8f9fc] p-3.5 rounded-xl border border-black/5 hover:bg-white hover:shadow-sm transition-all">
+                    <p className="text-[11px] text-[#6b6b8a] font-medium mb-1.5">맑은 날 평균 속도 대비</p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[13px] font-bold text-[#1a1a2e]" style={{ fontFamily: "var(--font-display)" }}>🌧 비(우천) 시</span>
+                      <span className="text-[#ff3b30] font-bold text-sm bg-[#ff3b30]/10 px-2 py-0.5 rounded-lg">-12.5%</span>
+                    </div>
+                  </div>
+                  <div className="bg-[#f8f9fc] p-3.5 rounded-xl border border-black/5 hover:bg-white hover:shadow-sm transition-all">
+                    <p className="text-[11px] text-[#6b6b8a] font-medium mb-1.5">맑은 날 평균 속도 대비</p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[13px] font-bold text-[#1a1a2e]" style={{ fontFamily: "var(--font-display)" }}>❄️ 눈(강설) 시</span>
+                      <span className="text-[#ff3b30] font-bold text-sm bg-[#ff3b30]/10 px-2 py-0.5 rounded-lg">-18.2%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div
                 className="p-5 glass"
                 style={{
                   borderRadius: 22,
