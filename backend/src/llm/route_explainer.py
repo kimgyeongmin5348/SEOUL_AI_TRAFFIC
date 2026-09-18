@@ -77,7 +77,14 @@ def explain_route_recommendation(
             if match:
                 reasons = json.loads(match.group(0))
                 if isinstance(reasons, list) and len(reasons) >= 3:
-                    text = f"1. {reasons[0]}\n2. {reasons[1]}\n3. {reasons[2]}"
+                    # Filter out obvious chain of thought logic that shouldn't be here
+                    is_clean = True
+                    for reason in reasons:
+                        if "But rule:" in reason or "So we need" in reason or "That is" in reason:
+                            is_clean = False
+                    
+                    if is_clean:
+                        text = f"1. {reasons[0]}\n2. {reasons[1]}\n3. {reasons[2]}"
         except Exception:
             pass
 
