@@ -26,7 +26,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY backend/ ./backend/
 COPY main.py ./main.py
-COPY ml/artifacts/ ./ml/artifacts/
+COPY ml/ ./ml/
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 EXPOSE 10000
