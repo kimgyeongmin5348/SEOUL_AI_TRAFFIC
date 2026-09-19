@@ -96,10 +96,10 @@ def best_saved_route_model(root=ARTIFACTS):
     artifact = candidates[0]
     bundle = load_model(str(artifact), artifact.stat().st_mtime_ns)
     if isinstance(bundle, dict):
-        report = {"model_version": artifact.stem, "feature_columns": bundle["feature_columns"]}
+        report = {"model_version": artifact.stem, "algorithm": "unknown", "feature_columns": bundle["feature_columns"]}
         return bundle["model"], report
     # 구버전 호환 (dict 래핑 전 joblib 파일)
-    report = {"model_version": artifact.stem, "feature_columns": None}
+    report = {"model_version": artifact.stem, "algorithm": "unknown", "feature_columns": None}
     return bundle, report
 
 

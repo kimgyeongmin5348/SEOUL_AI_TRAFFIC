@@ -72,7 +72,7 @@ def build_scheduler(
     fast_next_run = datetime.now() if run_immediately else None
     scheduler.add_job(
         lambda: run_job("fast_collection", collect_fast),
-        "interval", minutes=5, id="fast_collection", max_instances=1,
+        "interval", minutes=1, id="fast_collection", max_instances=1,
         next_run_time=fast_next_run,
     )
     scheduler.add_job(

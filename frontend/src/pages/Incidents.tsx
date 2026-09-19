@@ -46,18 +46,31 @@ export default function Incidents() {
 
   useEffect(() => {
     let active = true
-    setLoading(true)
-    fetchIncidentsData()
-      .then((res) => {
-        if (active) {
-          setIncidentsState(res)
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
+    let fetching = false
+
+    const load = (showLoading: boolean) => {
+      if (fetching || document.visibilityState === "hidden") return
+      fetching = true
+      if (showLoading) setLoading(true)
+      fetchIncidentsData()
+        .then((res) => {
+          if (active) setIncidentsState(res)
+        })
+        .finally(() => {
+          fetching = false
+          if (active) setLoading(false)
+        })
+    }
+
+    load(true)
+    const timer = window.setInterval(() => load(false), 60_000)
+    const onFocus = () => load(false)
+    window.addEventListener("focus", onFocus)
+
     return () => {
       active = false
+      window.clearInterval(timer)
+      window.removeEventListener("focus", onFocus)
     }
   }, [])
 

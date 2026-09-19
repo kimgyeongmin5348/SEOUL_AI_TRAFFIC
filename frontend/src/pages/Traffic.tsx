@@ -40,25 +40,46 @@ export default function Traffic() {
 
   useEffect(() => {
     let active = true
-    setLoading(true)
-    fetchTrafficData(selectedPeriod)
-      .then((res) => {
-        if (active) {
-          setTrafficData(res)
-          if (res.roadSpeeds.length > 0) {
-            setSelectedRoad((prev) =>
-              prev && res.roadSpeeds.some((r) => r.road === prev)
-                ? prev
-                : res.roadSpeeds[0].road
-            )
+    let fetching = false
+
+    const load = (showLoading: boolean) => {
+      if (fetching || document.visibilityState === "hidden") return
+      fetching = true
+      if (showLoading) setLoading(true)
+      fetchTrafficData(selectedPeriod)
+        .then((res) => {
+          if (active) {
+            setTrafficData(res)
+            if (res.roadSpeeds.length > 0) {
+              setSelectedRoad((prev) =>
+                prev && res.roadSpeeds.some((r) => r.road === prev)
+                  ? prev
+                  : res.roadSpeeds[0].road
+              )
+            }
           }
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
+        })
+        .finally(() => {
+          fetching = false
+          if (active) setLoading(false)
+        })
+    }
+
+    load(true)
+
+    // today 기간일 때만 1분마다 자동 갱신
+    const timer = selectedPeriod === "today"
+      ? window.setInterval(() => load(false), 60_000)
+      : null
+
+    // 탭/창 포커스 복귀 시 즉시 갱신
+    const onFocus = () => load(false)
+    window.addEventListener("focus", onFocus)
+
     return () => {
       active = false
+      if (timer !== null) window.clearInterval(timer)
+      window.removeEventListener("focus", onFocus)
     }
   }, [selectedPeriod])
 
